@@ -93,6 +93,7 @@ services:
       OLLAMA_MODEL: "gemma3:4b-it-qat"
       WAHA_BASE_URL: "http://waha:3000"
       WAHA_API_KEY: ${WAHA_API_KEY:-}
+      MY_WHATSAPP_ID: ${MY_WHATSAPP_ID:?Set MY_WHATSAPP_ID in .env}
     ports:
       - "127.0.0.1:8000:8000"
     networks:

@@ -1,12 +1,22 @@
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import httpx
-import os
+from app.config import OLLAMA_BASE_URL, WAHA_BASE_URL, DATABASE_URL
+from app.whatsapp import router as waha_router
+from app.memory.store import init_memory_tables
 
-app = FastAPI(title="PA Backend", version="0.1.0")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-WAHA_BASE_URL = os.getenv("WAHA_BASE_URL", "http://waha:3000")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_memory_tables()
+    yield
+
+
+app = FastAPI(title="PA Backend", version="0.2.0", lifespan=lifespan)
+app.include_router(waha_router)
 
 
 @app.get("/health")
