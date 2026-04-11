@@ -1,0 +1,6 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+langchain-ollama==0.3.2
+langgraph==0.3.34
+psycopg2-binary==2.9.10
+httpx==0.28.1

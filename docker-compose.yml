@@ -1,0 +1,124 @@
+networks:
+  pa-net:
+    driver: bridge
+
+volumes:
+  ollama-data:
+  postgres-data:
+  waha-sessions:
+
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: pa-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-pa}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - pa-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pa}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pa-ollama
+    restart: always
+    environment:
+      OLLAMA_KEEP_ALIVE: "2m"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KV_CACHE_TYPE: "q4_0"
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - pa-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: pa-waha
+    restart: always
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: "WEBJS"
+      WAHA_PRINT_QR: "true"
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:?Set WAHA_DASHBOARD_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - waha-sessions:/app/.sessions
+    networks:
+      - pa-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/server/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pa-backend
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-pa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pa}"
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "gemma3:4b-it-qat"
+      WAHA_BASE_URL: "http://waha:3000"
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - pa-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      waha:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: pa-cloudflared
+    restart: always
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in .env}
+    networks:
+      - pa-net
+    depends_on:
+      backend:
+        condition: service_healthy
