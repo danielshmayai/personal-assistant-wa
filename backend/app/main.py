@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from pydantic import BaseModel
 import httpx
 from app.config import OLLAMA_BASE_URL, WAHA_BASE_URL, DATABASE_URL
 from app.whatsapp import router as waha_router
@@ -19,6 +20,18 @@ app = FastAPI(title="PA Backend", version="0.2.0", lifespan=lifespan)
 app.include_router(waha_router)
 
 
+class TestRequest(BaseModel):
+    text: str
+
+
+@app.post("/test")
+async def test_graph(req: TestRequest):
+    """Dev-only endpoint: send text directly to the LangGraph pipeline (no WhatsApp needed)."""
+    from app.graph.graph import run_graph
+    reply = await run_graph(req.text, "test")
+    return {"input": req.text, "reply": reply}
+
+
 @app.get("/health")
 async def health():
     checks = {}
@@ -34,5 +47,5 @@ async def health():
         except Exception:
             checks["waha"] = "unreachable"
     checks["postgres"] = "configured" if DATABASE_URL else "missing"
-    all_ok = checks["ollama"] == "ok" and checks["waha"] == "ok"
+    all_ok = checks["ollama"] == "ok"
     return {"status": "ok" if all_ok else "degraded", "checks": checks}

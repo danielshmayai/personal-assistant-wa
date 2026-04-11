@@ -59,10 +59,41 @@ services:
       retries: 5
       start_period: 30s
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pa-backend
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-pa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pa}"
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "gemma3:4b-it-qat"
+      WAHA_BASE_URL: "http://waha:3000"
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
+      MY_WHATSAPP_ID: ${MY_WHATSAPP_ID:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - pa-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # --- Production-only services (start with: docker compose --profile prod up -d) ---
+
   waha:
     image: devlikeapro/waha:latest
     container_name: pa-waha
     restart: always
+    profiles: ["prod"]
     environment:
       WHATSAPP_DEFAULT_ENGINE: "WEBJS"
       WAHA_PRINT_QR: "true"
@@ -81,40 +112,11 @@ services:
       retries: 5
       start_period: 15s
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: pa-backend
-    restart: always
-    environment:
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-pa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pa}"
-      OLLAMA_BASE_URL: "http://ollama:11434"
-      OLLAMA_MODEL: "gemma3:4b-it-qat"
-      WAHA_BASE_URL: "http://waha:3000"
-      WAHA_API_KEY: ${WAHA_API_KEY:-}
-      MY_WHATSAPP_ID: ${MY_WHATSAPP_ID:?Set MY_WHATSAPP_ID in .env}
-    ports:
-      - "127.0.0.1:8000:8000"
-    networks:
-      - pa-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-      waha:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: pa-cloudflared
     restart: always
+    profiles: ["prod"]
     command: tunnel run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in .env}
