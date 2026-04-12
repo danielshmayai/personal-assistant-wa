@@ -7,7 +7,6 @@ $ErrorActionPreference = "SilentlyContinue"
 $projectRoot  = Join-Path $PSScriptRoot ".."
 $envPath      = Join-Path $projectRoot ".env"
 $backendUrl   = "http://localhost:8000"
-$ollamaUrl    = "http://localhost:11434"
 $model        = "gemma3:4b-it-qat"
 $maxWaitSecs  = 120
 
@@ -86,7 +85,7 @@ $modelList = docker exec pa-ollama ollama list 2>&1
 if ($modelList -match [regex]::Escape($model.Split(":")[0])) {
     Ok "Model already present — skipping download"
 } else {
-    Step "Pulling $model (~2.5GB, this may take several minutes)..."
+    Step "Pulling $model (approx 2.5GB, this may take several minutes)..."
     docker exec pa-ollama ollama pull $model
     if ($LASTEXITCODE -ne 0) {
         Fail "Model pull failed. Check your internet connection and try again."

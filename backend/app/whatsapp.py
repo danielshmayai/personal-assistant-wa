@@ -13,7 +13,7 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
     """Send a text message via WAHA API. Returns True on success."""
     headers = {}
     if WAHA_API_KEY:
-        headers["Authorization"] = f"Bearer {WAHA_API_KEY}"
+        headers["X-Api-Key"] = WAHA_API_KEY
     payload = {
         "chatId": chat_id,
         "text": text,
@@ -39,9 +39,9 @@ def _is_self_chat(body: dict) -> bool:
     """Check if this message is from 'Message Yourself' (self-chat)."""
     payload = body.get("payload", {})
     from_id = payload.get("from", "")
-    to = payload.get("to", "")
-    # In self-chat, both from and to are your own ID.
-    return from_id == MY_WHATSAPP_ID and to == MY_WHATSAPP_ID
+    from_me = payload.get("fromMe", False)
+    # Self-chat: message is from your own number (fromMe=True and chat is your own ID)
+    return from_me and (from_id == MY_WHATSAPP_ID or from_id.replace("@c.us", "") in MY_WHATSAPP_ID)
 
 
 def _is_group(body: dict) -> bool:
@@ -74,8 +74,13 @@ async def waha_webhook(request: Request):
     body = await request.json()
     event = body.get("event", "")
 
-    # Only process incoming messages.
-    if event != "message":
+    # Accept both "message" and "message.any" (self-chat fires as message.any)
+    if event not in ("message", "message.any"):
+        return Response(status_code=200)
+
+    # Skip messages sent by the bot itself to avoid reply loops
+    payload = body.get("payload", {})
+    if payload.get("fromMe") and event == "message.any" and not _is_self_chat(body):
         return Response(status_code=200)
 
     text = _extract_text(body)

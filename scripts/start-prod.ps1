@@ -1,4 +1,4 @@
-# start-prod.ps1 — One-command production startup.
+# start-prod.ps1 - One-command production startup.
 # Starts all 5 services, registers the WAHA webhook automatically.
 # Run from project root: .\scripts\start-prod.ps1
 
@@ -20,7 +20,7 @@ function Info($msg)   { Write-Host "    $msg" -ForegroundColor DarkGray }
 function Step($msg)   { Write-Host "  >> $msg" -ForegroundColor White }
 
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "  Personal Assistant — Production Start " -ForegroundColor Cyan
+Write-Host "  Personal Assistant - Production Start" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # ── Validate .env completeness ────────────────────────────────────────────────
@@ -29,23 +29,23 @@ if (-not (Test-Path $envPath)) {
     Fail ".env not found. Run: .\scripts\setup-env.ps1"
     exit 1
 }
-$env = @{}
+$envVars = @{}
 Get-Content $envPath | Where-Object { $_ -match "^\s*\w+=.+" } | ForEach-Object {
     $parts = $_ -split "=", 2
-    $env[$parts[0].Trim()] = $parts[1].Trim()
+    $envVars[$parts[0].Trim()] = $parts[1].Trim()
 }
 
 $required = @{
-    "POSTGRES_PASSWORD"    = "Database password"
+    "POSTGRES_PASSWORD"       = "Database password"
     "WAHA_DASHBOARD_PASSWORD" = "WAHA dashboard password"
-    "MY_WHATSAPP_ID"       = "Your WhatsApp ID (e.g. 972501234567@c.us)"
-    "TUNNEL_TOKEN"         = "Cloudflare tunnel token"
+    "MY_WHATSAPP_ID"          = "Your WhatsApp ID"
+    "TUNNEL_TOKEN"            = "Cloudflare tunnel token"
 }
 $missingCount = 0
 foreach ($key in $required.Keys) {
-    $val = $env[$key]
+    $val = $envVars[$key]
     if (-not $val -or $val -eq "changeme") {
-        Fail "$key is not set — $($required[$key])"
+        Fail "$key is not set - $($required[$key])"
         $missingCount++
     } else {
         Ok "$key is set"
@@ -114,13 +114,20 @@ if ($modelList -match [regex]::Escape($model.Split(":")[0])) {
 
 # ── Wait for WAHA ─────────────────────────────────────────────────────────────
 Header "Waiting for WAHA"
+$wahaUser = $envVars["WAHA_DASHBOARD_USERNAME"]
+if (-not $wahaUser) { $wahaUser = "admin" }
+$wahaPass = $envVars["WAHA_DASHBOARD_PASSWORD"]
+$wahaCredBytes = [System.Text.Encoding]::ASCII.GetBytes("${wahaUser}:${wahaPass}")
+$wahaCredB64   = [Convert]::ToBase64String($wahaCredBytes)
+$wahaHeaders   = @{ Authorization = "Basic $wahaCredB64" }
+
 $elapsed = 0
 $wahaReady = $false
 while ($elapsed -lt 60) {
     Start-Sleep -Seconds 5
     $elapsed += 5
     try {
-        $resp = Invoke-RestMethod -Uri "$wahaUrl/api/server/status" -TimeoutSec 3
+        $resp = Invoke-RestMethod -Uri "$wahaUrl/api/server/status" -Headers $wahaHeaders -TimeoutSec 3
         $wahaReady = $true; break
     } catch {
         Write-Host "    [$elapsed`s] WAHA not yet responding..." -ForegroundColor DarkGray
@@ -136,12 +143,12 @@ if (-not $wahaReady) {
     Header "Registering WAHA webhook"
     Step "Checking for existing session '$wahaSession'..."
     try {
-        $sessions = Invoke-RestMethod -Uri "$wahaUrl/api/sessions" -TimeoutSec 5
+        $sessions = Invoke-RestMethod -Uri "$wahaUrl/api/sessions" -Headers $wahaHeaders -TimeoutSec 5
         $existing = $sessions | Where-Object { $_.name -eq $wahaSession }
         if (-not $existing) {
             Step "Starting new session '$wahaSession'..."
             $body = "{`"name`": `"$wahaSession`"}"
-            Invoke-RestMethod -Uri "$wahaUrl/api/sessions" -Method POST `
+            Invoke-RestMethod -Uri "$wahaUrl/api/sessions" -Method POST -Headers $wahaHeaders `
                 -ContentType "application/json" -Body $body -TimeoutSec 10 > $null
             Ok "Session '$wahaSession' created"
         } else {
@@ -161,7 +168,7 @@ if (-not $wahaReady) {
             }
         } | ConvertTo-Json -Depth 5
         Invoke-RestMethod -Uri "$wahaUrl/api/sessions/$wahaSession" -Method PUT `
-            -ContentType "application/json" -Body $webhookBody -TimeoutSec 10 > $null
+            -Headers $wahaHeaders -ContentType "application/json" -Body $webhookBody -TimeoutSec 10 > $null
         Ok "Webhook registered: http://backend:8000/webhook/waha"
     } catch {
         Warn "Could not register webhook automatically: $_"

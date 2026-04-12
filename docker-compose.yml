@@ -53,9 +53,9 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
       start_period: 30s
 
@@ -98,7 +98,8 @@ services:
       WHATSAPP_DEFAULT_ENGINE: "WEBJS"
       WAHA_PRINT_QR: "true"
       WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
-      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:?Set WAHA_DASHBOARD_PASSWORD in .env}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-}
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -119,7 +120,7 @@ services:
     profiles: ["prod"]
     command: tunnel run
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in .env}
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     networks:
       - pa-net
     depends_on:
