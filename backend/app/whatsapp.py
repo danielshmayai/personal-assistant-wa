@@ -36,19 +36,18 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
 
 
 def _is_self_chat(body: dict) -> bool:
-    """Check if this message is from 'Message Yourself' (self-chat)."""
+    """Self-chat: fromMe=True and the destination is my own number (not a group)."""
     payload = body.get("payload", {})
-    from_id = payload.get("from", "")
     from_me = payload.get("fromMe", False)
-    # Self-chat: message is from your own number (fromMe=True and chat is your own ID)
-    return from_me and (from_id == MY_WHATSAPP_ID or from_id.replace("@c.us", "") in MY_WHATSAPP_ID)
+    to = payload.get("to", "")
+    return from_me and to == MY_WHATSAPP_ID
 
 
 def _is_group(body: dict) -> bool:
-    """Check if the message is from a group chat."""
+    """Group chat: destination ends with @g.us."""
     payload = body.get("payload", {})
-    chat_id = payload.get("from", "")
-    return chat_id.endswith("@g.us")
+    to = payload.get("to", "")
+    return to.endswith("@g.us")
 
 
 def _extract_text(body: dict) -> str:
@@ -58,9 +57,9 @@ def _extract_text(body: dict) -> str:
 
 
 def _extract_chat_id(body: dict) -> str:
-    """Extract the chat ID to reply to."""
+    """Extract the chat ID to reply to (always the 'to' field — group or self)."""
     payload = body.get("payload", {})
-    return payload.get("from", "")
+    return payload.get("to", "")
 
 
 @router.post("/webhook/waha")
@@ -73,14 +72,16 @@ async def waha_webhook(request: Request):
     """
     body = await request.json()
     event = body.get("event", "")
+    payload = body.get("payload", {})
+    logger.info("Webhook event=%s to=%s fromMe=%s body=%.60s",
+                event, payload.get("to"), payload.get("fromMe"), payload.get("body", ""))
 
     # Accept both "message" and "message.any" (self-chat fires as message.any)
     if event not in ("message", "message.any"):
         return Response(status_code=200)
 
-    # Skip messages sent by the bot itself to avoid reply loops
-    payload = body.get("payload", {})
-    if payload.get("fromMe") and event == "message.any" and not _is_self_chat(body):
+    # Skip bot replies to avoid loops (fromMe=True but not self-chat or group trigger)
+    if payload.get("fromMe") and not _is_self_chat(body) and not _is_group(body):
         return Response(status_code=200)
 
     text = _extract_text(body)
