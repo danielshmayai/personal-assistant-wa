@@ -1,7 +1,8 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from googleapiclient.discovery import build
 from app.google.auth import get_credentials
+from app.config import USER_TIMEZONE
 
 logger = logging.getLogger("pa.google.calendar")
 
@@ -51,11 +52,22 @@ def create_event(
     if not creds:
         return "Google Calendar not connected. Use /auth/google/start to connect."
 
+    if not start_datetime:
+        return "Could not create event: start time is missing."
+
+    # Default end to 1 hour after start if not provided
+    if not end_datetime:
+        try:
+            start_dt = datetime.fromisoformat(start_datetime)
+            end_datetime = (start_dt + timedelta(hours=1)).isoformat()
+        except ValueError:
+            end_datetime = start_datetime
+
     service = build("calendar", "v3", credentials=creds)
     body = {
-        "summary": title,
-        "start": {"dateTime": start_datetime, "timeZone": "UTC"},
-        "end": {"dateTime": end_datetime, "timeZone": "UTC"},
+        "summary": title or "Meeting",
+        "start": {"dateTime": start_datetime, "timeZone": USER_TIMEZONE},
+        "end": {"dateTime": end_datetime, "timeZone": USER_TIMEZONE},
     }
     if attendees:
         body["attendees"] = [{"email": e.strip()} for e in attendees.split(",") if e.strip()]

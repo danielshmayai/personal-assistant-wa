@@ -19,3 +19,6 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Timezone used for calendar events — defaults to Israel Standard Time
+USER_TIMEZONE = os.getenv("USER_TIMEZONE", "Asia/Jerusalem")

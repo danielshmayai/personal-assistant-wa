@@ -83,6 +83,20 @@ TOOL_PATTERNS = [
         r"(אימייל|מייל).*(שלח|כתוב|צור)",
         r"כתוב.*מייל",
     ]),
+    ("calendar_create", [
+        # English — must come before calendar_list to avoid false list matches
+        r"(create|add|schedule|set up|book|plan).*(event|meeting|appointment|reminder|call)",
+        r"(event|meeting|appointment|reminder).*(create|add|schedule|set up|book)",
+        r"remind me",
+        r"set a reminder",
+        # Hebrew — action verbs (הוסף/צור/קבע/תזמן) are strong create signals
+        r"(צור|הוסף|קבע|תזמן).*(פגישה|אירוע|תזכורת|שיחה|מפגש)",
+        r"(פגישה|אירוע|תזכורת).*(צור|הוסף|קבע|תזמן)",
+        r"תזכיר לי",
+        r"קבע פגישה",
+        r"הוסף פגישה",
+        r"צור אירוע",
+    ]),
     ("calendar_list", [
         # English
         r"(show|list|get|check|what).*(event|meeting|appointment|schedule|calendar)",
@@ -97,18 +111,6 @@ TOOL_PATTERNS = [
         r"מה יש לי",
         r"מה קורה",
         r"(פגישות|אירועים).*(יש לי|היום|מחר|השבוע)",
-    ]),
-    ("calendar_create", [
-        # English
-        r"(create|add|schedule|set up|book|plan).*(event|meeting|appointment|reminder|call)",
-        r"(event|meeting|appointment|reminder).*(create|add|schedule|set up|book)",
-        r"remind me",
-        r"set a reminder",
-        # Hebrew
-        r"(צור|הוסף|קבע|תזמן).*(פגישה|אירוע|תזכורת|שיחה|מפגש)",
-        r"(פגישה|אירוע|תזכורת).*(צור|הוסף|קבע|תזמן)",
-        r"תזכיר לי",
-        r"קבע פגישה",
     ]),
 ]
 
