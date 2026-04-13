@@ -130,7 +130,8 @@ async def _process_message(text: str, chat_id: str) -> str:
     # Import here to avoid circular imports at module load.
     from app.graph.graph import run_graph
     try:
-        return await run_graph(text, chat_id)
+        reply = await run_graph(text, chat_id)
     except Exception:
         logger.exception("Graph execution failed")
-        return "[Error] Something went wrong processing your message."
+        reply = "[Error] Something went wrong processing your message."
+    return f"[*danidin*] {reply}"
