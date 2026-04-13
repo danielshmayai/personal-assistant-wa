@@ -101,14 +101,24 @@ async def formatter_node(state: PAState) -> dict:
         llm = get_llm()
         prompt = BUG_FORMAT_PROMPT.format(text=intent.raw_text)
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        return {"reply": response.content}
+        return {"reply": response.content or "[No response generated]"}
 
     # All other intents → general LLM response with memory context
     llm = get_llm()
-    system_parts = ["You are a helpful personal assistant."]
+    system_parts = [
+        "You are a helpful personal assistant. "
+        "You can read emails, send emails, list calendar events, and create calendar events via Google tools. "
+        "If tool results are provided below, use them to answer. "
+        "If no tool results are present but the user asked about email or calendar, say the action will be performed."
+    ]
     if state.get("memory_context"):
         system_parts.append(
             f"Here are things you know about the user:\n{state['memory_context']}"
+        )
+    if state.get("tool_results"):
+        system_parts.append(
+            f"Tool results retrieved for this request:\n{state['tool_results']}\n"
+            "Use the above data to answer the user. Do not mention 'tool results' — just answer naturally."
         )
 
     messages = [
@@ -116,4 +126,4 @@ async def formatter_node(state: PAState) -> dict:
         HumanMessage(content=intent.raw_text),
     ]
     response = await llm.ainvoke(messages)
-    return {"reply": response.content}
+    return {"reply": response.content or "[No response generated]"}

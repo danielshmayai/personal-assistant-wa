@@ -1,6 +1,7 @@
 """Reflection node — detects corrections and extracts lessons to save as rules."""
 
 import logging
+import re
 from langchain_core.messages import HumanMessage
 from app.llm import get_llm
 from app.graph.state import PAState
@@ -50,16 +51,18 @@ async def reflection_node(state: PAState) -> dict:
 
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        content = response.content.strip()
+        content = (response.content or "").strip()
 
         if content.startswith("CORRECTION_DETECTED"):
             rule_line = ""
             reason_line = ""
             for line in content.split("\n"):
-                if line.startswith("RULE:"):
-                    rule_line = line[5:].strip()
-                elif line.startswith("REASON:"):
-                    reason_line = line[7:].strip()
+                rule_match = re.search(r'(?i)RULE:\s*(.+)', line)
+                reason_match = re.search(r'(?i)REASON:\s*(.+)', line)
+                if rule_match:
+                    rule_line = rule_match.group(1).strip()
+                elif reason_match:
+                    reason_line = reason_match.group(1).strip()
 
             if rule_line:
                 insert_rule(rule_line, reason_line, source="reflection")

@@ -72,6 +72,10 @@ services:
       WAHA_BASE_URL: "http://waha:3000"
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       MY_WHATSAPP_ID: ${MY_WHATSAPP_ID:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/auth/google/callback}
+      OAUTHLIB_INSECURE_TRANSPORT: ${OAUTHLIB_INSECURE_TRANSPORT:-0}
     ports:
       - "127.0.0.1:8000:8000"
     networks:
@@ -100,6 +104,7 @@ services:
       WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
       WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-}
       WAHA_API_KEY: ${WAHA_API_KEY:-}
+      WHATSAPP_START_SESSION: "default"
     ports:
       - "127.0.0.1:3000:3000"
     volumes:

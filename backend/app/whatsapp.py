@@ -26,7 +26,7 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
                 json=payload,
                 headers=headers,
             )
-            if r.status_code == 200 or r.status_code == 201:
+            if r.status_code in (200, 201):
                 return True
             logger.error("WAHA sendText failed: %s %s", r.status_code, r.text)
             return False
@@ -36,11 +36,14 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
 
 
 def _is_self_chat(body: dict) -> bool:
-    """Self-chat: fromMe=True and the destination is my own number (not a group)."""
+    """Self-chat: fromMe=True and destination is own number or own LID (not a group).
+    Newer WhatsApp clients use @lid format instead of @c.us for the self-device identifier."""
     payload = body.get("payload", {})
     from_me = payload.get("fromMe", False)
+    if not from_me:
+        return False
     to = payload.get("to", "")
-    return from_me and to == MY_WHATSAPP_ID
+    return to == MY_WHATSAPP_ID or to.endswith("@lid")
 
 
 def _is_group(body: dict) -> bool:
@@ -73,14 +76,21 @@ async def waha_webhook(request: Request):
     body = await request.json()
     event = body.get("event", "")
     payload = body.get("payload", {})
-    logger.info("Webhook event=%s to=%s fromMe=%s body=%.60s",
-                event, payload.get("to"), payload.get("fromMe"), payload.get("body", ""))
+    logger.info("Webhook event=%s to=%s fromMe=%s id=%s body=%.60s",
+                event, payload.get("to"), payload.get("fromMe"), payload.get("id"), payload.get("body", ""))
 
     # Accept both "message" and "message.any" (self-chat fires as message.any)
     if event not in ("message", "message.any"):
         return Response(status_code=200)
 
-    # Skip bot replies to avoid loops (fromMe=True but not self-chat or group trigger)
+    # Skip messages sent by the bot via the WAHA API.
+    # WhatsApp Web JS generates IDs with a "3EB0" prefix for API-sent messages.
+    # User messages from the phone app always have a different (longer) ID format.
+    msg_id = str(payload.get("id", ""))
+    if "_3EB0" in msg_id:
+        return Response(status_code=200)
+
+    # Skip other bot replies to avoid loops (fromMe=True but not self-chat or group)
     if payload.get("fromMe") and not _is_self_chat(body) and not _is_group(body):
         return Response(status_code=200)
 

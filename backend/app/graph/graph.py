@@ -2,6 +2,7 @@ import logging
 from langgraph.graph import StateGraph, START, END
 from app.graph.state import PAState
 from app.graph.distiller import distiller_node, formatter_node
+from app.graph.tool_node import tool_node
 from app.memory.store import load_memory_context
 from app.memory.reflection import reflection_node
 
@@ -15,13 +16,15 @@ def build_graph() -> StateGraph:
     # Nodes
     builder.add_node("inject_memory", inject_memory_node)
     builder.add_node("distiller", distiller_node)
+    builder.add_node("tool_node", tool_node)
     builder.add_node("formatter", formatter_node)
     builder.add_node("reflection", reflection_node)
 
     # Edges
     builder.add_edge(START, "inject_memory")
     builder.add_edge("inject_memory", "distiller")
-    builder.add_edge("distiller", "formatter")
+    builder.add_edge("distiller", "tool_node")
+    builder.add_edge("tool_node", "formatter")
     builder.add_edge("formatter", "reflection")
     builder.add_edge("reflection", END)
 

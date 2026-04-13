@@ -24,4 +24,5 @@ class PAState(MessagesState):
     user_input: str = ""
     intent: DistilledIntent | None = None
     memory_context: str = ""
+    tool_results: str = ""
     reply: str = ""

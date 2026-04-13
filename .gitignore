@@ -1,4 +1,54 @@
+# ─── GitHub Actions Self-Hosted Runner ────────────────────────────────────────
+actions-runner/
+
+# ─── Environment / Secrets ────────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
+
+# ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+*.coverage
+.coverage
+htmlcov/
+
+# ─── Google OAuth ─────────────────────────────────────────────────────────────
+token.json
+credentials.json
+
+# ─── Generated / Temporary ────────────────────────────────────────────────────
 qr.png
+*.log
+*.tmp
+*.bak
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+*~

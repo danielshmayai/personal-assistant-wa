@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import psycopg2
 from app.config import DATABASE_URL
@@ -6,6 +7,8 @@ logger = logging.getLogger("pa.memory")
 
 
 def _get_conn():
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL is not set — cannot connect to PostgreSQL")
     return psycopg2.connect(DATABASE_URL)
 
 
@@ -33,7 +36,62 @@ def init_memory_tables():
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS google_tokens (
+                    chat_id TEXT PRIMARY KEY,
+                    access_token TEXT,
+                    refresh_token TEXT,
+                    token_expiry TIMESTAMP,
+                    scopes TEXT
+                )
+            """)
         conn.commit()
+    finally:
+        conn.close()
+
+
+def save_google_token(chat_id: str, creds) -> None:
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO google_tokens (chat_id, access_token, refresh_token, token_expiry, scopes)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (chat_id) DO UPDATE
+                SET access_token = EXCLUDED.access_token,
+                    refresh_token = EXCLUDED.refresh_token,
+                    token_expiry = EXCLUDED.token_expiry,
+                    scopes = EXCLUDED.scopes
+            """, (
+                chat_id,
+                creds.token,
+                creds.refresh_token,
+                creds.expiry,
+                ",".join(creds.scopes) if creds.scopes else "",
+            ))
+        conn.commit()
+        logger.info("Saved Google token for chat_id=%s", chat_id)
+    finally:
+        conn.close()
+
+
+def load_google_token(chat_id: str) -> dict | None:
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT access_token, refresh_token, token_expiry, scopes FROM google_tokens WHERE chat_id = %s",
+                (chat_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "access_token": row[0],
+                "refresh_token": row[1],
+                "token_expiry": row[2],
+                "scopes": row[3],
+            }
     finally:
         conn.close()
 
@@ -95,8 +153,9 @@ def get_all_rules() -> list[dict]:
 
 async def load_memory_context() -> str:
     """Build a text block of all facts + rules for system prompt injection."""
-    facts = get_all_facts()
-    rules = get_all_rules()
+    loop = asyncio.get_running_loop()
+    facts = await loop.run_in_executor(None, get_all_facts)
+    rules = await loop.run_in_executor(None, get_all_rules)
 
     if not facts and not rules:
         return ""
