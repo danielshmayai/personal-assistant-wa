@@ -74,9 +74,11 @@ jobs:
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
           MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
           WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          $sha = "${{ github.sha }}".Substring(0, 7)
-          $msg = "${{ github.event.head_commit.message }}" -split "`n" | Select-Object -First 1
+          $sha = $env:COMMIT_SHA.Substring(0, 7)
+          $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
           $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $env:WAHA_SESSION } | ConvertTo-Json
           try {
             Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
@@ -92,10 +94,13 @@ jobs:
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
           MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
           WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          REPO: ${{ github.repository }}
         run: |
-          $sha = "${{ github.sha }}".Substring(0, 7)
-          $msg = "${{ github.event.head_commit.message }}" -split "`n" | Select-Object -First 1
-          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/${{ github.repository }}/actions"; session = $env:WAHA_SESSION } | ConvertTo-Json
+          $sha = $env:COMMIT_SHA.Substring(0, 7)
+          $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
+          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $env:WAHA_SESSION } | ConvertTo-Json
           try {
             Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
           } catch {
