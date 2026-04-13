@@ -118,6 +118,7 @@ def test_build_graph_returns_compiled_graph():
         patch("app.memory.store.load_memory_context", new_callable=AsyncMock, return_value=""),
         patch("app.memory.store.insert_rule", return_value=None),
         patch("app.llm.ChatOllama", return_value=_make_llm_mock()),
+        patch("app.graph.checkpointer.get_checkpointer", return_value=None),
     ):
         from app.graph.graph import build_graph
         graph = build_graph()
