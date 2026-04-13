@@ -12,14 +12,14 @@ jobs:
 
     steps:
       - name: Pull latest code
-        shell: pwsh
+        shell: powershell
         run: |
           cd D:\Claude\pa
           git fetch origin main
           git reset --hard origin/main
 
       - name: Install dependencies
-        shell: pwsh
+        shell: powershell
         run: |
           cd D:\Claude\pa\backend
           docker run --rm -v "D:\Claude\pa\backend:/app" -w //app python:3.11-slim `
@@ -32,20 +32,20 @@ jobs:
 
     steps:
       - name: Pull latest code
-        shell: pwsh
+        shell: powershell
         run: |
           cd D:\Claude\pa
           git fetch origin main
           git reset --hard origin/main
 
       - name: Rebuild and restart backend
-        shell: pwsh
+        shell: powershell
         run: |
           cd D:\Claude\pa
           docker compose up --build -d backend
 
       - name: Verify backend is healthy
-        shell: pwsh
+        shell: powershell
         run: |
           cd D:\Claude\pa
           Write-Host "Waiting for backend health check..."
@@ -68,7 +68,7 @@ jobs:
 
       - name: Notify WhatsApp (success)
         if: success()
-        shell: pwsh
+        shell: powershell
         env:
           WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
@@ -86,7 +86,7 @@ jobs:
 
       - name: Notify WhatsApp (failure)
         if: failure()
-        shell: pwsh
+        shell: powershell
         env:
           WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
