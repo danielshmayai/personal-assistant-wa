@@ -1,17 +1,39 @@
+import logging
 from langchain_ollama import ChatOllama
-from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL, LLM_TIMEOUT_SECONDS
+from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL, LLM_TIMEOUT_SECONDS, GEMINI_API_KEY
+
+logger = logging.getLogger("pa.llm")
 
 
 def get_llm() -> ChatOllama:
-    """Return a ChatOllama instance configured for the local constrained GPU."""
     return ChatOllama(
         base_url=OLLAMA_BASE_URL,
         model=OLLAMA_MODEL,
         temperature=0.3,
-        # Keep-alive matches docker OLLAMA_KEEP_ALIVE so model unloads promptly.
         keep_alive="2m",
-        # Limit context to avoid OOM on 4GB VRAM.
         num_ctx=2048,
-        # Network timeout — first token can be slow on quantized model.
         timeout=LLM_TIMEOUT_SECONDS,
     )
+
+
+def get_gemini_llm():
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        google_api_key=GEMINI_API_KEY,
+        temperature=0.3,
+    )
+
+
+def get_smart_llm():
+    if GEMINI_API_KEY:
+        return get_gemini_llm()
+    return get_llm()
+
+
+def llm_with_fallback():
+    ollama = get_llm()
+    if not GEMINI_API_KEY:
+        return ollama
+    gemini = get_gemini_llm()
+    return ollama.with_fallbacks([gemini])

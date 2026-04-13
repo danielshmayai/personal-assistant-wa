@@ -5,6 +5,7 @@ from app.graph.distiller import distiller_node, formatter_node
 from app.graph.tool_node import tool_node
 from app.memory.store import load_memory_context
 from app.memory.reflection import reflection_node
+from app.graph.checkpointer import get_checkpointer
 
 logger = logging.getLogger("pa.graph")
 
@@ -28,7 +29,7 @@ def build_graph() -> StateGraph:
     builder.add_edge("formatter", "reflection")
     builder.add_edge("reflection", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=get_checkpointer())
 
 
 async def inject_memory_node(state: PAState) -> dict:
@@ -51,9 +52,9 @@ def _get_graph():
 async def run_graph(text: str, chat_id: str) -> str:
     """Execute the full graph pipeline. Returns the reply string."""
     graph = _get_graph()
-    result = await graph.ainvoke({
-        "user_input": text,
-        "chat_id": chat_id,
-        "messages": [],
-    })
+    config = {"configurable": {"thread_id": chat_id}}
+    result = await graph.ainvoke(
+        {"user_input": text, "chat_id": chat_id},
+        config=config,
+    )
     return result.get("reply", "[No response generated]")

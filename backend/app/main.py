@@ -8,6 +8,7 @@ from app.config import OLLAMA_BASE_URL, WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSIO
 from app.whatsapp import router as waha_router
 from app.memory.store import init_memory_tables, _get_conn
 from app.routers.google_auth import router as google_auth_router
+from app.graph.checkpointer import setup_checkpointer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("pa.main")
@@ -53,6 +54,11 @@ async def lifespan(app: FastAPI):
         init_memory_tables()
     except Exception:
         logger.exception("Failed to initialise memory tables — aborting startup")
+        raise
+    try:
+        await setup_checkpointer()
+    except Exception:
+        logger.exception("Failed to initialise postgres checkpointer — aborting startup")
         raise
     await _register_waha_webhook()
     yield

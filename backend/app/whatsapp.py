@@ -6,7 +6,7 @@ from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID
 logger = logging.getLogger("pa.whatsapp")
 router = APIRouter()
 
-BOT_TRIGGERS = ("@bot", "!bot")
+BOT_TRIGGERS = ("@danidin", "!danidin")
 
 
 async def send_whatsapp_message(chat_id: str, text: str) -> bool:
@@ -70,7 +70,7 @@ async def waha_webhook(request: Request):
     """
     WAHA webhook receiver with strict routing:
     - Self-chat: route raw text to LangGraph pipeline.
-    - Group chat: IGNORE unless message starts with @bot or !bot.
+    - Group chat: IGNORE unless message starts with @danidin or !danidin.
     - DMs from others: IGNORE completely.
     """
     body = await request.json()
@@ -83,19 +83,17 @@ async def waha_webhook(request: Request):
     if event not in ("message", "message.any"):
         return Response(status_code=200)
 
-    # Skip messages sent by the bot via the WAHA API.
-    # WhatsApp Web JS generates IDs with a "3EB0" prefix for API-sent messages.
-    # User messages from the phone app always have a different (longer) ID format.
-    msg_id = str(payload.get("id", ""))
-    if "_3EB0" in msg_id:
-        return Response(status_code=200)
-
     # Skip other bot replies to avoid loops (fromMe=True but not self-chat or group)
     if payload.get("fromMe") and not _is_self_chat(body) and not _is_group(body):
         return Response(status_code=200)
 
     text = _extract_text(body)
     if not text:
+        return Response(status_code=200)
+
+    # Skip bot's own replies — always prefixed with [ *danidin* ] (LTR or RTL).
+    # This replaces the fragile _3EB0 ID filter which also blocked WhatsApp Web messages.
+    if text.startswith("[ *danidin* ]") or text.startswith("\u200f[ *danidin* ]"):
         return Response(status_code=200)
 
     chat_id = _extract_chat_id(body)
@@ -107,7 +105,7 @@ async def waha_webhook(request: Request):
         await send_whatsapp_message(chat_id, reply)
         return Response(status_code=200)
 
-    # --- GROUP CHAT: only respond to @bot / !bot ---
+    # --- GROUP CHAT: only respond to @danidin / !danidin ---
     if _is_group(body):
         text_lower = text.lower()
         for trigger in BOT_TRIGGERS:
@@ -125,6 +123,11 @@ async def waha_webhook(request: Request):
     return Response(status_code=200)
 
 
+def _is_rtl(text: str) -> bool:
+    """Return True if the text contains Hebrew or Arabic characters."""
+    return any("\u0590" <= c <= "\u05FF" or "\u0600" <= c <= "\u06FF" for c in text)
+
+
 async def _process_message(text: str, chat_id: str) -> str:
     """Run text through the LangGraph pipeline. Returns the reply string."""
     # Import here to avoid circular imports at module load.
@@ -134,4 +137,6 @@ async def _process_message(text: str, chat_id: str) -> str:
     except Exception:
         logger.exception("Graph execution failed")
         reply = "[Error] Something went wrong processing your message."
-    return f"[*danidin*] {reply}"
+    # For RTL replies (Hebrew/Arabic), prepend RLM so the prefix anchors to the right.
+    prefix = "\u200f[ *danidin* ]" if _is_rtl(reply) else "[ *danidin* ]"
+    return f"{prefix} {reply}"

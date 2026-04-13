@@ -1,6 +1,9 @@
 import logging
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.llm import get_llm
+import re
+from datetime import datetime
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from app.llm import get_llm, get_gemini_llm
+from app.config import GEMINI_API_KEY
 from app.graph.state import PAState, DistilledIntent
 
 logger = logging.getLogger("pa.distiller")
@@ -90,40 +93,86 @@ async def distiller_node(state: PAState) -> dict:
     return {"intent": intent}
 
 
+def _to_whatsapp(text: str) -> str:
+    """Convert common markdown to WhatsApp-compatible format."""
+    # **bold** → *bold*
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    # __bold__ → *bold*
+    text = re.sub(r'__(.+?)__', r'*\1*', text)
+    # ## Heading → *Heading*
+    text = re.sub(r'^#{1,6}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
+    # Collapse 3+ consecutive blank lines to 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 async def formatter_node(state: PAState) -> dict:
-    """Format the reply based on the distilled intent."""
+    """Format the reply using Gemini. Ollama is used only for classification (distiller_node)."""
     intent = state["intent"]
+    chat_id = state.get("chat_id", "")
     if not intent:
         return {"reply": "I couldn't understand that. Could you rephrase?"}
 
-    # Bug/defect → strict Octane template
+    # Bug/defect → strict Octane template via Gemini
     if intent.category == "Development_Task" and intent.is_bug:
-        llm = get_llm()
+        llm = get_gemini_llm() if GEMINI_API_KEY else get_llm()
         prompt = BUG_FORMAT_PROMPT.format(text=intent.raw_text)
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         return {"reply": response.content or "[No response generated]"}
 
-    # All other intents → general LLM response with memory context
-    llm = get_llm()
+    now = datetime.now()
+    current_dt = now.strftime("%A, %d %B %Y, %H:%M")
+
     system_parts = [
-        "You are a helpful personal assistant. "
+        f"You are danidin, a helpful personal assistant.\n"
+        f"Current date and time: {current_dt}.\n\n"
         "You can read emails, send emails, list calendar events, and create calendar events via Google tools. "
-        "If tool results are provided below, use them to answer. "
-        "If no tool results are present but the user asked about email or calendar, say the action will be performed."
+        "If tool results are provided below, use them to answer naturally. "
+        "If no tool results are present but the user asked about email or calendar, say the action will be performed.\n\n"
+        "FORMATTING RULES — always follow these:\n"
+        "- Use WhatsApp markdown only: *bold* (single asterisk), _italic_ (single underscore).\n"
+        "- Never use ** double asterisks or # headers.\n"
+        "- Separate items with real line breaks, not semicolons.\n"
+        "- For lists use • or - at the start of each line.\n"
+        "- Keep responses concise and easy to read on a phone screen."
     ]
+
     if state.get("memory_context"):
-        system_parts.append(
-            f"Here are things you know about the user:\n{state['memory_context']}"
-        )
+        system_parts.append(f"Here are things you know about the user:\n{state['memory_context']}")
+
+    all_messages = state.get("messages") or []
+    history_turns = []
+    for msg in all_messages[-12:]:
+        if isinstance(msg, HumanMessage):
+            history_turns.append(f"User: {msg.content}")
+        elif isinstance(msg, AIMessage):
+            history_turns.append(f"Assistant: {msg.content}")
+    if history_turns:
+        system_parts.append("Recent conversation:\n" + "\n".join(history_turns))
+
     if state.get("tool_results"):
         system_parts.append(
-            f"Tool results retrieved for this request:\n{state['tool_results']}\n"
-            "Use the above data to answer the user. Do not mention 'tool results' — just answer naturally."
+            f"Tool results:\n{state['tool_results']}\n"
+            "Use the above data to answer. Do not mention 'tool results' — just answer naturally."
         )
 
-    messages = [
+    invoke_messages = [
         SystemMessage(content="\n\n".join(system_parts)),
         HumanMessage(content=intent.raw_text),
     ]
-    response = await llm.ainvoke(messages)
-    return {"reply": response.content or "[No response generated]"}
+
+    llm = get_gemini_llm() if GEMINI_API_KEY else get_llm()
+    response = await llm.ainvoke(invoke_messages)
+    reply = _to_whatsapp(response.content or "") or "[No response generated]"
+
+    if GEMINI_API_KEY:
+        reply = reply + " ⚡"
+        logger.info("Formatter used Gemini for chat_id=%s", chat_id)
+
+    new_entries = [HumanMessage(content=intent.raw_text), AIMessage(content=reply)]
+    total = len(all_messages) + len(new_entries)
+    if total > 20:
+        excess = total - 20
+        new_entries = new_entries[excess:] if excess < len(new_entries) else []
+
+    return {"reply": reply, "messages": new_entries}

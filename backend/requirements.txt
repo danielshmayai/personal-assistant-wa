@@ -8,3 +8,7 @@ httpx==0.28.1
 pydantic>=2.10.5
 google-auth-oauthlib>=1.2.0
 google-api-python-client>=2.120.0
+langchain-google-genai>=2.0.0
+langgraph-checkpoint-postgres>=2.0.0
+psycopg[binary]>=3.1.0
+psycopg-pool>=3.1.0
