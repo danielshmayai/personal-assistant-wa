@@ -12,23 +12,18 @@ jobs:
 
     steps:
       - name: Pull latest code
-        shell: bash
+        shell: pwsh
         run: |
-          cd /d/Claude/pa
+          cd D:\Claude\pa
           git fetch origin main
           git reset --hard origin/main
 
       - name: Install dependencies
-        shell: bash
+        shell: pwsh
         run: |
-          cd /d/Claude/pa/backend
-          pip install -r requirements.txt -r requirements-dev.txt -q
-
-      - name: Run sanity tests
-        shell: bash
-        run: |
-          cd /d/Claude/pa/backend
-          python -m pytest tests/test_sanity.py -v
+          cd D:\Claude\pa\backend
+          docker run --rm -v "D:\Claude\pa\backend:/app" -w //app python:3.11-slim `
+            bash -c "pip install -r requirements.txt -r requirements-dev.txt -q && python -m pytest tests/test_sanity.py -v"
 
   deploy:
     name: Pull & Rebuild Backend
@@ -37,69 +32,72 @@ jobs:
 
     steps:
       - name: Pull latest code
-        shell: bash
+        shell: pwsh
         run: |
-          cd /d/Claude/pa
+          cd D:\Claude\pa
           git fetch origin main
           git reset --hard origin/main
 
       - name: Rebuild and restart backend
-        shell: bash
+        shell: pwsh
         run: |
-          cd /d/Claude/pa
+          cd D:\Claude\pa
           docker compose up --build -d backend
 
       - name: Verify backend is healthy
-        shell: bash
+        shell: pwsh
         run: |
-          cd /d/Claude/pa
-          echo "Waiting for backend health check..."
-          for i in $(seq 1 12); do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' pa-backend 2>/dev/null || echo "missing")
-            echo "  attempt $i: $STATUS"
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Backend is healthy."
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Backend did not become healthy within 60s."
-          docker logs pa-backend --tail 40
-          exit 1
+          cd D:\Claude\pa
+          Write-Host "Waiting for backend health check..."
+          $healthy = $false
+          for ($i = 1; $i -le 12; $i++) {
+            $status = docker inspect --format='{{.State.Health.Status}}' pa-backend 2>$null
+            Write-Host "  attempt $i`: $status"
+            if ($status -eq "healthy") {
+              Write-Host "Backend is healthy."
+              $healthy = $true
+              break
+            }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $healthy) {
+            Write-Host "Backend did not become healthy within 60s."
+            docker logs pa-backend --tail 40
+            exit 1
+          }
 
       - name: Notify WhatsApp (success)
         if: success()
-        shell: bash
+        shell: pwsh
         env:
           WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
           MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
           WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
         run: |
-          COMMIT_SHA="${{ github.sha }}"
-          COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
-          TEXT="[PA Deploy] SUCCESS%0A${COMMIT_SHA:0:7}: ${COMMIT_MSG}"
-
-          curl -sf -X POST "${WAHA_BASE_URL}/api/sendText" \
-            -H "Content-Type: application/json" \
-            -H "X-Api-Key: ${WAHA_API_KEY}" \
-            -d "{\"chatId\":\"${MY_WHATSAPP_ID}\",\"text\":\"[PA Deploy] SUCCESS\n${COMMIT_SHA:0:7}: ${COMMIT_MSG}\",\"session\":\"${WAHA_SESSION}\"}" \
-            || echo "WhatsApp notification skipped (WAHA not reachable or secrets not set)"
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $msg = "${{ github.event.head_commit.message }}" -split "`n" | Select-Object -First 1
+          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $env:WAHA_SESSION } | ConvertTo-Json
+          try {
+            Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
+          } catch {
+            Write-Host "WhatsApp notification skipped: $_"
+          }
 
       - name: Notify WhatsApp (failure)
         if: failure()
-        shell: bash
+        shell: pwsh
         env:
           WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
           MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
           WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
         run: |
-          COMMIT_SHA="${{ github.sha }}"
-          COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
-
-          curl -sf -X POST "${WAHA_BASE_URL}/api/sendText" \
-            -H "Content-Type: application/json" \
-            -H "X-Api-Key: ${WAHA_API_KEY}" \
-            -d "{\"chatId\":\"${MY_WHATSAPP_ID}\",\"text\":\"[PA Deploy] FAILED\n${COMMIT_SHA:0:7}: ${COMMIT_MSG}\nCheck Actions: https://github.com/${{ github.repository }}/actions\",\"session\":\"${WAHA_SESSION}\"}" \
-            || echo "WhatsApp notification skipped (WAHA not reachable or secrets not set)"
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $msg = "${{ github.event.head_commit.message }}" -split "`n" | Select-Object -First 1
+          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/${{ github.repository }}/actions"; session = $env:WAHA_SESSION } | ConvertTo-Json
+          try {
+            Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
+          } catch {
+            Write-Host "WhatsApp notification skipped: $_"
+          }
