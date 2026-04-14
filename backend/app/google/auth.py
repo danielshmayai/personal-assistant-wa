@@ -22,6 +22,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events",
+    # Drive: only files created or opened by this app (least-privilege)
+    "https://www.googleapis.com/auth/drive.file",
 ]
 
 CLIENT_CONFIG = {
