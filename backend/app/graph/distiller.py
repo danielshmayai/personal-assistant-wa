@@ -1,16 +1,18 @@
 import logging
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage, AIMessage
 from app.llm import get_gemini_llm
 from app.graph.state import PAState
+from app.config import USER_TIMEZONE
 
 logger = logging.getLogger("pa.agent")
 
 # Concise system prompt — short = fewer tokens on every request
 _SYSTEM_TEMPLATE = """\
 You are danidin, a personal assistant on WhatsApp.
-Current date and time: {datetime}.
+Current date and time: {datetime} — this is accurate, trust it. Never ask the user for the current time.
 
 You have tools for Gmail, Google Calendar, Tuya smart-home devices, and long-term memory.
 Use them whenever the user asks about emails, meetings, calendar, or home devices (lights, switches, etc.).
@@ -33,7 +35,8 @@ WhatsApp formatting rules (always follow):
 
 
 def _build_system_prompt(memory_context: str) -> str:
-    now = datetime.now().strftime("%A, %d %B %Y, %H:%M")
+    tz = ZoneInfo(USER_TIMEZONE)
+    now = datetime.now(tz=tz).strftime(f"%A, %d %B %Y, %H:%M ({USER_TIMEZONE})")
     prompt = _SYSTEM_TEMPLATE.format(datetime=now)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
