@@ -26,7 +26,7 @@ async def tool_executor_node(state: PAState) -> dict:
             content = f"Unknown tool: {name}"
         else:
             try:
-                content = str(tool.invoke(args))
+                content = str(await tool.ainvoke(args))
                 logger.info("Tool %s executed for chat_id=%s", name, chat_id)
             except Exception as e:
                 logger.exception("Tool %s failed", name)
