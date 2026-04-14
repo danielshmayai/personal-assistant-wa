@@ -114,13 +114,19 @@ def _upload(svc, data: bytes, filename: str, mime_type: str, folder_id: str) -> 
     return f.get("webViewLink", "")
 
 
-def upload_photo(creds: Credentials, data: bytes, filename: str, mime_type: str) -> str:
-    """Upload a photo to PA/Photos/YYYY-MM/. Returns webViewLink."""
+def upload_photo(
+    creds: Credentials,
+    data: bytes,
+    filename: str,
+    mime_type: str,
+    subfolder: str = "",
+) -> str:
+    """Upload a photo to PA/Photos/{subfolder}/ or PA/Photos/YYYY-MM/ when subfolder is empty."""
     svc = _svc(creds)
-    month = datetime.now(tz=ZoneInfo(USER_TIMEZONE)).strftime("%Y-%m")
-    folder_id = _resolve_path(svc, [_PA_ROOT, "Photos", month])
+    bucket = subfolder.strip() if subfolder.strip() else datetime.now(tz=ZoneInfo(USER_TIMEZONE)).strftime("%Y-%m")
+    folder_id = _resolve_path(svc, [_PA_ROOT, "Photos", bucket])
     link = _upload(svc, data, filename, mime_type, folder_id)
-    logger.info("Drive: uploaded photo '%s' → PA/Photos/%s", filename, month)
+    logger.info("Drive: uploaded photo '%s' → PA/Photos/%s", filename, bucket)
     return link
 
 
