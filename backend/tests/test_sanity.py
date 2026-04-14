@@ -9,7 +9,6 @@ Rules:
 
 import importlib
 import sys
-import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -35,10 +34,11 @@ def _isolate_modules():
 
 
 def _make_llm_mock():
-    """Return a MagicMock that looks enough like ChatOllama for tests."""
+    """Return a MagicMock that looks enough like a LangChain LLM for tests."""
     llm = MagicMock()
+    llm.bind_tools.return_value = llm
     llm.with_structured_output.return_value = llm
-    llm.ainvoke = AsyncMock(return_value=MagicMock(content="mocked"))
+    llm.ainvoke = AsyncMock(return_value=MagicMock(content="mocked", tool_calls=[]))
     return llm
 
 
@@ -86,25 +86,7 @@ def test_pa_state_instantiates_with_required_fields():
 
     assert state["chat_id"] == "chat-001"
     assert state["user_input"] == "hello"
-    # intent and reply are optional fields; they are absent from the dict until set.
-    assert state.get("intent") is None
     assert state.get("reply", "") == ""
-
-
-def test_distilled_intent_instantiates():
-    """DistilledIntent must accept all required fields and validate category."""
-    from app.graph.state import DistilledIntent
-
-    intent = DistilledIntent(
-        category="Development_Task",
-        is_bug=True,
-        summary="Fix login crash",
-        raw_text="the login button crashes on iOS",
-    )
-
-    assert intent.category == "Development_Task"
-    assert intent.is_bug is True
-    assert intent.raw_text == "the login button crashes on iOS"
 
 
 # ---------------------------------------------------------------------------
@@ -114,16 +96,15 @@ def test_distilled_intent_instantiates():
 def test_build_graph_returns_compiled_graph():
     """build_graph() must return a compiled LangGraph without DB or LLM calls."""
     with (
-        patch("app.llm.get_llm", return_value=_make_llm_mock()),
+        patch("app.llm.ChatOllama", return_value=_make_llm_mock()),
+        patch("app.llm.get_gemini_llm", return_value=_make_llm_mock()),
         patch("app.memory.store.load_memory_context", new_callable=AsyncMock, return_value=""),
         patch("app.memory.store.insert_rule", return_value=None),
-        patch("app.llm.ChatOllama", return_value=_make_llm_mock()),
         patch("app.graph.checkpointer.get_checkpointer", return_value=None),
     ):
         from app.graph.graph import build_graph
         graph = build_graph()
 
-    # A compiled LangGraph exposes ainvoke / invoke
     assert hasattr(graph, "ainvoke"), "Compiled graph must expose ainvoke"
     assert hasattr(graph, "invoke"), "Compiled graph must expose invoke"
 
@@ -143,7 +124,6 @@ EXPECTED_TOOL_NAMES = {
 
 def test_get_google_tools_returns_five_tools():
     """get_google_tools must return exactly 5 tool objects."""
-    # Patch the underlying Google API helpers so no credentials are needed.
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
@@ -178,29 +158,31 @@ def test_get_google_tools_has_correct_names():
 
 
 # ---------------------------------------------------------------------------
-# 5. _detect_tool keyword routing
+# 5. should_continue routing
 # ---------------------------------------------------------------------------
 
-KEYWORD_ROUTING_CASES = [
-    # (input_text, expected_tool_name)
-    ("connect gmail", "google_connect"),
-    ("read my emails", "gmail_read"),
-    ("send email to bob", "gmail_send"),
-    ("show my calendar", "calendar_list"),
-    ("create a meeting", "calendar_create"),
-    ("hello how are you", None),
-]
+def test_should_continue_routes_to_tools_when_tool_calls_present():
+    """should_continue must return 'tools' when last message has tool_calls."""
+    from app.graph.tool_node import should_continue
+    from unittest.mock import MagicMock
+
+    msg = MagicMock()
+    msg.tool_calls = [{"name": "gmail_read", "args": {}, "id": "abc"}]
+    state = {"messages": [msg]}
+
+    assert should_continue(state) == "tools"
 
 
-@pytest.mark.parametrize("text,expected_tool", KEYWORD_ROUTING_CASES)
-def test_detect_tool_keyword_routing(text, expected_tool):
-    """_detect_tool must map inputs to the correct tool or None."""
-    from app.graph.tool_node import _detect_tool
+def test_should_continue_routes_to_reflection_when_no_tool_calls():
+    """should_continue must return 'reflection' when last message has no tool_calls."""
+    from app.graph.tool_node import should_continue
+    from unittest.mock import MagicMock
 
-    result = _detect_tool(text)
-    assert result == expected_tool, (
-        f"Input '{text}': expected tool={expected_tool!r}, got={result!r}"
-    )
+    msg = MagicMock()
+    msg.tool_calls = []
+    state = {"messages": [msg]}
+
+    assert should_continue(state) == "reflection"
 
 
 # ---------------------------------------------------------------------------

@@ -31,8 +31,14 @@ Assistant reply: {reply}"""
 
 async def reflection_node(state: PAState) -> dict:
     """Check if the user's message contains a correction. If so, save the lesson."""
+    from langchain_core.messages import AIMessage as _AIMessage
     user_input = state.get("user_input", "")
-    reply = state.get("reply", "")
+    # Reply is the last AIMessage without tool calls
+    reply = ""
+    for msg in reversed(state.get("messages", [])):
+        if isinstance(msg, _AIMessage) and not getattr(msg, "tool_calls", None):
+            reply = msg.content or ""
+            break
 
     if not user_input or not reply:
         return {}
