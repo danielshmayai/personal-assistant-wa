@@ -4,6 +4,18 @@ on:
   push:
     branches:
       - main
+  # Allow manual deploys from the GitHub Actions UI
+  workflow_dispatch:
+
+# Prevent concurrent deploys — if a new push arrives while deploying,
+# cancel the in-progress run rather than queue behind it.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+# Minimal GitHub token permissions — this workflow only reads repo content.
+permissions:
+  contents: read
 
 jobs:
   sanity:
@@ -18,7 +30,7 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-      - name: Install dependencies
+      - name: Run tests in isolated container
         shell: powershell
         run: |
           cd D:\Claude\pa\backend
@@ -29,8 +41,23 @@ jobs:
     name: Pull & Rebuild Backend
     runs-on: [self-hosted, pa]
     needs: sanity
+    # Require the DEPLOY_GATE secret to match a known value.
+    # Set DEPLOY_GATE in GitHub repo → Settings → Secrets to any non-empty string.
+    # This prevents a compromised GitHub account token from auto-deploying without
+    # also having access to the Secrets store.
+    env:
+      DEPLOY_GATE: ${{ secrets.DEPLOY_GATE }}
 
     steps:
+      - name: Verify deploy gate
+        shell: powershell
+        run: |
+          if (-not $env:DEPLOY_GATE) {
+            Write-Host "DEPLOY_GATE secret is not set — deployment blocked."
+            exit 1
+          }
+          Write-Host "Deploy gate verified."
+
       - name: Pull latest code
         shell: powershell
         run: |

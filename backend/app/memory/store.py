@@ -51,6 +51,7 @@ def init_memory_tables():
 
 
 def save_google_token(chat_id: str, creds) -> None:
+    from app.crypto import encrypt
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
@@ -64,8 +65,8 @@ def save_google_token(chat_id: str, creds) -> None:
                     scopes = EXCLUDED.scopes
             """, (
                 chat_id,
-                creds.token,
-                creds.refresh_token,
+                encrypt(creds.token or ""),
+                encrypt(creds.refresh_token or ""),
                 creds.expiry,
                 ",".join(creds.scopes) if creds.scopes else "",
             ))
@@ -76,6 +77,7 @@ def save_google_token(chat_id: str, creds) -> None:
 
 
 def load_google_token(chat_id: str) -> dict | None:
+    from app.crypto import decrypt
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
@@ -87,8 +89,8 @@ def load_google_token(chat_id: str) -> dict | None:
             if not row:
                 return None
             return {
-                "access_token": row[0],
-                "refresh_token": row[1],
+                "access_token": decrypt(row[0]) if row[0] else "",
+                "refresh_token": decrypt(row[1]) if row[1] else "",
                 "token_expiry": row[2],
                 "scopes": row[3],
             }
