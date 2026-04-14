@@ -53,7 +53,7 @@ jobs:
         shell: powershell
         run: |
           if (-not $env:DEPLOY_GATE) {
-            Write-Host "DEPLOY_GATE secret is not set — deployment blocked."
+            Write-Host "DEPLOY_GATE secret is not set - deployment blocked."
             exit 1
           }
           Write-Host "Deploy gate verified."
