@@ -117,17 +117,20 @@ def test_build_graph_returns_compiled_graph():
 # 4. get_google_tools returns 5 tools with correct names
 # ---------------------------------------------------------------------------
 
-EXPECTED_TOOL_NAMES = {
+EXPECTED_GOOGLE_TOOL_NAMES = {
     "google_connect",
     "gmail_read",
     "gmail_send",
     "calendar_list",
     "calendar_create",
+    "drive_save_photo",
+    "drive_save_document",
+    "drive_list_files",
 }
 
 
-def test_get_google_tools_returns_five_tools():
-    """get_google_tools must return exactly 5 tool objects."""
+def test_get_google_tools_returns_eight_tools():
+    """get_google_tools must return exactly 8 tool objects (5 existing + 3 Drive)."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
@@ -139,11 +142,11 @@ def test_get_google_tools_returns_five_tools():
         from app.google.tools import get_google_tools
         tools = get_google_tools("test-chat-id")
 
-    assert len(tools) == 5, f"Expected 5 tools, got {len(tools)}: {[t.name for t in tools]}"
+    assert len(tools) == 8, f"Expected 8 tools, got {len(tools)}: {[t.name for t in tools]}"
 
 
 def test_get_google_tools_has_correct_names():
-    """Each of the 5 tools must carry the exact expected name."""
+    """Each of the 8 tools must carry the exact expected name."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
@@ -156,8 +159,8 @@ def test_get_google_tools_has_correct_names():
         tools = get_google_tools("test-chat-id")
 
     actual_names = {t.name for t in tools}
-    assert actual_names == EXPECTED_TOOL_NAMES, (
-        f"Tool name mismatch.\n  Expected: {EXPECTED_TOOL_NAMES}\n  Got:      {actual_names}"
+    assert actual_names == EXPECTED_GOOGLE_TOOL_NAMES, (
+        f"Tool name mismatch.\n  Expected: {EXPECTED_GOOGLE_TOOL_NAMES}\n  Got:      {actual_names}"
     )
 
 
@@ -551,3 +554,118 @@ def test_wikipedia_search_returns_summary(monkeypatch):
 
     assert "Tel Aviv" in result
     assert "en.wikipedia.org" in result
+
+
+# ---------------------------------------------------------------------------
+# 10. Google Drive tools
+# ---------------------------------------------------------------------------
+
+EXPECTED_DRIVE_TOOL_NAMES = {"drive_save_photo", "drive_save_document", "drive_list_files"}
+
+
+def test_drive_tools_exist_with_correct_names():
+    """get_drive_tools must return exactly the 3 Drive tool names."""
+    with patch("app.google.auth.get_credentials", return_value=None):
+        from app.google.drive_tools import get_drive_tools
+        tools = get_drive_tools("test-chat-id")
+    actual = {t.name for t in tools}
+    assert actual == EXPECTED_DRIVE_TOOL_NAMES, (
+        f"Drive tool mismatch.\n  Expected: {EXPECTED_DRIVE_TOOL_NAMES}\n  Got: {actual}"
+    )
+
+
+def test_drive_save_photo_requires_google_connection():
+    """drive_save_photo must prompt to connect Google when credentials are missing."""
+    import asyncio
+    with patch("app.google.auth.get_credentials", return_value=None):
+        from app.google.drive_tools import get_drive_tools
+        tools = get_drive_tools("test-chat-id")
+    save_photo = next(t for t in tools if t.name == "drive_save_photo")
+    result = asyncio.get_event_loop().run_until_complete(
+        save_photo.ainvoke({"message_id": "msg123", "filename": "photo.jpg"})
+    )
+    assert "google_connect" in result.lower() or "not connected" in result.lower()
+
+
+def test_drive_save_document_auto_detects_pdf_category():
+    """drive_save_document must auto-categorize PDFs when category='General'."""
+    import asyncio
+
+    fake_creds = MagicMock()
+    fake_creds.valid = True
+
+    with (
+        patch("app.google.auth.get_credentials", return_value=fake_creds),
+        patch("app.google.drive_tools._download_from_waha", new_callable=AsyncMock,
+              return_value=(b"%PDF-1.4 content", "application/pdf")),
+        patch("app.google.drive.upload_document", return_value="https://drive.google.com/file/test") as mock_upload,
+    ):
+        from app.google.drive_tools import get_drive_tools
+        tools = get_drive_tools("test-chat-id")
+        save_doc = next(t for t in tools if t.name == "drive_save_document")
+        result = asyncio.get_event_loop().run_until_complete(
+            save_doc.ainvoke({"message_id": "msg456", "filename": "invoice.pdf", "category": "General"})
+        )
+
+    # Should auto-detect PDFs category
+    assert mock_upload.called
+    _, kwargs = mock_upload.call_args if mock_upload.call_args else (None, {})
+    call_args = mock_upload.call_args[0] if mock_upload.call_args else []
+    # category should be "PDFs" not "General"
+    assert "PDFs" in result or "PDFs" in str(call_args)
+
+
+def test_drive_list_files_requires_google_connection():
+    """drive_list_files must prompt to connect Google when credentials are missing."""
+    with patch("app.google.auth.get_credentials", return_value=None):
+        from app.google.drive_tools import get_drive_tools
+        tools = get_drive_tools("test-chat-id")
+    list_files = next(t for t in tools if t.name == "drive_list_files")
+    result = list_files.invoke({"folder": "Photos"})
+    assert "not connected" in result.lower() or "google_connect" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# 11. Media context extraction in whatsapp.py
+# ---------------------------------------------------------------------------
+
+def test_extract_media_context_returns_none_when_no_media():
+    """_extract_media_context must return None for plain text messages."""
+    from app.whatsapp import _extract_media_context
+    body = {"payload": {"hasMedia": False, "body": "hello"}}
+    assert _extract_media_context(body) is None
+
+
+def test_extract_media_context_image():
+    """_extract_media_context must produce a tag with id, type, filename, mime."""
+    from app.whatsapp import _extract_media_context
+    body = {
+        "payload": {
+            "hasMedia": True,
+            "id": "true_972@c.us_ABC123",
+            "type": "image",
+            "_data": {"mimetype": "image/jpeg", "filename": None},
+        }
+    }
+    ctx = _extract_media_context(body)
+    assert ctx is not None
+    assert "id=true_972@c.us_ABC123" in ctx
+    assert "type=image" in ctx
+    assert "mime=image/jpeg" in ctx
+
+
+def test_extract_media_context_document_with_filename():
+    """_extract_media_context must preserve the original document filename."""
+    from app.whatsapp import _extract_media_context
+    body = {
+        "payload": {
+            "hasMedia": True,
+            "id": "true_972@c.us_DOC999",
+            "type": "document",
+            "_data": {"mimetype": "application/pdf", "filename": "invoice.pdf"},
+        }
+    }
+    ctx = _extract_media_context(body)
+    assert ctx is not None
+    assert "filename=invoice.pdf" in ctx
+    assert "mime=application/pdf" in ctx

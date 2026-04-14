@@ -59,6 +59,58 @@ def _extract_text(body: dict) -> str:
     return payload.get("body", "").strip()
 
 
+# MIME type → default filename extension (when WAHA reports no filename)
+_EXT_MAP = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/heic": ".heic",
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "application/pdf": ".pdf",
+    "audio/ogg": ".ogg",
+    "audio/mpeg": ".mp3",
+}
+
+_TYPE_MIME_FALLBACK = {
+    "image": "image/jpeg",
+    "document": "application/octet-stream",
+    "video": "video/mp4",
+    "audio": "audio/ogg",
+    "sticker": "image/webp",
+}
+
+
+def _extract_media_context(body: dict) -> str | None:
+    """
+    If the message carries media, return a compact context tag for the agent:
+      [MEDIA id=<msgId> type=<image|document|…> filename=<name> mime=<type>]
+
+    The agent uses 'id' to call drive_save_photo / drive_save_document.
+    Returns None when no media is present.
+    """
+    payload = body.get("payload", {})
+    if not payload.get("hasMedia"):
+        return None
+
+    message_id = payload.get("id", "unknown")
+    msg_type = payload.get("type", "")
+
+    # MIME type — try _data first, fall back to type-based guess
+    data_field = payload.get("_data", {})
+    mime_type = data_field.get("mimetype", "") or _TYPE_MIME_FALLBACK.get(msg_type, "application/octet-stream")
+
+    # Filename — documents usually have one; photos often don't
+    filename = (
+        data_field.get("filename")
+        or payload.get("filename")
+        or f"{msg_type}_{message_id[-8:]}{_EXT_MAP.get(mime_type, '')}"
+    )
+
+    return f"[MEDIA id={message_id} type={msg_type} filename={filename} mime={mime_type}]"
+
+
 def _extract_chat_id(body: dict) -> str:
     """Extract the chat ID to reply to (always the 'to' field — group or self)."""
     payload = body.get("payload", {})
@@ -92,20 +144,28 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
         return Response(status_code=200)
 
     text = _extract_text(body)
-    if not text:
+    media_ctx = _extract_media_context(body)
+
+    # Skip if neither text nor media
+    if not text and not media_ctx:
         return Response(status_code=200)
 
     # Skip bot's own replies — always prefixed with [ *danidin* ] (LTR or RTL).
-    # This replaces the fragile _3EB0 ID filter which also blocked WhatsApp Web messages.
     if text.startswith("[ *danidin* ]") or text.startswith("\u200f[ *danidin* ]"):
         return Response(status_code=200)
 
     chat_id = _extract_chat_id(body)
 
+    # Build the full message for the agent: media tag (if any) + caption/text
+    if media_ctx:
+        full_text = f"{media_ctx}\n{text}" if text else f"{media_ctx}\nPlease save this to Google Drive."
+    else:
+        full_text = text
+
     # --- SELF-CHAT: command center ---
     if _is_self_chat(body):
-        logger.info("Self-chat message: %.80s...", text)
-        reply = await _process_message(text, chat_id)
+        logger.info("Self-chat message: %.80s...", full_text)
+        reply = await _process_message(full_text, chat_id)
         await send_whatsapp_message(chat_id, reply)
         return Response(status_code=200)
 
@@ -114,7 +174,7 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
         text_lower = text.lower()
         for trigger in BOT_TRIGGERS:
             if text_lower.startswith(trigger):
-                stripped = text[len(trigger):].strip()
+                stripped = full_text[len(trigger):].strip()
                 if stripped:
                     logger.info("Group trigger [%s]: %.80s...", chat_id, stripped)
                     reply = await _process_message(stripped, chat_id)

@@ -2,12 +2,13 @@ from langchain_core.tools import tool
 from app.google.gmail import read_emails, send_email
 from app.google.calendar import list_events, create_event
 from app.google.auth import get_auth_url, get_credentials
+from app.google.drive_tools import get_drive_tools
 
 
 def get_google_tools(chat_id: str) -> list:
     @tool
     def google_connect() -> str:
-        """Connect Google account (Gmail + Calendar). Call this when the user wants to link, connect, or authorize Google/Gmail/Calendar."""
+        """Connect Google account (Gmail + Calendar + Drive). Call this when the user wants to link, connect, or authorize Google/Gmail/Calendar/Drive."""
         creds = get_credentials(chat_id)
         if creds and creds.valid:
             return "Google account is already connected."
@@ -34,4 +35,10 @@ def get_google_tools(chat_id: str) -> list:
         """Create a Google Calendar event. Datetimes in ISO 8601. Attendees: comma-separated emails."""
         return create_event(chat_id, title, start_datetime, end_datetime, attendees)
 
-    return [google_connect, gmail_read, gmail_send, calendar_list, calendar_create]
+    return [
+        google_connect,
+        gmail_read,
+        gmail_send,
+        calendar_list,
+        calendar_create,
+    ] + get_drive_tools(chat_id)
