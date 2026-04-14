@@ -141,12 +141,62 @@ def get_all_facts() -> list[dict]:
         conn.close()
 
 
+def get_all_facts_with_ids() -> list[dict]:
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, key, value FROM memory_facts ORDER BY updated_at DESC")
+            return [{"id": r[0], "key": r[1], "value": r[2]} for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def get_all_rules() -> list[dict]:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT rule, reason FROM memory_rules ORDER BY created_at DESC")
             return [{"rule": r[0], "reason": r[1]} for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_all_rules_with_ids() -> list[dict]:
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, rule, reason FROM memory_rules ORDER BY created_at DESC")
+            return [{"id": r[0], "rule": r[1], "reason": r[2]} for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def delete_fact(key: str) -> bool:
+    """Delete a fact by key. Returns True if a row was deleted."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM memory_facts WHERE key = %s", (key,))
+            deleted = cur.rowcount > 0
+        conn.commit()
+        if deleted:
+            logger.info("Deleted fact: %s", key)
+        return deleted
+    finally:
+        conn.close()
+
+
+def delete_rule(rule_id: int) -> bool:
+    """Delete a rule by its numeric ID. Returns True if a row was deleted."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM memory_rules WHERE id = %s", (rule_id,))
+            deleted = cur.rowcount > 0
+        conn.commit()
+        if deleted:
+            logger.info("Deleted rule id=%s", rule_id)
+        return deleted
     finally:
         conn.close()
 
