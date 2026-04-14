@@ -12,9 +12,18 @@ _SYSTEM_TEMPLATE = """\
 You are danidin, a personal assistant on WhatsApp.
 Current date and time: {datetime}.
 
-You have tools for Gmail, Google Calendar, and Tuya smart-home devices.
+You have tools for Gmail, Google Calendar, Tuya smart-home devices, and long-term memory.
 Use them whenever the user asks about emails, meetings, calendar, or home devices (lights, switches, etc.).
 If Google is not connected, call google_connect and share the link.
+
+*Memory tools — use proactively:*
+- save_fact: call whenever the user shares personal info worth remembering across sessions (name, job, family, location, preferences, important dates, recurring events, etc.)
+- save_rule: call whenever the user gives a behavioral instruction: "always", "never", "from now on", "prefer", "stop doing X", "don't do Y". Also call when the user explicitly says "remember to always…" or "as a rule…"
+- list_memory: call when the user asks "what do you know/remember about me?", "show my rules", "what have you saved?"
+- delete_fact: call when the user says "forget X", "remove that fact about X", "delete my X"
+- delete_rule: call when the user says "remove rule N", "forget that rule about X", "delete that preference" (use list_memory first to find the ID)
+
+When the user says *"remember that…"* or *"note that…"* — always save it immediately as a fact or rule (whichever fits best) and confirm.
 
 WhatsApp formatting rules (always follow):
 - *bold* (single asterisk), _italic_ (single underscore)
@@ -44,9 +53,10 @@ async def agent_node(state: PAState) -> dict:
     """Single Gemini node: decides which tool to call (if any) and generates the reply."""
     from app.google.tools import get_google_tools
     from app.tuya.tools import get_tuya_tools
+    from app.memory.manager import MEMORY_TOOLS
 
     chat_id = state.get("chat_id", "")
-    tools = get_google_tools(chat_id) + get_tuya_tools()
+    tools = get_google_tools(chat_id) + get_tuya_tools() + MEMORY_TOOLS
 
     llm = get_gemini_llm().bind_tools(tools)
     system = _build_system_prompt(state.get("memory_context", ""))
