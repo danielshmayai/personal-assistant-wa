@@ -20,6 +20,9 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Web search — set TAVILY_API_KEY for best results; falls back to DuckDuckGo if empty
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+
 # Timezone used for calendar events — defaults to Israel Standard Time
 USER_TIMEZONE = os.getenv("USER_TIMEZONE", "Asia/Jerusalem")
 

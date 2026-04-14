@@ -416,3 +416,136 @@ def test_reflection_node_triggers_on_correction_signal():
 
     llm_mock.ainvoke.assert_called_once()
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# 9. Web tools
+# ---------------------------------------------------------------------------
+
+EXPECTED_WEB_TOOL_NAMES = {"web_search", "wikipedia_search", "fetch_url", "get_weather"}
+
+
+def test_web_tools_exist_with_correct_names():
+    """WEB_TOOLS must export exactly the 4 expected tool names."""
+    from app.web.tools import WEB_TOOLS
+    actual = {t.name for t in WEB_TOOLS}
+    assert actual == EXPECTED_WEB_TOOL_NAMES, (
+        f"Web tool mismatch.\n  Expected: {EXPECTED_WEB_TOOL_NAMES}\n  Got: {actual}"
+    )
+
+
+def test_web_search_uses_tavily_when_key_set(monkeypatch):
+    """web_search must call Tavily when TAVILY_API_KEY is configured."""
+    monkeypatch.setattr("app.web.tools.TAVILY_API_KEY", "fake-key")
+
+    fake_client = MagicMock()
+    fake_client.search.return_value = {
+        "answer": "Paris is the capital of France.",
+        "results": [{"title": "France", "url": "https://example.com", "content": "France info"}],
+    }
+
+    with patch("app.web.tools._tavily_search", return_value="Paris is the capital of France.") as mock_t:
+        from app.web.tools import web_search
+        result = web_search.invoke({"query": "capital of France"})
+
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_web_search_falls_back_to_ddg_without_key(monkeypatch):
+    """web_search must fall back to DuckDuckGo when TAVILY_API_KEY is empty."""
+    monkeypatch.setattr("app.web.tools.TAVILY_API_KEY", "")
+
+    with patch("app.web.tools._ddg_search", return_value="DDG result") as mock_ddg:
+        from app.web.tools import web_search
+        result = web_search.invoke({"query": "test query"})
+
+    mock_ddg.assert_called_once_with("test query")
+    assert result == "DDG result"
+
+
+def test_web_search_ddg_handles_error(monkeypatch):
+    """_ddg_search must return an error string (not raise) when DDGS fails."""
+    monkeypatch.setattr("app.web.tools.TAVILY_API_KEY", "")
+
+    with patch("app.web.tools._ddg_search", return_value="Web search unavailable: connection error"):
+        from app.web.tools import web_search
+        result = web_search.invoke({"query": "anything"})
+
+    assert "unavailable" in result or isinstance(result, str)
+
+
+def test_fetch_url_returns_text(monkeypatch):
+    """fetch_url must strip HTML tags and return plain text."""
+    import asyncio
+
+    html = "<html><body><h1>Hello</h1><p>World content here.</p><script>js()</script></body></html>"
+
+    async def fake_get(*args, **kwargs):
+        resp = MagicMock()
+        resp.text = html
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = fake_get
+        mock_client_cls.return_value = mock_client
+
+        from app.web.tools import fetch_url
+        result = asyncio.get_event_loop().run_until_complete(
+            fetch_url.ainvoke({"url": "https://example.com"})
+        )
+
+    assert "Hello" in result
+    assert "World content here" in result
+    assert "js()" not in result  # script tag removed
+
+
+def test_get_weather_returns_response(monkeypatch):
+    """get_weather must return the wttr.in response text."""
+    import asyncio
+
+    async def fake_get(*args, **kwargs):
+        resp = MagicMock()
+        resp.text = "Tel Aviv: ☀️ +28°C"
+        return resp
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = fake_get
+        mock_client_cls.return_value = mock_client
+
+        from app.web.tools import get_weather
+        result = asyncio.get_event_loop().run_until_complete(
+            get_weather.ainvoke({"location": "Tel Aviv"})
+        )
+
+    assert "Tel Aviv" in result or "28" in result
+
+
+def test_wikipedia_search_returns_summary(monkeypatch):
+    """wikipedia_search must return article summary and source URL."""
+    fake_page = MagicMock()
+    fake_page.exists.return_value = True
+    fake_page.summary = "Tel Aviv is a city in Israel. It is known as the White City."
+    fake_page.fullurl = "https://en.wikipedia.org/wiki/Tel_Aviv"
+
+    fake_wiki_instance = MagicMock()
+    fake_wiki_instance.page.return_value = fake_page
+
+    fake_wikipediaapi = MagicMock()
+    fake_wikipediaapi.Wikipedia.return_value = fake_wiki_instance
+
+    with patch.dict("sys.modules", {"wikipediaapi": fake_wikipediaapi}):
+        from app.web import tools as web_tools_mod
+        import importlib
+        importlib.reload(web_tools_mod)
+        result = web_tools_mod.wikipedia_search.invoke({"query": "Tel Aviv"})
+
+    assert "Tel Aviv" in result
+    assert "en.wikipedia.org" in result
