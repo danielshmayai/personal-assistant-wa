@@ -1,7 +1,7 @@
 import logging
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 import httpx
-from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID
+from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID, WEBHOOK_SECRET
 
 logger = logging.getLogger("pa.whatsapp")
 router = APIRouter()
@@ -66,13 +66,17 @@ def _extract_chat_id(body: dict) -> str:
 
 
 @router.post("/webhook/waha")
-async def waha_webhook(request: Request):
+async def waha_webhook(request: Request, secret: str = Query(default="")):
     """
     WAHA webhook receiver with strict routing:
     - Self-chat: route raw text to LangGraph pipeline.
     - Group chat: IGNORE unless message starts with @danidin or !danidin.
     - DMs from others: IGNORE completely.
     """
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        logger.warning("Webhook rejected: invalid or missing secret (remote=%s)", request.client)
+        return Response(status_code=403)
+
     body = await request.json()
     event = body.get("event", "")
     payload = body.get("payload", {})

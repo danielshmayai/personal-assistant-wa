@@ -273,6 +273,7 @@ def test_save_fact_tool_calls_upsert(monkeypatch):
 
     import app.memory.store as store_mod
     monkeypatch.setattr(store_mod, "upsert_fact", lambda k, v, source="user": calls.append((k, v, source)))
+    monkeypatch.setattr(store_mod, "get_all_facts", lambda: [])  # not at limit
 
     from app.memory.manager import save_fact
     result = save_fact.invoke({"key": "city", "value": "Tel Aviv"})
@@ -287,6 +288,7 @@ def test_save_rule_tool_calls_insert(monkeypatch):
 
     import app.memory.store as store_mod
     monkeypatch.setattr(store_mod, "insert_rule", lambda rule, reason="", source="reflection": calls.append((rule, reason, source)))
+    monkeypatch.setattr(store_mod, "get_all_rules", lambda: [])  # not at limit
 
     from app.memory.manager import save_rule
     save_rule.invoke({"rule": "Always reply in Hebrew", "reason": "User preference"})

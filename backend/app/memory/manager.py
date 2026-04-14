@@ -6,9 +6,18 @@ from app.memory.store import (
     insert_rule,
     delete_fact as _delete_fact,
     delete_rule as _delete_rule,
+    get_all_facts,
+    get_all_rules,
     get_all_facts_with_ids,
     get_all_rules_with_ids,
 )
+
+# Hard limits — prevents DB bloat and memory-poisoning via oversized values
+_MAX_KEY_LEN = 100
+_MAX_VALUE_LEN = 1000
+_MAX_RULE_LEN = 500
+_MAX_FACTS = 200
+_MAX_RULES = 100
 
 
 @tool
@@ -18,6 +27,12 @@ def save_fact(key: str, value: str) -> str:
     Call this whenever the user shares personal information worth remembering across sessions:
     name, job, family, location, preferences, important dates, etc.
     Example: save_fact(key="user_name", value="Daniel")"""
+    if len(key) > _MAX_KEY_LEN:
+        return f"Key too long (max {_MAX_KEY_LEN} chars)."
+    if len(value) > _MAX_VALUE_LEN:
+        return f"Value too long (max {_MAX_VALUE_LEN} chars)."
+    if len(get_all_facts()) >= _MAX_FACTS:
+        return f"Memory full — cannot save more than {_MAX_FACTS} facts. Delete some with delete_fact first."
     upsert_fact(key, value, source="agent")
     return f"Saved fact: {key} = {value}"
 
@@ -28,6 +43,10 @@ def save_rule(rule: str, reason: str = "") -> str:
     Call this when the user gives an instruction about how the bot should behave:
     'always', 'never', 'from now on', 'prefer', 'stop doing', 'don't', etc.
     Example: save_rule(rule="Always reply in Hebrew", reason="User prefers Hebrew")"""
+    if len(rule) > _MAX_RULE_LEN:
+        return f"Rule too long (max {_MAX_RULE_LEN} chars)."
+    if len(get_all_rules()) >= _MAX_RULES:
+        return f"Too many rules — cannot save more than {_MAX_RULES}. Delete some with delete_rule first."
     insert_rule(rule, reason, source="agent")
     return f"Saved rule: {rule}"
 

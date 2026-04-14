@@ -23,6 +23,21 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Web search — set TAVILY_API_KEY for best results; falls back to DuckDuckGo if empty
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
+# ── Security ────────────────────────────────────────────────────────────────
+
+# Shared secret the backend requires on every incoming WAHA webhook call.
+# Include it in the webhook URL: http://backend:8000/webhook/waha?secret=<value>
+# Generate: openssl rand -hex 32
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+
+# Bearer token required to call the dev-only POST /test endpoint.
+# Generate: openssl rand -hex 32
+TEST_TOKEN = os.getenv("TEST_TOKEN", "")
+
+# Fernet key for encrypting Google OAuth tokens at rest in PostgreSQL.
+# Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+DB_ENCRYPTION_KEY = os.getenv("DB_ENCRYPTION_KEY", "")
+
 # Timezone used for calendar events — defaults to Israel Standard Time
 USER_TIMEZONE = os.getenv("USER_TIMEZONE", "Asia/Jerusalem")
 
