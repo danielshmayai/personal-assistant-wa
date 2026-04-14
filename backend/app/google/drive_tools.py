@@ -15,6 +15,22 @@ from app.google.drive import DOC_CATEGORY_MAP, PHOTO_MIME_TYPES
 
 logger = logging.getLogger("pa.google.drive_tools")
 
+_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+_RECONNECT_MSG = (
+    "Drive access is not granted yet. "
+    "Please call google_connect, open the link, and reconnect your Google account — "
+    "this will add the Drive permission to your existing Gmail/Calendar connection."
+)
+
+
+def _check_drive_scope(creds) -> str | None:
+    """Return an error string if the Drive scope is missing, or None if all is good."""
+    if not creds or not creds.valid:
+        return "Google is not connected. Call google_connect first."
+    if creds.scopes and not any("drive" in s for s in creds.scopes):
+        return _RECONNECT_MSG
+    return None
+
 
 async def _http_get(url: str) -> tuple[bytes, str]:
     """Fetch bytes from a URL using WAHA auth headers."""
@@ -84,8 +100,9 @@ def get_drive_tools(chat_id: str) -> list:
         'work', 'vacation', 'family'), pass it as subfolder — do NOT ignore it.
         message_id comes from the [MEDIA ...] context tag."""
         creds = get_credentials(chat_id)
-        if not creds or not creds.valid:
-            return "Google is not connected. Call google_connect first, share the link, and try again after the user authenticates."
+        err = _check_drive_scope(creds)
+        if err:
+            return err
         try:
             data, mime_type = await _download_from_waha(message_id)
             link = drive_api.upload_photo(creds, data, filename, mime_type, subfolder)
@@ -103,8 +120,9 @@ def get_drive_tools(chat_id: str) -> list:
         Common categories: PDFs, Word, Spreadsheets, Presentations, Receipts, Work, Personal, General.
         message_id comes from the [MEDIA ...] context tag. Auto-detect category from mime_type if unsure."""
         creds = get_credentials(chat_id)
-        if not creds or not creds.valid:
-            return "Google is not connected. Call google_connect first."
+        err = _check_drive_scope(creds)
+        if err:
+            return err
         try:
             data, mime_type = await _download_from_waha(message_id)
             # Auto-detect category from MIME if caller left it as "General"
@@ -121,8 +139,9 @@ def get_drive_tools(chat_id: str) -> list:
         """List files saved to Google Drive.
         folder examples: 'Photos/2026-04', 'Documents/PDFs', 'Documents/Receipts', or empty for recent files."""
         creds = get_credentials(chat_id)
-        if not creds or not creds.valid:
-            return "Google is not connected. Call google_connect first."
+        err = _check_drive_scope(creds)
+        if err:
+            return err
         try:
             files = drive_api.list_files(creds, folder, max_results=15)
             if not files:
