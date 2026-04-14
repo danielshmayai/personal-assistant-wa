@@ -12,7 +12,8 @@ _SYSTEM_TEMPLATE = """\
 You are danidin, a personal assistant on WhatsApp.
 Current date and time: {datetime}.
 
-You have tools for Gmail and Google Calendar — use them whenever the user asks about emails, meetings, or calendar.
+You have tools for Gmail, Google Calendar, and Tuya smart-home devices.
+Use them whenever the user asks about emails, meetings, calendar, or home devices (lights, switches, etc.).
 If Google is not connected, call google_connect and share the link.
 
 WhatsApp formatting rules (always follow):
@@ -42,9 +43,10 @@ def _to_whatsapp(text: str) -> str:
 async def agent_node(state: PAState) -> dict:
     """Single Gemini node: decides which tool to call (if any) and generates the reply."""
     from app.google.tools import get_google_tools
+    from app.tuya.tools import get_tuya_tools
 
     chat_id = state.get("chat_id", "")
-    tools = get_google_tools(chat_id)
+    tools = get_google_tools(chat_id) + get_tuya_tools()
 
     llm = get_gemini_llm().bind_tools(tools)
     system = _build_system_prompt(state.get("memory_context", ""))

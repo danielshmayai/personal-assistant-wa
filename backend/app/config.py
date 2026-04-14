@@ -22,3 +22,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Timezone used for calendar events — defaults to Israel Standard Time
 USER_TIMEZONE = os.getenv("USER_TIMEZONE", "Asia/Jerusalem")
+
+# Tuya smart-home
+TUYA_ACCESS_ID = os.getenv("TUYA_ACCESS_ID", "")
+TUYA_ACCESS_KEY = os.getenv("TUYA_ACCESS_KEY", "")
+TUYA_API_ENDPOINT = os.getenv("TUYA_API_ENDPOINT", "https://openapi.tuyaeu.com")
+TUYA_PREFER_LOCAL = os.getenv("TUYA_PREFER_LOCAL", "false").lower() == "true"

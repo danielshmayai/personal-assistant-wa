@@ -8,9 +8,10 @@ logger = logging.getLogger("pa.tool_executor")
 async def tool_executor_node(state: PAState) -> dict:
     """Execute all tool calls in the last AIMessage and return ToolMessages."""
     from app.google.tools import get_google_tools
+    from app.tuya.tools import get_tuya_tools
 
     chat_id = state.get("chat_id", "")
-    tools = get_google_tools(chat_id)
+    tools = get_google_tools(chat_id) + get_tuya_tools()
     tool_map = {t.name: t for t in tools}
 
     last_msg = state["messages"][-1]

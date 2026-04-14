@@ -53,13 +53,17 @@ MODULES_UNDER_TEST = [
     "app.graph.distiller",
     "app.graph.tool_node",
     "app.google.tools",
+    "app.tuya.tools",
 ]
 
 
 @pytest.mark.parametrize("module_path", MODULES_UNDER_TEST)
 def test_module_imports_without_error(module_path):
     """Every listed module must import cleanly with no side-effects."""
-    with patch("app.llm.ChatOllama", return_value=_make_llm_mock()):
+    with (
+        patch("app.llm.ChatOllama", return_value=_make_llm_mock()),
+        patch("tinytuya.Cloud", return_value=MagicMock()),
+    ):
         mod = importlib.import_module(module_path)
     assert mod is not None, f"{module_path} returned None on import"
 
@@ -158,7 +162,37 @@ def test_get_google_tools_has_correct_names():
 
 
 # ---------------------------------------------------------------------------
-# 5. should_continue routing
+# 5. get_tuya_tools returns 3 tools when credentials are set
+# ---------------------------------------------------------------------------
+
+def test_get_tuya_tools_returns_three_tools_when_configured():
+    """get_tuya_tools must return 3 tools when TUYA_ACCESS_ID/KEY are set."""
+    with (
+        patch("app.tuya.tools.TUYA_ACCESS_ID", "fake-id"),
+        patch("app.tuya.tools.TUYA_ACCESS_KEY", "fake-key"),
+        patch("tinytuya.Cloud", return_value=MagicMock()),
+    ):
+        from app.tuya.tools import get_tuya_tools
+        tools = get_tuya_tools()
+
+    assert len(tools) == 3
+    assert {t.name for t in tools} == {"list_tuya_devices", "get_device_status", "control_device"}
+
+
+def test_get_tuya_tools_returns_empty_when_not_configured():
+    """get_tuya_tools must return [] when credentials are missing."""
+    with (
+        patch("app.tuya.tools.TUYA_ACCESS_ID", ""),
+        patch("app.tuya.tools.TUYA_ACCESS_KEY", ""),
+    ):
+        from app.tuya.tools import get_tuya_tools
+        tools = get_tuya_tools()
+
+    assert tools == []
+
+
+# ---------------------------------------------------------------------------
+# 6. should_continue routing
 # ---------------------------------------------------------------------------
 
 def test_should_continue_routes_to_tools_when_tool_calls_present():
