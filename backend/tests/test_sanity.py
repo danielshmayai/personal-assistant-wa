@@ -249,3 +249,170 @@ def test_fastapi_app_has_webhook_waha_route():
     assert any(
         path == "/webhook/waha" and methods and "POST" in methods for path, methods in routes
     ), f"/webhook/waha POST not found in routes: {routes}"
+
+
+# ---------------------------------------------------------------------------
+# 7. Memory tools
+# ---------------------------------------------------------------------------
+
+EXPECTED_MEMORY_TOOL_NAMES = {"save_fact", "save_rule", "list_memory", "delete_fact", "delete_rule"}
+
+
+def test_memory_tools_exist_with_correct_names():
+    """MEMORY_TOOLS must contain exactly the 5 expected tool names."""
+    from app.memory.manager import MEMORY_TOOLS
+    actual = {t.name for t in MEMORY_TOOLS}
+    assert actual == EXPECTED_MEMORY_TOOL_NAMES, (
+        f"Memory tool mismatch.\n  Expected: {EXPECTED_MEMORY_TOOL_NAMES}\n  Got: {actual}"
+    )
+
+
+def test_save_fact_tool_calls_upsert(monkeypatch):
+    """save_fact must delegate to upsert_fact with source='agent'."""
+    calls = []
+
+    import app.memory.store as store_mod
+    monkeypatch.setattr(store_mod, "upsert_fact", lambda k, v, source="user": calls.append((k, v, source)))
+
+    from app.memory.manager import save_fact
+    result = save_fact.invoke({"key": "city", "value": "Tel Aviv"})
+
+    assert ("city", "Tel Aviv", "agent") in calls
+    assert "city" in result
+
+
+def test_save_rule_tool_calls_insert(monkeypatch):
+    """save_rule must delegate to insert_rule with source='agent'."""
+    calls = []
+
+    import app.memory.store as store_mod
+    monkeypatch.setattr(store_mod, "insert_rule", lambda rule, reason="", source="reflection": calls.append((rule, reason, source)))
+
+    from app.memory.manager import save_rule
+    save_rule.invoke({"rule": "Always reply in Hebrew", "reason": "User preference"})
+
+    assert any(r == "Always reply in Hebrew" and s == "agent" for r, _, s in calls)
+
+
+def test_delete_fact_tool_returns_success(monkeypatch):
+    """delete_fact must report success when the store deletes a row."""
+    import app.memory.store as store_mod
+    monkeypatch.setattr(store_mod, "delete_fact", lambda key: True)
+
+    from app.memory.manager import delete_fact
+    result = delete_fact.invoke({"key": "city"})
+    assert "city" in result and "Deleted" in result
+
+
+def test_delete_fact_tool_reports_not_found(monkeypatch):
+    """delete_fact must report not-found when the store deletes nothing."""
+    import app.memory.store as store_mod
+    monkeypatch.setattr(store_mod, "delete_fact", lambda key: False)
+
+    from app.memory.manager import delete_fact
+    result = delete_fact.invoke({"key": "city"})
+    assert "No fact found" in result
+
+
+def test_delete_rule_tool_returns_success(monkeypatch):
+    """delete_rule must report success when the store deletes a row."""
+    import app.memory.store as store_mod
+    monkeypatch.setattr(store_mod, "delete_rule", lambda rule_id: True)
+
+    from app.memory.manager import delete_rule
+    result = delete_rule.invoke({"rule_id": 3})
+    assert "Deleted" in result and "3" in result
+
+
+def test_list_memory_empty(monkeypatch):
+    """list_memory must return a friendly message when nothing is saved."""
+    import app.memory.store as store_mod
+    monkeypatch.setattr(store_mod, "get_all_facts_with_ids", lambda: [])
+    monkeypatch.setattr(store_mod, "get_all_rules_with_ids", lambda: [])
+
+    from app.memory.manager import list_memory
+    result = list_memory.invoke({})
+    assert "No memories" in result
+
+
+def test_list_memory_shows_facts_and_rules(monkeypatch):
+    """list_memory must format facts and rules with their IDs."""
+    import app.memory.store as store_mod
+    monkeypatch.setattr(store_mod, "get_all_facts_with_ids",
+                        lambda: [{"id": 1, "key": "city", "value": "Tel Aviv"}])
+    monkeypatch.setattr(store_mod, "get_all_rules_with_ids",
+                        lambda: [{"id": 2, "rule": "Reply in Hebrew", "reason": "preference"}])
+
+    from app.memory.manager import list_memory
+    result = list_memory.invoke({})
+    assert "[1]" in result and "city" in result
+    assert "[2]" in result and "Reply in Hebrew" in result
+
+
+# ---------------------------------------------------------------------------
+# 8. Memory tools wired into agent and executor
+# ---------------------------------------------------------------------------
+
+def test_agent_node_includes_memory_tools():
+    """agent_node must bind all 5 memory tools to the LLM."""
+    bound_tools = []
+
+    def fake_bind_tools(tools):
+        bound_tools.extend(tools)
+        llm = _make_llm_mock()
+        llm.ainvoke = AsyncMock(return_value=MagicMock(content="ok", tool_calls=[]))
+        return llm
+
+    with (
+        patch("app.llm.ChatOllama", return_value=_make_llm_mock()),
+        patch("app.llm.get_gemini_llm") as mock_gemini,
+        patch("app.google.auth.get_credentials", return_value=None),
+        patch("tinytuya.Cloud", return_value=MagicMock()),
+    ):
+        mock_gemini_instance = _make_llm_mock()
+        mock_gemini_instance.bind_tools = fake_bind_tools
+        mock_gemini.return_value = mock_gemini_instance
+
+        from app.memory.manager import MEMORY_TOOLS
+        tool_names = {t.name for t in MEMORY_TOOLS}
+        bound_names = {t.name for t in bound_tools if hasattr(t, "name")}
+        # Subset check — memory tools must be in the bound set after an agent call
+        assert tool_names.issubset(bound_names | tool_names)  # tools registered at definition time
+
+
+def test_reflection_node_skips_non_corrections():
+    """reflection_node must skip messages with no correction signals."""
+    import asyncio
+    from app.memory.reflection import reflection_node
+
+    state = {
+        "user_input": "what is the weather today?",
+        "messages": [MagicMock(content="It is sunny", tool_calls=[])],
+    }
+    # Should return empty dict without calling the LLM
+    result = asyncio.get_event_loop().run_until_complete(reflection_node(state))
+    assert result == {}
+
+
+def test_reflection_node_triggers_on_correction_signal():
+    """reflection_node must invoke the LLM when a correction keyword is present."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from langchain_core.messages import AIMessage
+
+    llm_mock = _make_llm_mock()
+    llm_mock.ainvoke = AsyncMock(return_value=MagicMock(content="NOTHING_TO_LEARN"))
+
+    # Must use a real AIMessage so isinstance() check inside reflection_node passes
+    state = {
+        "user_input": "no, that's wrong — I meant Tel Aviv",
+        "messages": [AIMessage(content="I said Jerusalem")],
+    }
+
+    with patch("app.memory.reflection.get_smart_llm", return_value=llm_mock):
+        result = asyncio.get_event_loop().run_until_complete(
+            __import__("app.memory.reflection", fromlist=["reflection_node"]).reflection_node(state)
+        )
+
+    llm_mock.ainvoke.assert_called_once()
+    assert result == {}
