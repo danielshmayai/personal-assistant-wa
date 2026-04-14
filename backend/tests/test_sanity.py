@@ -593,6 +593,7 @@ def test_drive_save_document_auto_detects_pdf_category():
 
     fake_creds = MagicMock()
     fake_creds.valid = True
+    fake_creds.scopes = ["https://www.googleapis.com/auth/drive.file"]
 
     with (
         patch("app.google.auth.get_credentials", return_value=fake_creds),

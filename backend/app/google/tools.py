@@ -9,10 +9,23 @@ def get_google_tools(chat_id: str) -> list:
     @tool
     def google_connect() -> str:
         """Connect Google account (Gmail + Calendar + Drive). Call this when the user wants to link, connect, or authorize Google/Gmail/Calendar/Drive."""
+        from app.google.drive_tools import _DRIVE_SCOPE
         creds = get_credentials(chat_id)
-        if creds and creds.valid:
-            return "Google account is already connected."
+        has_drive = (
+            creds
+            and creds.valid
+            and creds.scopes
+            and any("drive" in s for s in creds.scopes)
+        )
+        if has_drive:
+            return "Google account is already connected (Gmail, Calendar, and Drive)."
+        # Either not connected at all, or connected without Drive scope
         url = get_auth_url(chat_id)
+        if creds and creds.valid:
+            return (
+                "Your Google account is connected but Drive access is missing. "
+                "Please open this link to reconnect and grant Drive permission:\n" + url
+            )
         return f"Open this link to connect your Google account:\n{url}"
 
     @tool
