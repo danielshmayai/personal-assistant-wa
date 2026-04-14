@@ -156,6 +156,12 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
 
     chat_id = _extract_chat_id(body)
 
+    # Cache media bytes from the webhook payload NOW (before the agent runs).
+    # WAHA WEBJS embeds media as base64 in _data.body — no separate download needed.
+    if media_ctx:
+        from app.media_cache import store_from_payload
+        store_from_payload(payload.get("id", ""), payload)
+
     # Build the full message for the agent: media tag (if any) + caption/text
     if media_ctx:
         full_text = f"{media_ctx}\n{text}" if text else f"{media_ctx}\nPlease save this to Google Drive."

@@ -16,25 +16,61 @@ from app.google.drive import DOC_CATEGORY_MAP, PHOTO_MIME_TYPES
 logger = logging.getLogger("pa.google.drive_tools")
 
 
-async def _download_from_waha(message_id: str) -> tuple[bytes, str]:
-    """
-    Download media bytes from WAHA and return (data, mime_type).
-
-    WAHA exposes: GET /api/{session}/messages/{messageId}/download
-    """
+async def _http_get(url: str) -> tuple[bytes, str]:
+    """Fetch bytes from a URL using WAHA auth headers."""
     headers: dict[str, str] = {}
     if WAHA_API_KEY:
         headers["X-Api-Key"] = WAHA_API_KEY
-
-    url = f"{WAHA_BASE_URL}/api/{WAHA_SESSION}/messages/{message_id}/download"
     async with httpx.AsyncClient(timeout=120.0) as client:
         r = await client.get(url, headers=headers)
-        if r.status_code != 200:
-            raise RuntimeError(
-                f"WAHA returned {r.status_code} when downloading message {message_id}"
-            )
+        r.raise_for_status()
         mime_type = r.headers.get("content-type", "application/octet-stream").split(";")[0]
         return r.content, mime_type
+
+
+async def _download_from_waha(message_id: str) -> tuple[bytes, str]:
+    """
+    Return (bytes, mime_type) for a WAHA media message.
+
+    Resolution order:
+      1. In-memory cache populated by the webhook handler from _data.body (base64)
+         — this is the normal path for WAHA WEBJS (free edition).
+      2. mediaUrl stored in cache during webhook (WAHA serves the file directly).
+      3. WAHA REST API fallback — tries multiple endpoint patterns for robustness.
+    """
+    from app.media_cache import retrieve
+
+    cached = retrieve(message_id)
+    if cached:
+        if "data" in cached:
+            logger.debug("drive: using cached bytes for msg %s", message_id[-12:])
+            return cached["data"], cached["mime_type"]
+        if "media_url" in cached:
+            logger.debug("drive: downloading from cached mediaUrl for msg %s", message_id[-12:])
+            return await _http_get(cached["media_url"])
+
+    # Fallback: try known WAHA API endpoint patterns
+    logger.info("drive: no cache hit for %s — trying WAHA API", message_id[-12:])
+    candidates = [
+        f"{WAHA_BASE_URL}/api/{WAHA_SESSION}/messages/{message_id}/download",
+        f"{WAHA_BASE_URL}/api/messages/{WAHA_SESSION}/{message_id}/download",
+        f"{WAHA_BASE_URL}/api/files/{WAHA_SESSION}/{message_id}",
+    ]
+    last_err: Exception = RuntimeError("no candidates")
+    for url in candidates:
+        try:
+            data, mime = await _http_get(url)
+            logger.info("drive: fallback download succeeded via %s", url)
+            return data, mime
+        except Exception as exc:
+            last_err = exc
+            logger.debug("drive: fallback %s → %s", url, exc)
+
+    raise RuntimeError(
+        f"Could not download media for message {message_id[-12:]}. "
+        f"Last error: {last_err}. "
+        "Make sure Google is connected and the message is recent."
+    )
 
 
 def get_drive_tools(chat_id: str) -> list:

@@ -669,3 +669,51 @@ def test_extract_media_context_document_with_filename():
     assert ctx is not None
     assert "filename=invoice.pdf" in ctx
     assert "mime=application/pdf" in ctx
+
+
+# ---------------------------------------------------------------------------
+# 12. Media cache
+# ---------------------------------------------------------------------------
+
+def test_media_cache_stores_base64_body():
+    """store_from_payload must decode base64 _data.body and cache bytes."""
+    import base64
+    from app.media_cache import store_from_payload, retrieve
+
+    fake_bytes = b"JPEG_BINARY_DATA"
+    b64 = base64.b64encode(fake_bytes).decode() + "A" * 100  # make it > 100 chars
+
+    payload = {
+        "id": "msg_cache_test_1",
+        "_data": {"body": b64, "mimetype": "image/jpeg"},
+    }
+    ok = store_from_payload("msg_cache_test_1", payload)
+    assert ok is True
+
+    result = retrieve("msg_cache_test_1")
+    assert result is not None
+    assert result["mime_type"] == "image/jpeg"
+    assert result["data"] == base64.b64decode(b64)
+
+
+def test_media_cache_falls_back_to_media_url():
+    """store_from_payload must cache mediaUrl when _data.body is absent."""
+    from app.media_cache import store_from_payload, retrieve
+
+    payload = {
+        "id": "msg_cache_test_2",
+        "mediaUrl": "http://waha:3000/api/files/default/photo.jpg",
+        "_data": {"mimetype": "image/jpeg"},
+    }
+    ok = store_from_payload("msg_cache_test_2", payload)
+    assert ok is True
+
+    result = retrieve("msg_cache_test_2")
+    assert result is not None
+    assert result["media_url"] == "http://waha:3000/api/files/default/photo.jpg"
+
+
+def test_media_cache_returns_none_for_missing_key():
+    """retrieve must return None for unknown message IDs."""
+    from app.media_cache import retrieve
+    assert retrieve("nonexistent_msg_id_xyz") is None
