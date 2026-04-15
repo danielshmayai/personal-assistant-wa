@@ -1,20 +1,15 @@
 import logging
 import secrets
-import time
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from app.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
-from app.memory.store import save_google_token, load_google_token
+from app.memory.store import save_google_token, load_google_token, save_oauth_state, pop_oauth_state
 
 logger = logging.getLogger("pa.google.auth")
 
-# ── OAuth state / PKCE stores ─────────────────────────────────────────────
-# nonce → (chat_id, created_timestamp)
-_state_map: dict[str, tuple[str, float]] = {}
-_STATE_TTL = 600  # 10 minutes — auth flow must complete within this window
-
-# PKCE code verifiers keyed by the same nonce
+# PKCE code verifiers keyed by nonce — these only live for the duration of one
+# auth flow and don't need to survive restarts (user would re-initiate anyway).
 _pending_verifiers: dict[str, str] = {}
 
 SCOPES = [
@@ -37,23 +32,10 @@ CLIENT_CONFIG = {
 }
 
 
-def _purge_expired_states() -> None:
-    """Remove state entries older than _STATE_TTL to prevent unbounded memory growth."""
-    cutoff = time.time() - _STATE_TTL
-    expired = [k for k, (_, ts) in _state_map.items() if ts < cutoff]
-    for k in expired:
-        _state_map.pop(k, None)
-        _pending_verifiers.pop(k, None)
-
 
 def get_auth_url(chat_id: str) -> str:
-    _purge_expired_states()
-
-    # Use a cryptographically random nonce as the OAuth 'state' parameter.
-    # Previously this was the chat_id (guessable) — a random nonce prevents CSRF:
-    # an attacker who knows the WhatsApp number cannot forge a valid callback.
     nonce = secrets.token_urlsafe(32)
-    _state_map[nonce] = (chat_id, time.time())
+    save_oauth_state(nonce, chat_id)  # persisted in Postgres — survives restarts
 
     flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES)
     flow.redirect_uri = GOOGLE_REDIRECT_URI
@@ -70,23 +52,17 @@ def get_auth_url(chat_id: str) -> str:
 
 
 def handle_callback(code: str, state: str) -> None:
-    entry = _state_map.pop(state, None)
+    chat_id = pop_oauth_state(state)  # atomic read-and-delete from Postgres
+    if not chat_id:
+        raise ValueError("Unknown or expired OAuth state — please start the auth flow again")
+
     verifier = _pending_verifiers.pop(state, None)
-
-    if not entry:
-        raise ValueError("Unknown or expired OAuth state — possible CSRF attempt")
-
-    chat_id, created_at = entry
-    if time.time() - created_at > _STATE_TTL:
-        raise ValueError("OAuth state has expired — please restart the Google auth flow")
-
     flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, state=state)
     flow.redirect_uri = GOOGLE_REDIRECT_URI
     if verifier:
         flow.code_verifier = verifier
     flow.fetch_token(code=code)
-    creds = flow.credentials
-    save_google_token(chat_id, creds)
+    save_google_token(chat_id, flow.credentials)
     logger.info("Google token saved for chat_id=%s", chat_id)
 
 

@@ -37,6 +37,13 @@ def init_memory_tables():
                 )
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS oauth_pending_states (
+                    nonce TEXT PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS google_tokens (
                     chat_id TEXT PRIMARY KEY,
                     access_token TEXT,
@@ -221,3 +228,36 @@ async def load_memory_context() -> str:
         parts.append("## Rules & Preferences\n" + "\n".join(lines))
 
     return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# OAuth pending state — persisted in Postgres so restarts don't break flows
+# ---------------------------------------------------------------------------
+
+def save_oauth_state(nonce: str, chat_id: str) -> None:
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO oauth_pending_states (nonce, chat_id) VALUES (%s, %s) ON CONFLICT (nonce) DO NOTHING",
+                (nonce, chat_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def pop_oauth_state(nonce: str) -> str | None:
+    """Return and delete the chat_id for the given nonce. Returns None if not found or expired (>10 min)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM oauth_pending_states WHERE nonce = %s AND created_at > NOW() - INTERVAL '10 minutes' RETURNING chat_id",
+                (nonce,),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return row[0] if row else None
+    finally:
+        conn.close()
