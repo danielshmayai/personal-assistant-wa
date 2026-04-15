@@ -102,10 +102,13 @@ def _extract_media_context(body: dict) -> str | None:
     mime_type = data_field.get("mimetype", "") or _TYPE_MIME_FALLBACK.get(msg_type, "application/octet-stream")
 
     # Filename — documents usually have one; photos often don't
+    from datetime import datetime as _dt
+    _ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+    _label = msg_type or "file"
     filename = (
         data_field.get("filename")
         or payload.get("filename")
-        or f"{msg_type}_{message_id[-8:]}{_EXT_MAP.get(mime_type, '')}"
+        or f"{_label}_{_ts}{_EXT_MAP.get(mime_type, '')}"
     )
 
     return f"[MEDIA id={message_id} type={msg_type} filename={filename} mime={mime_type}]"
