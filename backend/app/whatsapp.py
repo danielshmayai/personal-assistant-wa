@@ -38,14 +38,15 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
 def _is_self_chat(body: dict) -> bool:
     """Self-chat: user sending a message to themselves (Saved Messages / Notes to self).
 
-    Two reliable signals — either is sufficient:
-      1. 'to' matches MY_WHATSAPP_ID (the configured own number).
-      2. 'from' == 'to' — sender and recipient are the same account, which is
-         only true for self-messages regardless of @c.us vs @lid format.
+    Detection priority:
+      1. 'to' matches MY_WHATSAPP_ID (explicit config — most reliable).
+      2. 'from' == 'to' — sender equals recipient, only true for self-messages.
+      3. 'from' is absent AND 'to' ends with @lid — WAHA omits 'from' for some
+         outgoing messages; @lid is then safe because there is no other party.
 
-    The previous check `to.endswith('@lid')` was too broad: in newer WhatsApp
-    multi-device, regular contacts also use @lid identifiers, causing the bot
-    to treat DMs with other people as self-chat.
+    Rule 3 deliberately requires 'from' to be absent: when messaging a contact
+    who has an @lid identifier, WAHA includes both 'from' (user) and 'to'
+    (contact) with different IDs, so rule 3 will not fire.
     """
     payload = body.get("payload", {})
     if not payload.get("fromMe", False):
@@ -54,7 +55,9 @@ def _is_self_chat(body: dict) -> bool:
     frm = payload.get("from", "")
     if MY_WHATSAPP_ID and to == MY_WHATSAPP_ID:
         return True
-    if to and frm and to == frm:
+    if frm and to and frm == to:
+        return True
+    if not frm and to.endswith("@lid"):
         return True
     return False
 
