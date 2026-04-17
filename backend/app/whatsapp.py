@@ -128,9 +128,19 @@ def _extract_media_context(body: dict) -> str | None:
 
 
 def _extract_chat_id(body: dict) -> str:
-    """Extract the chat ID to reply to (always the 'to' field — group or self)."""
+    """Extract the chat ID to reply to.
+
+    Groups: always the @g.us ID (in 'to').
+    Outgoing (fromMe): destination is the chat — use 'to'.
+    Incoming DM: the sender IS the chat — use 'from'.
+    """
     payload = body.get("payload", {})
-    return payload.get("to", "")
+    to = payload.get("to", "")
+    if to.endswith("@g.us"):
+        return to
+    if payload.get("fromMe", False):
+        return to
+    return payload.get("from", "") or to
 
 
 @router.post("/webhook/waha")
@@ -155,10 +165,6 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     if event not in ("message", "message.any"):
         return Response(status_code=200)
 
-    # Skip other bot replies to avoid loops (fromMe=True but not self-chat or group)
-    if payload.get("fromMe") and not _is_self_chat(body) and not _is_group(body):
-        return Response(status_code=200)
-
     text = _extract_text(body)
     media_ctx = _extract_media_context(body)
 
@@ -173,7 +179,6 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     chat_id = _extract_chat_id(body)
 
     # Cache media bytes from the webhook payload NOW (before the agent runs).
-    # WAHA WEBJS embeds media as base64 in _data.body — no separate download needed.
     if media_ctx:
         from app.media_cache import store_from_payload
         store_from_payload(payload.get("id", ""), payload)
@@ -184,28 +189,25 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     else:
         full_text = text
 
-    # --- SELF-CHAT: command center ---
+    # --- SELF-CHAT: respond to everything ---
     if _is_self_chat(body):
-        logger.info("Self-chat message: %.80s...", full_text)
+        logger.info("Self-chat: %.80s...", full_text)
         reply = await _process_message(full_text, chat_id)
         await send_whatsapp_message(chat_id, reply)
         return Response(status_code=200)
 
-    # --- GROUP CHAT: only respond to @danidin / !danidin ---
-    if _is_group(body):
-        text_lower = text.lower()
-        for trigger in BOT_TRIGGERS:
-            if text_lower.startswith(trigger):
-                stripped = full_text[len(trigger):].strip()
-                if stripped:
-                    logger.info("Group trigger [%s]: %.80s...", chat_id, stripped)
-                    reply = await _process_message(stripped, chat_id)
-                    await send_whatsapp_message(chat_id, reply)
-                return Response(status_code=200)
-        # No trigger — ignore silently.
-        return Response(status_code=200)
+    # --- GROUPS and DMs: respond only when @danidin / !danidin prefix is used ---
+    text_lower = text.lower()
+    for trigger in BOT_TRIGGERS:
+        if text_lower.startswith(trigger):
+            stripped = full_text[len(trigger):].strip()
+            if stripped:
+                logger.info("Trigger '%s' in chat %s: %.80s...", trigger, chat_id, stripped)
+                reply = await _process_message(stripped, chat_id)
+                await send_whatsapp_message(chat_id, reply)
+            return Response(status_code=200)
 
-    # --- DMs from others: ignore ---
+    # No trigger and not self-chat — ignore.
     return Response(status_code=200)
 
 
