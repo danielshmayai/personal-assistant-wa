@@ -36,14 +36,27 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
 
 
 def _is_self_chat(body: dict) -> bool:
-    """Self-chat: fromMe=True and destination is own number or own LID (not a group).
-    Newer WhatsApp clients use @lid format instead of @c.us for the self-device identifier."""
+    """Self-chat: user sending a message to themselves (Saved Messages / Notes to self).
+
+    Two reliable signals — either is sufficient:
+      1. 'to' matches MY_WHATSAPP_ID (the configured own number).
+      2. 'from' == 'to' — sender and recipient are the same account, which is
+         only true for self-messages regardless of @c.us vs @lid format.
+
+    The previous check `to.endswith('@lid')` was too broad: in newer WhatsApp
+    multi-device, regular contacts also use @lid identifiers, causing the bot
+    to treat DMs with other people as self-chat.
+    """
     payload = body.get("payload", {})
-    from_me = payload.get("fromMe", False)
-    if not from_me:
+    if not payload.get("fromMe", False):
         return False
     to = payload.get("to", "")
-    return to == MY_WHATSAPP_ID or to.endswith("@lid")
+    frm = payload.get("from", "")
+    if MY_WHATSAPP_ID and to == MY_WHATSAPP_ID:
+        return True
+    if to and frm and to == frm:
+        return True
+    return False
 
 
 def _is_group(body: dict) -> bool:
