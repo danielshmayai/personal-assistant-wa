@@ -72,6 +72,7 @@ services:
       WAHA_BASE_URL: "http://waha:3000"
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       MY_WHATSAPP_ID: ${MY_WHATSAPP_ID:-}
+      MY_WHATSAPP_LID: ${MY_WHATSAPP_LID:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/auth/google/callback}
