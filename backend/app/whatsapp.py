@@ -79,10 +79,8 @@ def _is_self_chat(body: dict) -> bool:
       1. to == MY_WHATSAPP_ID  — exact @c.us match (most reliable).
       2. to == _own_lid         — exact @lid match after auto-detection.
       3. from == to             — same JID, handles any format.
-      4. @lid fallback          — when own @lid is unknown, assume any @lid
-                                  destination is self-chat. May have false
-                                  positives for contacts who use @lid; set
-                                  MY_WHATSAPP_LID in .env to eliminate them.
+      If none match, returns False. Set MY_WHATSAPP_LID in .env if self-chat
+      uses @lid format and auto-detection from WAHA does not populate _own_lid.
     """
     payload = body.get("payload", {})
     if not payload.get("fromMe", False):
@@ -94,11 +92,6 @@ def _is_self_chat(body: dict) -> bool:
     if _own_lid and to == _own_lid:
         return True
     if frm and to and frm == to:
-        return True
-    # Fallback: if own @lid is not yet known, treat all @lid destinations as
-    # potential self-chat. Once WAHA auto-detection succeeds this branch is
-    # bypassed and only the exact match above fires.
-    if not _own_lid and to.endswith("@lid"):
         return True
     return False
 
