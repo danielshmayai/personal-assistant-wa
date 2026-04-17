@@ -88,6 +88,8 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to initialise postgres checkpointer — aborting startup")
         raise
     await _register_waha_webhook()
+    from app.whatsapp import detect_own_lid
+    await detect_own_lid()
     yield
 
 

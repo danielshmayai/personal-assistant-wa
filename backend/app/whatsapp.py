@@ -1,12 +1,49 @@
 import logging
 from fastapi import APIRouter, Query, Request, Response
 import httpx
-from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID, WEBHOOK_SECRET
+from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID, MY_WHATSAPP_LID, WEBHOOK_SECRET
 
 logger = logging.getLogger("pa.whatsapp")
 router = APIRouter()
 
 BOT_TRIGGERS = ("@danidin", "!danidin")
+
+# Own @lid — populated at startup from WAHA API or from MY_WHATSAPP_LID config.
+# Used to reliably detect self-chat when WhatsApp uses @lid instead of @c.us.
+_own_lid: str = MY_WHATSAPP_LID
+
+
+async def detect_own_lid() -> None:
+    """Query WAHA for the current session's own @lid and cache it.
+
+    In newer WhatsApp multi-device, the self-chat 'to' field uses @lid format
+    instead of @c.us. Without knowing our own @lid we can't reliably tell
+    self-chat from a DM to a contact who also has an @lid identifier.
+    """
+    global _own_lid
+    if _own_lid:
+        return  # already configured or previously detected
+    headers: dict[str, str] = {}
+    if WAHA_API_KEY:
+        headers["X-Api-Key"] = WAHA_API_KEY
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{WAHA_BASE_URL}/api/sessions/{WAHA_SESSION}",
+                headers=headers,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                me = data.get("me") or {}
+                # WAHA may return lid separately or inside 'id'
+                for key in ("lid", "id", "_serialized"):
+                    val = str(me.get(key, ""))
+                    if val.endswith("@lid"):
+                        _own_lid = val
+                        logger.info("whatsapp: auto-detected own @lid = %s", _own_lid)
+                        return
+    except Exception as exc:
+        logger.debug("whatsapp: could not auto-detect own @lid: %s", exc)
 
 
 async def send_whatsapp_message(chat_id: str, text: str) -> bool:
@@ -36,17 +73,16 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
 
 
 def _is_self_chat(body: dict) -> bool:
-    """Self-chat: user sending a message to themselves (Saved Messages / Notes to self).
+    """Detect self-chat (Saved Messages / Notes to self).
 
-    Detection priority:
-      1. 'to' matches MY_WHATSAPP_ID (explicit config — most reliable).
-      2. 'from' == 'to' — sender equals recipient, only true for self-messages.
-      3. 'from' is absent AND 'to' ends with @lid — WAHA omits 'from' for some
-         outgoing messages; @lid is then safe because there is no other party.
-
-    Rule 3 deliberately requires 'from' to be absent: when messaging a contact
-    who has an @lid identifier, WAHA includes both 'from' (user) and 'to'
-    (contact) with different IDs, so rule 3 will not fire.
+    Priority:
+      1. to == MY_WHATSAPP_ID  — exact @c.us match (most reliable).
+      2. to == _own_lid         — exact @lid match after auto-detection.
+      3. from == to             — same JID, handles any format.
+      4. @lid fallback          — when own @lid is unknown, assume any @lid
+                                  destination is self-chat. May have false
+                                  positives for contacts who use @lid; set
+                                  MY_WHATSAPP_LID in .env to eliminate them.
     """
     payload = body.get("payload", {})
     if not payload.get("fromMe", False):
@@ -55,9 +91,14 @@ def _is_self_chat(body: dict) -> bool:
     frm = payload.get("from", "")
     if MY_WHATSAPP_ID and to == MY_WHATSAPP_ID:
         return True
+    if _own_lid and to == _own_lid:
+        return True
     if frm and to and frm == to:
         return True
-    if not frm and to.endswith("@lid"):
+    # Fallback: if own @lid is not yet known, treat all @lid destinations as
+    # potential self-chat. Once WAHA auto-detection succeeds this branch is
+    # bypassed and only the exact match above fires.
+    if not _own_lid and to.endswith("@lid"):
         return True
     return False
 

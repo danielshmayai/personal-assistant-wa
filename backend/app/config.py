@@ -11,6 +11,11 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 # Format: "972501234567@c.us" (country code + number, no + or spaces)
 MY_WHATSAPP_ID = os.getenv("MY_WHATSAPP_ID", "")
 
+# Optional: @lid format of own number in newer WhatsApp multi-device.
+# The backend tries to auto-detect this from WAHA at startup.
+# Set manually if auto-detection fails: check WAHA logs for your @lid.
+MY_WHATSAPP_LID = os.getenv("MY_WHATSAPP_LID", "")
+
 # LLM timeout — generous for 4GB VRAM card, first-token can be slow.
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "120"))
 
