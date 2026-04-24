@@ -78,6 +78,13 @@ def retrieve(message_id: str) -> dict | None:
     return _cache.get(message_id)
 
 
+def store_web_upload(media_id: str, data: bytes, mime_type: str, filename: str) -> None:
+    """Cache bytes uploaded via the web UI under a synthetic media_id."""
+    _evict()
+    _cache[media_id] = {"data": data, "mime_type": mime_type, "filename": filename}
+    logger.debug("media_cache: web upload cached %d bytes for media_id=%s", len(data), media_id)
+
+
 def _evict() -> None:
     while len(_cache) >= _MAX_ENTRIES:
         _cache.popitem(last=False)

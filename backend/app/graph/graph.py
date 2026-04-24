@@ -53,6 +53,44 @@ def _last_ai_reply(messages: list) -> str:
     return ""
 
 
+async def stream_graph(user_text: str, chat_id: str):
+    """Async generator of WebSocket event dicts for the web UI.
+
+    Yields token/tool_start/tool_end/done dicts, filtering out reflection-node
+    tokens and tool-call argument fragments.
+    """
+    graph = _get_graph()
+    config = {"configurable": {"thread_id": chat_id}, "recursion_limit": 8}
+    input_state = {
+        "user_input": user_text,
+        "chat_id": chat_id,
+        "messages": [HumanMessage(content=user_text)],
+    }
+    reply_parts: list[str] = []
+
+    async for event in graph.astream_events(input_state, config, version="v2"):
+        ename = event["event"]
+        node = event.get("metadata", {}).get("langgraph_node", "")
+
+        if ename == "on_chat_model_stream" and node == "agent":
+            chunk = event["data"].get("chunk")
+            if chunk and chunk.content and not getattr(chunk, "tool_call_chunks", None):
+                reply_parts.append(chunk.content)
+                yield {"type": "token", "content": chunk.content}
+
+        elif ename == "on_tool_start":
+            yield {
+                "type": "tool_start",
+                "name": event.get("name", ""),
+                "input": event["data"].get("input", {}),
+            }
+
+        elif ename == "on_tool_end":
+            yield {"type": "tool_end", "name": event.get("name", "")}
+
+    yield {"type": "done", "full_reply": "".join(reply_parts)}
+
+
 async def run_graph(text: str, chat_id: str) -> str:
     graph = _get_graph()
     config = {

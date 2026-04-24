@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import httpx
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -14,6 +18,7 @@ from app.config import (
 from app.whatsapp import router as waha_router
 from app.memory.store import init_memory_tables, _get_conn
 from app.routers.google_auth import router as google_auth_router
+from app.routers.web_chat import router as web_chat_router
 from app.graph.checkpointer import setup_checkpointer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -94,10 +99,30 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PA Backend", version="0.2.0", lifespan=lifespan)
+
+# CORS — allow all origins for this personal deployment (auth enforced per endpoint)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Test-Token"],
+)
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(waha_router)
 app.include_router(google_auth_router)
+app.include_router(web_chat_router)
+
+# Serve the web UI static files
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(os.path.join(_static_dir, "index.html"))
 
 
 class TestRequest(BaseModel):

@@ -9,9 +9,9 @@ from app.config import USER_TIMEZONE
 
 logger = logging.getLogger("pa.agent")
 
-# Concise system prompt — short = fewer tokens on every request
-_SYSTEM_TEMPLATE = """\
-You are danidin, a personal assistant on WhatsApp.
+# Base system prompt shared by all platforms
+_SYSTEM_BASE = """\
+You are danidin, a personal assistant.
 Current date and time: {datetime} — this is accurate, trust it. Never ask the user for the current time.
 
 You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long-term memory.
@@ -24,12 +24,12 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 
 *Google tools:*
 - Gmail and Calendar — emails, meetings, scheduling. If Google is not connected, call google_connect and share the link.
-- Drive — save photos and documents from WhatsApp to Google Drive:
+- Drive — save photos and documents to Google Drive:
   - drive_save_photo(message_id, filename, subfolder=""): when a [MEDIA type=image …] tag appears, call this. If the user's caption names a folder/album (e.g. "save to screenshots", "store in vacation"), pass that name as subfolder. Otherwise leave subfolder empty (auto-dates).
   - drive_save_document(message_id, filename, category="General"): when a [MEDIA type=document …] tag appears, pick the best category (PDFs/Word/Spreadsheets/Receipts/Work/Personal/General) from the user's caption or file type, then call this.
   - drive_list_files: when the user asks to see saved files or browse Drive.
   - When a [MEDIA …] tag arrives without any instruction, save it immediately and confirm with the destination folder.
-  - Pass the full message_id from the tag (e.g. true_972…@c.us_3EB0…) to the tool unchanged.
+  - Pass the full message_id from the tag unchanged.
   - NEVER ask "is this ok?" before saving — just save and report where.
 
 *Smart-home (Tuya):*
@@ -42,7 +42,9 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 - delete_fact: call when the user says "forget X", "remove that fact about X", "delete my X"
 - delete_rule: call when the user says "remove rule N", "forget that rule about X", "delete that preference" (use list_memory first to find the ID)
 
-When the user says *"remember that…"* or *"note that…"* — always save it immediately as a fact or rule (whichever fits best) and confirm.
+When the user says *"remember that…"* or *"note that…"* — always save it immediately as a fact or rule (whichever fits best) and confirm."""
+
+_WA_FORMAT = """
 
 WhatsApp formatting rules (always follow):
 - *bold* (single asterisk), _italic_ (single underscore)
@@ -50,11 +52,17 @@ WhatsApp formatting rules (always follow):
 - Lists: use • or - per line
 - Keep responses short and phone-friendly"""
 
+_WEB_FORMAT = """
 
-def _build_system_prompt(memory_context: str) -> str:
+Formatting: use full Markdown — **bold**, _italic_, # headers, ```code blocks```, tables.
+Responses may be longer and well-structured when helpful."""
+
+
+def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
     tz = ZoneInfo(USER_TIMEZONE)
     now = datetime.now(tz=tz).strftime(f"%A, %d %B %Y, %H:%M ({USER_TIMEZONE})")
-    prompt = _SYSTEM_TEMPLATE.format(datetime=now)
+    addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
+    prompt = (_SYSTEM_BASE + addendum).format(datetime=now)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
     return prompt
@@ -80,7 +88,7 @@ async def agent_node(state: PAState) -> dict:
     tools = WEB_TOOLS + get_google_tools(chat_id) + get_tuya_tools() + MEMORY_TOOLS
 
     llm = get_gemini_llm().bind_tools(tools)
-    system = _build_system_prompt(state.get("memory_context", ""))
+    system = _build_system_prompt(state.get("memory_context", ""), state.get("chat_id", ""))
 
     # Send last 20 messages for context — full history lives in checkpointer
     messages = [SystemMessage(content=system)] + list(state["messages"])[-20:]
