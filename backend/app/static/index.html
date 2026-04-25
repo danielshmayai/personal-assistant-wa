@@ -819,8 +819,9 @@ body {
 
 <script>
 // ── Configure marked ────────────────────────────────────────────────────────
-marked.setOptions({ gfm: true, breaks: true });
 marked.use({
+  gfm: true,
+  breaks: true,
   renderer: {
     code(token) {
       const lang = token.lang || '';
