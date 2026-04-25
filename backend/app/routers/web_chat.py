@@ -44,6 +44,7 @@ def _require_bearer(
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket, token: str = "", chat_id: str = "web"):
     if not _verify_token(token):
+        await websocket.accept()
         await websocket.close(code=4403, reason="Unauthorized")
         return
 
