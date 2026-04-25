@@ -52,6 +52,14 @@ def init_memory_tables():
                     scopes TEXT
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS web_conversations (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT 'New conversation',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
         conn.commit()
     finally:
         conn.close()
@@ -259,5 +267,61 @@ def pop_oauth_state(nonce: str) -> str | None:
             row = cur.fetchone()
         conn.commit()
         return row[0] if row else None
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Web conversation index
+# ---------------------------------------------------------------------------
+
+def upsert_web_conversation(chat_id: str, title: str | None = None) -> None:
+    """Create or touch a web conversation. Only updates title if still at default."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            if title:
+                cur.execute("""
+                    INSERT INTO web_conversations (id, title, updated_at)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (id) DO UPDATE
+                    SET title = CASE
+                            WHEN web_conversations.title = 'New conversation'
+                            THEN EXCLUDED.title
+                            ELSE web_conversations.title
+                        END,
+                        updated_at = NOW()
+                """, (chat_id, title))
+            else:
+                cur.execute("""
+                    INSERT INTO web_conversations (id, updated_at)
+                    VALUES (%s, NOW())
+                    ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
+                """, (chat_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_web_conversations() -> list[dict]:
+    """Return all web conversations ordered by most recently active."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, title, created_at, updated_at
+                FROM web_conversations
+                ORDER BY updated_at DESC
+                LIMIT 50
+            """)
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "created_at": r[2].isoformat() if r[2] else None,
+                    "updated_at": r[3].isoformat() if r[3] else None,
+                }
+                for r in cur.fetchall()
+            ]
     finally:
         conn.close()
