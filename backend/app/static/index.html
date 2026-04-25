@@ -518,6 +518,56 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
+/* ── Mic button ── */
+#mic-btn {
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text3);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  transition: color .15s, background .15s;
+}
+#mic-btn:hover { color: var(--accent); background: var(--accent-dim); }
+#mic-btn.recording {
+  color: var(--red);
+  background: rgba(240,82,82,.12);
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240,82,82,.45); border-radius: var(--radius-sm); }
+  60%       { box-shadow: 0 0 0 7px rgba(240,82,82,0); border-radius: var(--radius-sm); }
+}
+
+/* ── Speaker button on assistant messages ── */
+.speak-btn {
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text3);
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity .15s, color .15s;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.message-assistant:hover .speak-btn { opacity: 1; }
+.speak-btn.speaking { opacity: 1; color: var(--accent); }
+
+/* Always visible on touch devices */
+@media (hover: none) {
+  .speak-btn { opacity: .55; }
+}
+
 /* ── Conversation list ── */
 #conv-list {
   flex: 1;
@@ -808,6 +858,14 @@ body {
       </label>
       <input type="file" id="file-input" hidden>
       <textarea id="message-input" placeholder="Message… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+      <button type="button" id="mic-btn" title="Voice input">
+        <svg id="mic-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
       <button type="submit" id="send-btn" title="Send">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -968,11 +1026,24 @@ function escHtml(s) {
     .replace(/>/g, '&gt;');
 }
 
+const SPEAK_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
+const STOP_SVG  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>`;
+
+function attachSpeakBtn(div, getText) {
+  const btn = document.createElement('button');
+  btn.className = 'speak-btn';
+  btn.title = 'Read aloud';
+  btn.innerHTML = SPEAK_SVG;
+  btn.addEventListener('click', () => speakText(getText(), btn));
+  div.appendChild(btn);
+}
+
 function addMessage(role, content) {
   const div = document.createElement('div');
   div.className = `message message-${role}`;
   if (role === 'assistant') {
     div.innerHTML = marked.parse(content || '');
+    attachSpeakBtn(div, () => content);
   } else {
     div.textContent = content;
   }
@@ -1021,6 +1092,8 @@ function finalizeAiMsg(fullReply) {
       currentAiEl.innerHTML = marked.parse(content);
       currentAiEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
       if (isRtl(content)) currentAiEl.setAttribute('dir', 'rtl');
+      attachSpeakBtn(currentAiEl, () => content);
+      if (autoSpeak) speakText(content, null);
     }
     currentAiEl = null;
     currentAiRaw = '';
@@ -1265,6 +1338,124 @@ document.getElementById('refresh-memory-btn').addEventListener('click', e => {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function scrollBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// ── Voice: STT (faster-whisper via backend) + TTS (SpeechSynthesis) ─────────
+let mediaRecorder  = null;
+let audioChunks    = [];
+let autoSpeak      = localStorage.getItem('pa_autospeak') === '1';
+let activeSpeakBtn = null;
+const micBtn       = document.getElementById('mic-btn');
+const defaultPlaceholder = messageInput.placeholder;
+
+// Pick the best supported MIME type for recording
+const AUDIO_MIME = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus']
+  .find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+
+micBtn.addEventListener('click', () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const opts = AUDIO_MIME ? { mimeType: AUDIO_MIME } : {};
+    mediaRecorder = new MediaRecorder(stream, opts);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = handleRecordingStop;
+    mediaRecorder.start();
+    micBtn.classList.add('recording');
+    messageInput.placeholder = 'Recording… tap mic to stop';
+  } catch {
+    addSystemMsg('⚠️ Microphone access denied');
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  micBtn.classList.remove('recording');
+  messageInput.placeholder = defaultPlaceholder;
+}
+
+async function handleRecordingStop() {
+  const mime = (audioChunks[0] && audioChunks[0].type) || AUDIO_MIME || 'audio/webm';
+  const blob = new Blob(audioChunks, { type: mime });
+  audioChunks = [];
+
+  messageInput.placeholder = 'Transcribing…';
+  messageInput.disabled = true;
+  micBtn.disabled = true;
+
+  try {
+    const ext = mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : 'webm';
+    const form = new FormData();
+    form.append('file', blob, `audio.${ext}`);
+    const res = await fetch('/api/stt', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { text } = await res.json();
+    if (text) {
+      messageInput.value = text;
+      messageInput.style.height = 'auto';
+      messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+      inputForm.dispatchEvent(new Event('submit'));
+    }
+  } catch (err) {
+    addSystemMsg('⚠️ Transcription failed: ' + err.message);
+  } finally {
+    messageInput.disabled = false;
+    micBtn.disabled = false;
+    messageInput.placeholder = defaultPlaceholder;
+  }
+}
+
+// ── TTS via browser SpeechSynthesis ──────────────────────────────────────────
+function speakText(text, btn) {
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  if (activeSpeakBtn) {
+    activeSpeakBtn.innerHTML = SPEAK_SVG;
+    activeSpeakBtn.classList.remove('speaking');
+    activeSpeakBtn = null;
+  }
+  const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
+  const utt = new SpeechSynthesisUtterance(plain);
+  // Prefer a natural-sounding voice
+  const pickVoice = () => {
+    const voices = speechSynthesis.getVoices();
+    return voices.find(v => /google|samantha|karen|daniel|moira/i.test(v.name))
+        || voices.find(v => v.lang.startsWith('en') && v.localService)
+        || voices[0];
+  };
+  const voice = pickVoice();
+  if (voice) utt.voice = voice;
+  utt.rate = 1.05;
+  if (btn) {
+    btn.innerHTML = STOP_SVG;
+    btn.classList.add('speaking');
+    activeSpeakBtn = btn;
+    btn.onclick = () => { speechSynthesis.cancel(); };
+  }
+  utt.onend = utt.onerror = () => {
+    if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
+    if (activeSpeakBtn === btn) activeSpeakBtn = null;
+  };
+  // Voices may not be loaded yet on first call
+  if (speechSynthesis.getVoices().length === 0) {
+    speechSynthesis.addEventListener('voiceschanged', () => { if (!utt.voice) utt.voice = pickVoice(); }, { once: true });
+  }
+  speechSynthesis.speak(utt);
 }
 
 // ── Mobile sidebar toggle ───────────────────────────────────────────────────

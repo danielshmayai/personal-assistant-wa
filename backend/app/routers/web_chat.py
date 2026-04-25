@@ -8,9 +8,12 @@ Endpoints:
   POST /api/upload          — upload a file into media_cache
 """
 
+import contextlib
 import json
 import logging
 import mimetypes
+import os
+import tempfile
 import uuid
 import asyncio
 
@@ -23,6 +26,18 @@ logger = logging.getLogger("pa.web_chat")
 router = APIRouter()
 
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_MAX_AUDIO_BYTES  = 25 * 1024 * 1024  # 25 MB
+
+# Lazy-loaded Whisper model (loaded on first STT request)
+_whisper = None
+
+def _get_whisper():
+    global _whisper
+    if _whisper is None:
+        from faster_whisper import WhisperModel
+        _whisper = WhisperModel("tiny", device="cpu", compute_type="int8")
+        logger.info("Whisper tiny model loaded")
+    return _whisper
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
@@ -185,3 +200,44 @@ async def upload_file(file: UploadFile, _: str = Depends(_require_bearer)):
 
     logger.info("Web upload: media_id=%s filename=%s mime=%s size=%d", media_id, file.filename, mime_type, len(data))
     return {"media_id": media_id, "filename": file.filename, "mime_type": mime_type, "size": len(data)}
+
+
+# ── POST /api/stt ─────────────────────────────────────────────────────────────
+
+@router.post("/api/stt")
+async def speech_to_text(file: UploadFile, _: str = Depends(_require_bearer)):
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio")
+    if len(data) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio too large (max 25 MB)")
+
+    ct = file.content_type or ""
+    if "mp4" in ct or "m4a" in ct:
+        suffix = ".mp4"
+    elif "ogg" in ct:
+        suffix = ".ogg"
+    elif "wav" in ct:
+        suffix = ".wav"
+    else:
+        suffix = ".webm"
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        f.write(data)
+        tmp_path = f.name
+
+    try:
+        loop = asyncio.get_running_loop()
+        model = _get_whisper()
+        segments, _ = await loop.run_in_executor(
+            None, lambda: model.transcribe(tmp_path, beam_size=5)
+        )
+        text = " ".join(s.text for s in segments).strip()
+        logger.info("STT transcribed %d bytes → %d chars", len(data), len(text))
+        return {"text": text}
+    except Exception as exc:
+        logger.exception("STT failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
