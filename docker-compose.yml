@@ -87,7 +87,7 @@ services:
       TUYA_API_ENDPOINT: ${TUYA_API_ENDPOINT:-https://openapi.tuyaeu.com}
       TUYA_PREFER_LOCAL: ${TUYA_PREFER_LOCAL:-false}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     networks:
       - pa-net
     depends_on:
