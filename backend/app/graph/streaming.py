@@ -20,7 +20,7 @@ async def get_history(chat_id: str, max_messages: int = 60) -> list[dict]:
     from app.graph.checkpointer import get_checkpointer
     try:
         cp = get_checkpointer()
-        tup = await cp.aget({"configurable": {"thread_id": chat_id}})
+        tup = await cp.aget_tuple({"configurable": {"thread_id": chat_id}})
         if not tup:
             return []
         messages = tup.checkpoint.get("channel_values", {}).get("messages", [])
