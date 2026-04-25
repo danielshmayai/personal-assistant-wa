@@ -1,10 +1,11 @@
 """
-Web chat router — WebSocket streaming chat, memory API, and file upload.
+Web chat router — WebSocket streaming chat, conversations, memory, and file upload.
 
 Endpoints:
-  WS  /ws/chat          — streaming chat (auth: ?token= query param)
-  GET /api/memory       — facts and rules for the sidebar (Bearer token)
-  POST /api/upload      — upload a file into media_cache (Bearer token)
+  WS  /ws/chat              — streaming chat  (?token=&chat_id=)
+  GET /api/conversations    — list web conversations
+  GET /api/memory           — facts and rules for the sidebar
+  POST /api/upload          — upload a file into media_cache
 """
 
 import json
@@ -21,7 +22,6 @@ from app.config import TEST_TOKEN
 logger = logging.getLogger("pa.web_chat")
 router = APIRouter()
 
-_WEB_CHAT_ID = "web"
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
@@ -42,21 +42,37 @@ def _require_bearer(
 # ── WebSocket /ws/chat ────────────────────────────────────────────────────────
 
 @router.websocket("/ws/chat")
-async def websocket_chat(websocket: WebSocket, token: str = ""):
+async def websocket_chat(websocket: WebSocket, token: str = "", chat_id: str = "web"):
     if not _verify_token(token):
         await websocket.close(code=4403, reason="Unauthorized")
         return
 
-    await websocket.accept()
-    logger.info("Web chat WebSocket connected")
+    # All web chat IDs must start with "web" so distiller detects the platform
+    if not chat_id.startswith("web"):
+        chat_id = "web"
 
-    # Send conversation history on connect
+    await websocket.accept()
+    loop = asyncio.get_running_loop()
+    logger.info("Web chat connected: chat_id=%s", chat_id)
+
+    # Register / touch conversation record
+    try:
+        from app.memory.store import upsert_web_conversation
+        await loop.run_in_executor(None, upsert_web_conversation, chat_id, None)
+    except Exception:
+        logger.exception("Failed to upsert conversation chat_id=%s", chat_id)
+
+    # Send conversation history
     try:
         from app.graph.streaming import get_history
-        history = await get_history(_WEB_CHAT_ID)
+        history = await get_history(chat_id)
         await websocket.send_text(json.dumps({"type": "history", "messages": history}))
     except Exception:
-        logger.exception("Failed to send history on WebSocket connect")
+        logger.exception("Failed to send history for chat_id=%s", chat_id)
+        history = []
+
+    # Only set title from first-ever message (if conversation has no history yet)
+    title_pending = len(history) == 0
 
     try:
         while True:
@@ -92,17 +108,47 @@ async def websocket_chat(websocket: WebSocket, token: str = ""):
             else:
                 full_text = user_text
 
-            # Stream response events
+            # Set conversation title from first user message
+            if title_pending and user_text:
+                title = user_text[:60].strip()
+                try:
+                    from app.memory.store import upsert_web_conversation
+                    await loop.run_in_executor(None, upsert_web_conversation, chat_id, title)
+                    await websocket.send_text(json.dumps({
+                        "type": "conversation_updated",
+                        "id": chat_id,
+                        "title": title,
+                    }))
+                except Exception:
+                    logger.exception("Failed to set conversation title")
+                title_pending = False
+
+            # Stream response
             try:
                 from app.graph.streaming import stream_graph
-                async for event in stream_graph(full_text, _WEB_CHAT_ID):
+                async for event in stream_graph(full_text, chat_id):
                     await websocket.send_text(json.dumps(event))
+                # Touch updated_at after each completed exchange
+                try:
+                    from app.memory.store import upsert_web_conversation
+                    await loop.run_in_executor(None, upsert_web_conversation, chat_id, None)
+                except Exception:
+                    pass
             except Exception as exc:
-                logger.exception("stream_graph failed for web chat")
+                logger.exception("stream_graph failed for chat_id=%s", chat_id)
                 await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
 
     except WebSocketDisconnect:
-        logger.info("Web chat WebSocket disconnected")
+        logger.info("Web chat disconnected: chat_id=%s", chat_id)
+
+
+# ── GET /api/conversations ────────────────────────────────────────────────────
+
+@router.get("/api/conversations")
+async def get_conversations(_: str = Depends(_require_bearer)):
+    from app.memory.store import list_web_conversations
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, list_web_conversations)
 
 
 # ── GET /api/memory ───────────────────────────────────────────────────────────
