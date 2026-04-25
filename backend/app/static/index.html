@@ -4,40 +4,50 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personal Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <style>
 :root {
-  --bg: #0d1117;
-  --bg2: #161b22;
-  --bg3: #1c2128;
-  --border: #30363d;
-  --accent: #58a6ff;
-  --accent2: #3fb950;
-  --text: #e6edf3;
-  --text2: #8b949e;
-  --bubble-user: #1f4074;
-  --bubble-ai: #1c2128;
-  --red: #f85149;
-  --radius: 12px;
+  --bg:          #0d1117;
+  --bg2:         #13181f;
+  --bg3:         #1a2030;
+  --border:      #252d3a;
+  --border2:     #2d3748;
+  --accent:      #3b9eff;
+  --accent-dim:  rgba(59,158,255,.12);
+  --accent2:     #34d058;
+  --text:        #dde5f0;
+  --text2:       #7a8899;
+  --text3:       #4e5a6a;
+  --bubble-user: #1a3a6b;
+  --bubble-ai:   #161c27;
+  --red:         #f05252;
+  --radius:      12px;
+  --radius-sm:   8px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
   height: 100dvh;
   overflow: hidden;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ── Login ── */
 #login-screen {
   position: fixed;
   inset: 0;
-  background: var(--bg);
+  background: radial-gradient(ellipse at 50% 40%, #0f1823 0%, var(--bg) 70%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -45,53 +55,89 @@ body {
 }
 .login-card {
   background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 40px 48px;
-  width: 360px;
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 40px 44px;
+  width: 380px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.04) inset;
+}
+.login-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.login-logo svg {
+  color: var(--accent);
+  flex-shrink: 0;
 }
 .login-card h1 {
+  font-family: "Outfit", sans-serif;
   font-size: 22px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--accent);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -.01em;
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.login-field label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  letter-spacing: .01em;
 }
 .login-card input[type=password] {
   background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
   color: var(--text);
+  font-family: inherit;
   font-size: 15px;
   padding: 10px 14px;
   outline: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
 }
-.login-card input[type=password]:focus { border-color: var(--accent); }
-.login-card button {
+.login-card input[type=password]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.login-card input[type=password]::placeholder { color: var(--text3); }
+.login-card button[type=submit], #login-btn {
   background: var(--accent);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: #fff;
   cursor: pointer;
+  font-family: inherit;
   font-size: 15px;
   font-weight: 600;
-  padding: 10px;
-  transition: opacity .15s;
+  padding: 11px;
+  margin-top: 8px;
+  transition: opacity .15s, transform .1s;
+  letter-spacing: .01em;
 }
-.login-card button:hover { opacity: .85; }
+.login-card button[type=submit]:hover, #login-btn:hover { opacity: .88; transform: translateY(-1px); }
+.login-card button[type=submit]:active, #login-btn:active { transform: translateY(0); opacity: .95; }
 #login-error {
   color: var(--red);
   font-size: 13px;
   text-align: center;
+  margin-top: 4px;
 }
 
 /* ── App layout ── */
 #app {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 256px 1fr;
   height: 100dvh;
 }
 
@@ -104,40 +150,59 @@ body {
   overflow: hidden;
 }
 .sidebar-header {
-  padding: 16px;
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--text2);
+  padding: 16px 16px 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Outfit", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text2);
+}
+.sidebar-title svg { color: var(--text3); }
 #refresh-memory-btn {
   background: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border2);
   border-radius: 6px;
   color: var(--text2);
   cursor: pointer;
+  font-family: inherit;
   font-size: 11px;
-  padding: 3px 8px;
-  transition: color .15s, border-color .15s;
+  font-weight: 500;
+  padding: 4px 9px;
+  transition: color .15s, border-color .15s, background .15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-#refresh-memory-btn:hover { color: var(--accent); border-color: var(--accent); }
+#refresh-memory-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
 #sidebar-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 8px 12px 16px;
 }
+.memory-section { margin-top: 16px; }
+.memory-section:first-child { margin-top: 4px; }
 .memory-section h3 {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--text2);
-  margin: 12px 0 6px;
+  letter-spacing: .1em;
+  color: var(--text3);
+  padding: 0 4px;
+  margin-bottom: 8px;
 }
 .memory-section ul {
   list-style: none;
@@ -147,14 +212,25 @@ body {
 }
 .memory-section li {
   background: var(--bg3);
-  border-radius: 6px;
-  font-size: 12px;
-  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 7px 10px;
   color: var(--text);
   word-break: break-word;
+  transition: border-color .15s;
 }
-.memory-section li strong { color: var(--accent); }
-.muted { color: var(--text2) !important; font-style: italic; }
+.memory-section li:hover { border-color: var(--border2); }
+.memory-section li strong { color: var(--accent); font-weight: 600; }
+.muted {
+  color: var(--text3) !important;
+  font-style: italic;
+  border-color: transparent !important;
+  background: transparent !important;
+  font-size: 12px !important;
+  padding: 4px 4px !important;
+}
 
 /* ── Chat main ── */
 #chat-main {
@@ -168,27 +244,53 @@ body {
   border-bottom: 1px solid var(--border);
   display: flex;
   gap: 10px;
-  padding: 14px 20px;
-  font-weight: 600;
+  padding: 0 20px;
+  height: 56px;
+  flex-shrink: 0;
+}
+.header-title {
+  font-family: "Outfit", sans-serif;
+  font-weight: 700;
   font-size: 16px;
+  letter-spacing: -.01em;
+  color: var(--text);
+  flex: 1;
+}
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
 }
 .status-dot {
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--text2);
+  background: var(--text3);
   flex-shrink: 0;
   transition: background .3s;
 }
-.status-dot.connected { background: var(--accent2); }
+.status-dot.connected { background: var(--accent2); box-shadow: 0 0 6px rgba(52,208,88,.4); }
 .status-dot.disconnected { background: var(--red); }
 .status-dot.error { background: var(--red); }
+#status-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+  transition: color .3s;
+}
 
 /* ── Messages ── */
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 24px 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -196,18 +298,20 @@ body {
 }
 #messages.drag-over {
   outline: 2px dashed var(--accent);
-  outline-offset: -4px;
+  outline-offset: -6px;
+  border-radius: 4px;
 }
 .message {
   max-width: 76%;
   padding: 12px 16px;
   border-radius: var(--radius);
   font-size: 14.5px;
-  line-height: 1.6;
+  line-height: 1.65;
   word-break: break-word;
 }
 .message-user {
   background: var(--bubble-user);
+  border: 1px solid rgba(59,158,255,.2);
   align-self: flex-end;
   border-bottom-right-radius: 4px;
   white-space: pre-wrap;
@@ -218,40 +322,45 @@ body {
   align-self: flex-start;
   border-bottom-left-radius: 4px;
 }
-.message-assistant.streaming { opacity: .9; }
+.message-assistant.streaming { opacity: .92; }
 
 /* Markdown inside assistant bubbles */
 .message-assistant h1,
 .message-assistant h2,
 .message-assistant h3 {
-  margin: .6em 0 .3em;
-  font-size: 1em;
+  margin: .7em 0 .3em;
   font-weight: 700;
+  letter-spacing: -.01em;
 }
-.message-assistant p { margin: .3em 0; }
+.message-assistant h1 { font-size: 1.15em; }
+.message-assistant h2 { font-size: 1.05em; }
+.message-assistant h3 { font-size: 1em; }
+.message-assistant p { margin: .35em 0; }
 .message-assistant p:first-child { margin-top: 0; }
 .message-assistant p:last-child { margin-bottom: 0; }
 .message-assistant ul,
 .message-assistant ol {
-  padding-left: 1.4em;
-  margin: .3em 0;
+  padding-left: 1.5em;
+  margin: .35em 0;
 }
-.message-assistant li { margin: .1em 0; }
+.message-assistant li { margin: .15em 0; }
 .message-assistant code:not(pre code) {
-  background: rgba(110,118,129,.2);
+  background: rgba(110,118,129,.18);
+  border: 1px solid rgba(110,118,129,.25);
   border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: .85em;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-size: .82em;
   padding: .1em .35em;
 }
 .message-assistant pre {
-  background: #0d1117;
+  background: #0a0f16;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  margin: .5em 0;
+  border-radius: 10px;
+  margin: .6em 0;
   overflow-x: auto;
 }
 .message-assistant pre code {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   font-size: 13px;
   padding: 14px 16px;
   display: block;
@@ -265,32 +374,56 @@ body {
 .message-assistant th,
 .message-assistant td {
   border: 1px solid var(--border);
-  padding: 6px 10px;
+  padding: 7px 11px;
   text-align: left;
 }
-.message-assistant th { background: var(--bg3); font-weight: 600; }
+.message-assistant th {
+  background: var(--bg3);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text2);
+}
 .message-assistant blockquote {
   border-left: 3px solid var(--accent);
   color: var(--text2);
-  margin: .4em 0;
-  padding-left: 12px;
+  margin: .5em 0;
+  padding: 2px 0 2px 14px;
+  font-style: italic;
 }
-.message-assistant a { color: var(--accent); }
+.message-assistant a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.message-assistant a:hover { opacity: .8; }
 
 /* Tool badges */
 .tool-badge {
   align-self: flex-start;
   background: var(--bg3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border2);
   border-radius: 20px;
   color: var(--text2);
   font-size: 12px;
-  padding: 4px 12px;
+  font-weight: 500;
+  padding: 5px 13px;
   animation: fadeIn .2s ease;
   transition: opacity .4s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tool-badge::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
 }
 .tool-badge.done { opacity: 0; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
 /* ── Upload preview ── */
 #upload-preview {
@@ -303,16 +436,22 @@ body {
   font-size: 13px;
   color: var(--text2);
 }
+#upload-preview svg { color: var(--accent); flex-shrink: 0; }
 #upload-cancel-btn {
   background: none;
   border: none;
-  color: var(--text2);
+  color: var(--text3);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
   padding: 2px 4px;
+  margin-left: auto;
+  border-radius: 4px;
+  transition: color .15s, background .15s;
+  display: flex;
+  align-items: center;
 }
-#upload-cancel-btn:hover { color: var(--red); }
+#upload-cancel-btn:hover { color: var(--red); background: rgba(240,82,82,.1); }
 
 /* ── Input bar ── */
 #input-form {
@@ -322,55 +461,155 @@ body {
   display: flex;
   gap: 8px;
   padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
 }
 #upload-label {
   cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  padding: 6px 4px;
-  opacity: .6;
-  transition: opacity .15s;
+  color: var(--text3);
+  padding: 8px 6px;
+  opacity: 1;
+  transition: color .15s;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: color .15s, background .15s;
 }
-#upload-label:hover { opacity: 1; }
+#upload-label:hover { color: var(--accent); background: var(--accent-dim); }
 #message-input {
   background: var(--bg3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border2);
   border-radius: 10px;
   color: var(--text);
   flex: 1;
   font-family: inherit;
   font-size: 14.5px;
-  line-height: 1.5;
+  line-height: 1.55;
   max-height: 200px;
   outline: none;
   padding: 9px 14px;
   resize: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-#message-input:focus { border-color: var(--accent); }
-#message-input:disabled { opacity: .5; }
+#message-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+#message-input:disabled { opacity: .45; }
+#message-input::placeholder { color: var(--text3); }
 #send-btn {
   background: var(--accent);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: #fff;
   cursor: pointer;
   flex-shrink: 0;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 9px 18px;
-  transition: opacity .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  transition: opacity .15s, transform .1s;
 }
-#send-btn:hover { opacity: .85; }
-#send-btn:disabled { opacity: .4; cursor: default; }
+#send-btn:hover { opacity: .88; transform: translateY(-1px); }
+#send-btn:active { transform: translateY(0); opacity: .95; }
+#send-btn:disabled { opacity: .35; cursor: default; transform: none; }
 
 .hidden { display: none !important; }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+/* ── Mobile menu button (hidden on desktop) ── */
+#menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 6px;
+  margin-right: 2px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  transition: color .15s, background .15s;
+  align-items: center;
+  justify-content: center;
+}
+#menu-btn:hover { color: var(--text); background: var(--bg3); }
+
+/* ── Sidebar overlay backdrop (mobile) ── */
+#sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  backdrop-filter: blur(2px);
+  z-index: 40;
+}
+
+/* ── Mobile breakpoint ── */
+@media (max-width: 640px) {
+  #app {
+    grid-template-columns: 1fr;
+  }
+
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: -272px;
+    width: 272px;
+    height: 100dvh;
+    z-index: 50;
+    transition: left .25s cubic-bezier(.4,0,.2,1);
+    box-shadow: 4px 0 32px rgba(0,0,0,.5);
+  }
+
+  #sidebar.open {
+    left: 0;
+  }
+
+  #sidebar-overlay.visible {
+    display: block;
+  }
+
+  #menu-btn {
+    display: flex;
+  }
+
+  .login-card {
+    width: calc(100vw - 32px);
+    padding: 32px 24px;
+  }
+
+  .message {
+    max-width: 92%;
+  }
+
+  /* Prevent iOS auto-zoom on input focus */
+  #message-input,
+  .login-card input[type=password] {
+    font-size: 16px;
+  }
+
+  #messages {
+    padding: 16px 16px 12px;
+  }
+
+  #input-form {
+    padding: 10px 12px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  #chat-header {
+    padding: 0 16px;
+    height: 52px;
+  }
+
+  .header-status { display: none; }
+}
 </style>
 </head>
 <body>
@@ -378,9 +617,19 @@ body {
 <!-- Login -->
 <div id="login-screen">
   <div class="login-card">
-    <h1>🤖 Personal Assistant</h1>
-    <input type="password" id="token-input" placeholder="Enter access token" autocomplete="current-password">
-    <button id="login-btn">Connect</button>
+    <div class="login-logo">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a4 4 0 0 1 4 4v1h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3h1V6a4 4 0 0 1 4-4z"/>
+        <circle cx="9" cy="13" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="15" cy="13" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+      <h1>Personal Assistant</h1>
+    </div>
+    <div class="login-field">
+      <label for="token-input">Access token</label>
+      <input type="password" id="token-input" placeholder="Enter your token" autocomplete="current-password">
+    </div>
+    <button id="login-btn" type="submit">Connect</button>
     <p id="login-error" class="hidden"></p>
   </div>
 </div>
@@ -389,8 +638,19 @@ body {
 <div id="app" class="hidden">
   <aside id="sidebar">
     <div class="sidebar-header">
-      Memory
-      <button id="refresh-memory-btn" title="Refresh">↻ Refresh</button>
+      <span class="sidebar-title">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+          <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+        </svg>
+        Memory
+      </span>
+      <button id="refresh-memory-btn" title="Refresh">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        Refresh
+      </button>
     </div>
     <div id="sidebar-body">
       <div class="memory-section">
@@ -403,26 +663,51 @@ body {
       </div>
     </div>
   </aside>
+  <div id="sidebar-overlay"></div>
 
   <main id="chat-main">
     <header id="chat-header">
-      <div class="status-dot" id="status-dot"></div>
-      <span>Personal Assistant</span>
+      <button id="menu-btn" title="Toggle memory">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <span class="header-title">Personal Assistant</span>
+      <div class="header-status">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-label">Connecting</span>
+      </div>
     </header>
 
     <div id="messages" role="log" aria-live="polite"></div>
 
     <div id="upload-preview" class="hidden">
-      <span>📎</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+      </svg>
       <span id="upload-filename"></span>
-      <button id="upload-cancel-btn" title="Remove">✕</button>
+      <button id="upload-cancel-btn" title="Remove">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
     </div>
 
     <form id="input-form" autocomplete="off">
-      <label id="upload-label" for="file-input" title="Attach file">📎</label>
+      <label id="upload-label" for="file-input" title="Attach file">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </label>
       <input type="file" id="file-input" hidden>
       <textarea id="message-input" placeholder="Message… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
-      <button type="submit" id="send-btn">Send</button>
+      <button type="submit" id="send-btn" title="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
     </form>
   </main>
 </div>
@@ -460,6 +745,7 @@ const tokenInput   = document.getElementById('token-input');
 const loginBtn     = document.getElementById('login-btn');
 const loginError   = document.getElementById('login-error');
 const statusDot    = document.getElementById('status-dot');
+const statusLabel  = document.getElementById('status-label');
 const messagesEl   = document.getElementById('messages');
 const uploadPreview= document.getElementById('upload-preview');
 const uploadFilename= document.getElementById('upload-filename');
@@ -490,7 +776,8 @@ function showApp() {
 
 function setStatus(state) {
   statusDot.className = 'status-dot ' + state;
-  statusDot.title = state;
+  const labels = { connected: 'Connected', disconnected: 'Reconnecting…', error: 'Error' };
+  if (statusLabel) statusLabel.textContent = labels[state] || state;
 }
 
 function connectWebSocket() {
@@ -592,7 +879,7 @@ function renderHistory(messages) {
   activeToolBadges = {};
   currentAiEl = null;
   if (!messages.length) {
-    addSystemMsg('No conversation history yet. Say hello!');
+    addSystemMsg('Start a conversation to get going.');
     return;
   }
   messages.forEach(m => addMessage(m.role, m.content));
@@ -786,6 +1073,31 @@ document.getElementById('refresh-memory-btn').addEventListener('click', loadMemo
 function scrollBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+
+// ── Mobile sidebar toggle ───────────────────────────────────────────────────
+const menuBtn      = document.getElementById('menu-btn');
+const sidebar      = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  sidebarOverlay.classList.add('visible');
+}
+
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  sidebarOverlay.classList.remove('visible');
+}
+
+menuBtn.addEventListener('click', () => {
+  sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+});
+sidebarOverlay.addEventListener('click', closeSidebar);
+
+// Close sidebar on nav (mobile UX)
+document.getElementById('refresh-memory-btn').addEventListener('click', () => {
+  if (window.innerWidth <= 640) closeSidebar();
+});
 
 // ── Auto-login ───────────────────────────────────────────────────────────────
 if (token) {
