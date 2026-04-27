@@ -26,11 +26,12 @@ async def get_history(chat_id: str, max_messages: int = 60) -> list[dict]:
         messages = tup.checkpoint.get("channel_values", {}).get("messages", [])
         result = []
         for msg in messages[-max_messages:]:
+            ts = getattr(msg, "additional_kwargs", {}).get("ts", "")
             if isinstance(msg, HumanMessage):
-                result.append({"role": "user", "content": str(msg.content or "")})
+                result.append({"role": "user", "content": str(msg.content or ""), "ts": ts})
             elif isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
                 from app.graph.graph import extract_text
-                result.append({"role": "assistant", "content": extract_text(msg.content)})
+                result.append({"role": "assistant", "content": extract_text(msg.content), "ts": ts})
         return result
     except Exception:
         logger.exception("get_history failed for chat_id=%s", chat_id)

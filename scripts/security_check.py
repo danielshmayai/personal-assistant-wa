@@ -62,9 +62,9 @@ def get_staged_files() -> list[str]:
 def get_staged_diff() -> str:
     result = subprocess.run(
         ["git", "diff", "--cached", "--unified=0"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, check=True,
     )
-    return result.stdout
+    return result.stdout.decode("utf-8", errors="replace")
 
 
 def is_placeholder(line: str) -> bool:

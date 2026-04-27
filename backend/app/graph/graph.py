@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 from app.graph.state import PAState
@@ -71,7 +72,7 @@ async def stream_graph(user_text: str, chat_id: str):
     input_state = {
         "user_input": user_text,
         "chat_id": chat_id,
-        "messages": [HumanMessage(content=user_text)],
+        "messages": [HumanMessage(content=user_text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})],
     }
     reply_parts: list[str] = []
 
@@ -107,7 +108,7 @@ async def run_graph(text: str, chat_id: str) -> str:
         "recursion_limit": 8,  # max 3 tool call rounds before giving up
     }
     result = await graph.ainvoke(
-        {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text)]},
+        {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
         config=config,
     )
     raw = _last_ai_reply(result.get("messages", []))

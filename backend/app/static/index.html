@@ -598,6 +598,31 @@ body {
 .conv-item-title.untitled { color: var(--text2); font-style: italic; }
 .conv-item-time { font-size: 11px; color: var(--text3); flex-shrink: 0; }
 .conv-empty { color: var(--text3); font-size: 12px; font-style: italic; padding: 12px 10px; }
+.conv-item-del {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color .15s, background .15s;
+  line-height: 1;
+}
+.conv-item:hover .conv-item-del { display: flex; }
+.conv-item-del:hover { color: var(--red); background: rgba(240,82,82,.1); }
+.msg-time {
+  display: block;
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 5px;
+  letter-spacing: .01em;
+}
+.message-user .msg-time { text-align: right; }
+.message-assistant .msg-time { text-align: left; }
 
 /* ── New chat button ── */
 #new-chat-btn {
@@ -905,6 +930,7 @@ let pendingFilename = null;
 let activeToolBadges = {};
 let currentAiEl = null;
 let currentAiRaw = '';
+let currentAiTs = '';
 let reconnectTimer = null;
 let memoryOpen = false;
 
@@ -1038,7 +1064,20 @@ function attachSpeakBtn(div, getText) {
   div.appendChild(btn);
 }
 
-function addMessage(role, content) {
+function formatMsgTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return time;
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + time;
+}
+
+function addMessage(role, content, ts) {
   const text = extractText(content);
   const div = document.createElement('div');
   div.className = `message message-${role}`;
@@ -1049,6 +1088,12 @@ function addMessage(role, content) {
     div.textContent = text;
   }
   if (isRtl(text)) div.setAttribute('dir', 'rtl');
+  if (ts) {
+    const timeEl = document.createElement('span');
+    timeEl.className = 'msg-time';
+    timeEl.textContent = formatMsgTime(ts);
+    div.appendChild(timeEl);
+  }
   messagesEl.appendChild(div);
   scrollBottom();
   return div;
@@ -1070,7 +1115,7 @@ function renderHistory(messages) {
     addSystemMsg('Start a conversation to get going.');
     return;
   }
-  messages.forEach(m => addMessage(m.role, m.content));
+  messages.forEach(m => addMessage(m.role, m.content, m.ts));
 }
 
 function extractText(val) {
@@ -1085,6 +1130,7 @@ function appendToken(tok) {
     currentAiEl = document.createElement('div');
     currentAiEl.className = 'message message-assistant streaming';
     currentAiRaw = '';
+    currentAiTs = new Date().toISOString();
     messagesEl.appendChild(currentAiEl);
   }
   currentAiRaw += extractText(tok);
@@ -1103,8 +1149,15 @@ function finalizeAiMsg(fullReply) {
       attachSpeakBtn(currentAiEl, () => content);
       if (autoSpeak) speakText(content, null);
     }
+    if (currentAiTs) {
+      const timeEl = document.createElement('span');
+      timeEl.className = 'msg-time';
+      timeEl.textContent = formatMsgTime(currentAiTs);
+      currentAiEl.appendChild(timeEl);
+    }
     currentAiEl = null;
     currentAiRaw = '';
+    currentAiTs = '';
   }
   Object.values(activeToolBadges).forEach(el => el.remove());
   activeToolBadges = {};
@@ -1160,7 +1213,7 @@ inputForm.addEventListener('submit', e => {
   const displayText = pendingFilename
     ? `📎 ${pendingFilename}${text ? '\n' + text : ''}`
     : text;
-  addMessage('user', displayText);
+  addMessage('user', displayText, new Date().toISOString());
 
   ws.send(JSON.stringify({ type: 'message', text, media_id: pendingMediaId || null }));
 
@@ -1282,14 +1335,43 @@ function renderConversations(convs) {
     return `<div class="conv-item${c.id === currentChatId ? ' active' : ''}" data-id="${escHtml(c.id)}">
       <span class="conv-item-title${isNew ? ' untitled' : ''}">${escHtml(c.title || 'New conversation')}</span>
       <span class="conv-item-time">${relTime(c.updated_at)}</span>
+      <button class="conv-item-del" data-id="${escHtml(c.id)}" title="Delete conversation">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+      </button>
     </div>`;
   }).join('');
 }
 
 document.getElementById('conv-list').addEventListener('click', e => {
+  const delBtn = e.target.closest('.conv-item-del');
+  if (delBtn) { e.stopPropagation(); deleteConversation(delBtn.dataset.id); return; }
   const item = e.target.closest('.conv-item');
   if (item) switchConversation(item.dataset.id);
 });
+
+async function deleteConversation(id) {
+  if (!confirm('Delete this conversation? This cannot be undone.')) return;
+  try {
+    const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (id === currentChatId) {
+      currentChatId = 'web_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : Date.now().toString(36));
+      localStorage.setItem('pa_chat_id', currentChatId);
+      if (ws) { ws.onclose = null; ws.close(); ws = null; }
+      connectWebSocket();
+    } else {
+      loadConversations();
+    }
+  } catch (err) {
+    addSystemMsg('⚠️ Delete failed: ' + err.message);
+  }
+}
 
 function switchConversation(id) {
   if (id === currentChatId && ws && ws.readyState === WebSocket.OPEN) {

@@ -303,6 +303,21 @@ def upsert_web_conversation(chat_id: str, title: str | None = None) -> None:
         conn.close()
 
 
+def delete_web_conversation(chat_id: str) -> bool:
+    """Delete a web conversation record. Returns True if a row was removed."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM web_conversations WHERE id = %s", (chat_id,))
+            deleted = cur.rowcount > 0
+        conn.commit()
+        if deleted:
+            logger.info("Deleted conversation: %s", chat_id)
+        return deleted
+    finally:
+        conn.close()
+
+
 def list_web_conversations() -> list[dict]:
     """Return all web conversations ordered by most recently active."""
     conn = _get_conn()

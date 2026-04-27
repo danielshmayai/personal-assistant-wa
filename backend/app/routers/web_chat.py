@@ -167,6 +167,18 @@ async def get_conversations(_: str = Depends(_require_bearer)):
     return await loop.run_in_executor(None, list_web_conversations)
 
 
+# ── DELETE /api/conversations/{chat_id} ──────────────────────────────────────
+
+@router.delete("/api/conversations/{chat_id}")
+async def delete_conversation(chat_id: str, _: str = Depends(_require_bearer)):
+    from app.memory.store import delete_web_conversation
+    from app.graph.checkpointer import delete_thread_checkpoints
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, delete_web_conversation, chat_id)
+    await delete_thread_checkpoints(chat_id)
+    return {"ok": True}
+
+
 # ── GET /api/memory ───────────────────────────────────────────────────────────
 
 @router.get("/api/memory")
