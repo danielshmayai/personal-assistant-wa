@@ -122,22 +122,9 @@ services:
     networks:
       - pa-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/server/status || exit 1"]
+      test: ["CMD-SHELL", "curl -sf -H \"X-Api-Key: ${WAHA_API_KEY:-}\" http://localhost:3000/api/server/status || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: pa-cloudflared
-    restart: always
-    profiles: ["prod"]
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
-    networks:
-      - pa-net
-    depends_on:
-      backend:
-        condition: service_healthy

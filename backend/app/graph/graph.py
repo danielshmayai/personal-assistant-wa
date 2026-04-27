@@ -49,7 +49,11 @@ def _last_ai_reply(messages: list) -> str:
     """Return the content of the last AIMessage that has no tool calls."""
     for msg in reversed(messages):
         if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-            return msg.content or ""
+            content = msg.content or ""
+            if isinstance(content, list):
+                # Gemini 2.5+ returns content as a list of blocks
+                return "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+            return content
     return ""
 
 

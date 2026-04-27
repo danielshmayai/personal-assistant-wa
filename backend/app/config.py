@@ -24,6 +24,7 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
 
 # Web search — set TAVILY_API_KEY for best results; falls back to DuckDuckGo if empty
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
