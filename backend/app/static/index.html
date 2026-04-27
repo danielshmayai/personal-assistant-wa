@@ -1039,15 +1039,16 @@ function attachSpeakBtn(div, getText) {
 }
 
 function addMessage(role, content) {
+  const text = extractText(content);
   const div = document.createElement('div');
   div.className = `message message-${role}`;
   if (role === 'assistant') {
-    div.innerHTML = marked.parse(content || '');
-    attachSpeakBtn(div, () => content);
+    div.innerHTML = marked.parse(text || '');
+    attachSpeakBtn(div, () => text);
   } else {
-    div.textContent = content;
+    div.textContent = text;
   }
-  if (isRtl(content)) div.setAttribute('dir', 'rtl');
+  if (isRtl(text)) div.setAttribute('dir', 'rtl');
   messagesEl.appendChild(div);
   scrollBottom();
   return div;
@@ -1072,6 +1073,13 @@ function renderHistory(messages) {
   messages.forEach(m => addMessage(m.role, m.content));
 }
 
+function extractText(val) {
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val.map(b => (b && b.text) ? b.text : String(b)).join('');
+  if (val && typeof val === 'object' && val.text) return val.text;
+  return '';
+}
+
 function appendToken(tok) {
   if (!currentAiEl) {
     currentAiEl = document.createElement('div');
@@ -1079,7 +1087,7 @@ function appendToken(tok) {
     currentAiRaw = '';
     messagesEl.appendChild(currentAiEl);
   }
-  currentAiRaw += tok;
+  currentAiRaw += extractText(tok);
   currentAiEl.innerHTML = marked.parse(currentAiRaw);
   scrollBottom();
 }

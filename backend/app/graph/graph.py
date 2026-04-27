@@ -45,15 +45,18 @@ def _get_graph():
     return _graph
 
 
+def extract_text(content) -> str:
+    """Normalise Gemini 2.5+ list-typed content to a plain string."""
+    if isinstance(content, list):
+        return "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    return content or ""
+
+
 def _last_ai_reply(messages: list) -> str:
     """Return the content of the last AIMessage that has no tool calls."""
     for msg in reversed(messages):
         if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-            content = msg.content or ""
-            if isinstance(content, list):
-                # Gemini 2.5+ returns content as a list of blocks
-                return "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-            return content
+            return extract_text(msg.content)
     return ""
 
 
@@ -79,8 +82,10 @@ async def stream_graph(user_text: str, chat_id: str):
         if ename == "on_chat_model_stream" and node == "agent":
             chunk = event["data"].get("chunk")
             if chunk and chunk.content and not getattr(chunk, "tool_call_chunks", None):
-                reply_parts.append(chunk.content)
-                yield {"type": "token", "content": chunk.content}
+                text = extract_text(chunk.content)
+                if text:
+                    reply_parts.append(text)
+                    yield {"type": "token", "content": text}
 
         elif ename == "on_tool_start":
             yield {

@@ -29,7 +29,8 @@ async def get_history(chat_id: str, max_messages: int = 60) -> list[dict]:
             if isinstance(msg, HumanMessage):
                 result.append({"role": "user", "content": str(msg.content or "")})
             elif isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-                result.append({"role": "assistant", "content": str(msg.content or "")})
+                from app.graph.graph import extract_text
+                result.append({"role": "assistant", "content": extract_text(msg.content)})
         return result
     except Exception:
         logger.exception("get_history failed for chat_id=%s", chat_id)
