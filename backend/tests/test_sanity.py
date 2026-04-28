@@ -258,11 +258,13 @@ def test_fastapi_app_has_webhook_waha_route():
 # 7. Memory tools
 # ---------------------------------------------------------------------------
 
-EXPECTED_MEMORY_TOOL_NAMES = {"save_fact", "save_rule", "list_memory", "delete_fact", "delete_rule"}
+EXPECTED_MEMORY_TOOL_NAMES = {
+    "save_fact", "update_rule", "retrieve_context", "list_memory", "hide_fact", "hide_rule"
+}
 
 
 def test_memory_tools_exist_with_correct_names():
-    """MEMORY_TOOLS must contain exactly the 5 expected tool names."""
+    """MEMORY_TOOLS must contain exactly the expected Obsidian-vault tool names."""
     from app.memory.manager import MEMORY_TOOLS
     actual = {t.name for t in MEMORY_TOOLS}
     assert actual == EXPECTED_MEMORY_TOOL_NAMES, (
@@ -270,88 +272,84 @@ def test_memory_tools_exist_with_correct_names():
     )
 
 
-def test_save_fact_tool_calls_upsert(monkeypatch):
-    """save_fact must delegate to upsert_fact with source='agent'."""
+def test_save_fact_tool_delegates_to_obsidian(monkeypatch):
+    """save_fact must delegate to obsidian.save_fact with category/entity/content."""
     calls = []
 
-    import app.memory.store as store_mod
-    monkeypatch.setattr(store_mod, "upsert_fact", lambda k, v, source="user": calls.append((k, v, source)))
-    monkeypatch.setattr(store_mod, "get_all_facts", lambda: [])  # not at limit
+    from app.memory import manager as manager_mod
+    monkeypatch.setattr(manager_mod.obsidian, "save_fact",
+                        lambda category, entity, content: calls.append((category, entity, content)) or "ok")
 
     from app.memory.manager import save_fact
-    result = save_fact.invoke({"key": "city", "value": "Tel Aviv"})
+    save_fact.invoke({"category": "People", "entity": "Daniel", "content": "Lives in Tel Aviv"})
 
-    assert ("city", "Tel Aviv", "agent") in calls
-    assert "city" in result
+    assert ("People", "Daniel", "Lives in Tel Aviv") in calls
 
 
-def test_save_rule_tool_calls_insert(monkeypatch):
-    """save_rule must delegate to insert_rule with source='agent'."""
+def test_update_rule_tool_delegates_to_obsidian(monkeypatch):
+    """update_rule must delegate to obsidian.update_rule."""
     calls = []
 
-    import app.memory.store as store_mod
-    monkeypatch.setattr(store_mod, "insert_rule", lambda rule, reason="", source="reflection": calls.append((rule, reason, source)))
-    monkeypatch.setattr(store_mod, "get_all_rules", lambda: [])  # not at limit
+    from app.memory import manager as manager_mod
+    monkeypatch.setattr(manager_mod.obsidian, "update_rule",
+                        lambda instruction: calls.append(instruction) or "ok")
 
-    from app.memory.manager import save_rule
-    save_rule.invoke({"rule": "Always reply in Hebrew", "reason": "User preference"})
+    from app.memory.manager import update_rule
+    update_rule.invoke({"instruction": "Always reply in Hebrew"})
 
-    assert any(r == "Always reply in Hebrew" and s == "agent" for r, _, s in calls)
-
-
-def test_delete_fact_tool_returns_success(monkeypatch):
-    """delete_fact must report success when the store deletes a row."""
-    import app.memory.store as store_mod
-    monkeypatch.setattr(store_mod, "delete_fact", lambda key: True)
-
-    from app.memory.manager import delete_fact
-    result = delete_fact.invoke({"key": "city"})
-    assert "city" in result and "Deleted" in result
+    assert "Always reply in Hebrew" in calls
 
 
-def test_delete_fact_tool_reports_not_found(monkeypatch):
-    """delete_fact must report not-found when the store deletes nothing."""
-    import app.memory.store as store_mod
-    monkeypatch.setattr(store_mod, "delete_fact", lambda key: False)
+def test_retrieve_context_tool_delegates_to_obsidian(monkeypatch):
+    """retrieve_context must delegate to obsidian.retrieve_context."""
+    captured = []
 
-    from app.memory.manager import delete_fact
-    result = delete_fact.invoke({"key": "city"})
-    assert "No fact found" in result
+    from app.memory import manager as manager_mod
+    monkeypatch.setattr(manager_mod.obsidian, "retrieve_context",
+                        lambda query: captured.append(query) or "snippets")
 
+    from app.memory.manager import retrieve_context
+    result = retrieve_context.invoke({"query": "Milwaukee"})
 
-def test_delete_rule_tool_returns_success(monkeypatch):
-    """delete_rule must report success when the store deletes a row."""
-    import app.memory.store as store_mod
-    monkeypatch.setattr(store_mod, "delete_rule", lambda rule_id: True)
-
-    from app.memory.manager import delete_rule
-    result = delete_rule.invoke({"rule_id": 3})
-    assert "Deleted" in result and "3" in result
+    assert captured == ["Milwaukee"]
+    assert result == "snippets"
 
 
-def test_list_memory_empty(monkeypatch):
-    """list_memory must return a friendly message when nothing is saved."""
-    import app.memory.store as store_mod
-    monkeypatch.setattr(store_mod, "get_all_facts_with_ids", lambda: [])
-    monkeypatch.setattr(store_mod, "get_all_rules_with_ids", lambda: [])
+def test_hide_fact_tool_delegates_to_obsidian(monkeypatch):
+    """hide_fact must delegate to obsidian.hide_fact (soft delete)."""
+    calls = []
 
-    from app.memory.manager import list_memory
-    result = list_memory.invoke({})
-    assert "No memories" in result
+    from app.memory import manager as manager_mod
+    monkeypatch.setattr(manager_mod.obsidian, "hide_fact",
+                        lambda category, entity: calls.append((category, entity)) or "Hidden: …")
+
+    from app.memory.manager import hide_fact
+    result = hide_fact.invoke({"category": "Investments", "entity": "Milwaukee_Property"})
+    assert ("Investments", "Milwaukee_Property") in calls
+    assert "Hidden" in result
 
 
-def test_list_memory_shows_facts_and_rules(monkeypatch):
-    """list_memory must format facts and rules with their IDs."""
-    import app.memory.store as store_mod
-    monkeypatch.setattr(store_mod, "get_all_facts_with_ids",
-                        lambda: [{"id": 1, "key": "city", "value": "Tel Aviv"}])
-    monkeypatch.setattr(store_mod, "get_all_rules_with_ids",
-                        lambda: [{"id": 2, "rule": "Reply in Hebrew", "reason": "preference"}])
+def test_hide_rule_tool_delegates_to_obsidian(monkeypatch):
+    """hide_rule must delegate to obsidian.hide_rule (strikethrough)."""
+    calls = []
+
+    from app.memory import manager as manager_mod
+    monkeypatch.setattr(manager_mod.obsidian, "hide_rule",
+                        lambda instruction: calls.append(instruction) or "Hidden rule: …")
+
+    from app.memory.manager import hide_rule
+    hide_rule.invoke({"instruction": "Always reply in Hebrew"})
+    assert "Always reply in Hebrew" in calls
+
+
+def test_list_memory_calls_list_visible(monkeypatch):
+    """list_memory must delegate to obsidian.list_visible."""
+    from app.memory import manager as manager_mod
+    monkeypatch.setattr(manager_mod.obsidian, "list_visible", lambda: "Vault is empty.")
 
     from app.memory.manager import list_memory
     result = list_memory.invoke({})
-    assert "[1]" in result and "city" in result
-    assert "[2]" in result and "Reply in Hebrew" in result
+    assert "Vault is empty." in result
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +357,7 @@ def test_list_memory_shows_facts_and_rules(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_agent_node_includes_memory_tools():
-    """agent_node must bind all 5 memory tools to the LLM."""
+    """agent_node must bind all memory tools to the LLM."""
     bound_tools = []
 
     def fake_bind_tools(tools):

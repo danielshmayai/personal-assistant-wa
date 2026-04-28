@@ -124,6 +124,10 @@ if os.path.isdir(_static_dir):
     async def serve_index():
         return FileResponse(os.path.join(_static_dir, "index.html"))
 
+    @app.get("/manifest.json")
+    async def serve_manifest():
+        return FileResponse(os.path.join(_static_dir, "manifest.json"), media_type="application/manifest+json")
+
 
 class TestRequest(BaseModel):
     text: str

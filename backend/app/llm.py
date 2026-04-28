@@ -1,6 +1,6 @@
 import logging
 from langchain_ollama import ChatOllama
-from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL, LLM_TIMEOUT_SECONDS, GEMINI_API_KEY
+from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL, LLM_TIMEOUT_SECONDS, GEMINI_API_KEY, GEMINI_MODEL
 
 logger = logging.getLogger("pa.llm")
 
@@ -19,7 +19,7 @@ def get_llm() -> ChatOllama:
 def get_gemini_llm():
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=GEMINI_MODEL,
         google_api_key=GEMINI_API_KEY,
         temperature=0.3,
     )

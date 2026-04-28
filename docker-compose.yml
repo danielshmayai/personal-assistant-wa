@@ -86,8 +86,12 @@ services:
       TUYA_ACCESS_KEY: ${TUYA_ACCESS_KEY:-}
       TUYA_API_ENDPOINT: ${TUYA_API_ENDPOINT:-https://openapi.tuyaeu.com}
       TUYA_PREFER_LOCAL: ${TUYA_PREFER_LOCAL:-false}
+      OBSIDIAN_VAULT_PATH: /app/obsidian_vault
+      OBSIDIAN_CATEGORIES: ${OBSIDIAN_CATEGORIES:-System,People,Entities,Investments,Projects,Preferences,Misc}
     ports:
       - "8000:8000"
+    volumes:
+      - ${HOST_OBSIDIAN_VAULT:-./obsidian_vault}:/app/obsidian_vault
     networks:
       - pa-net
     depends_on:
@@ -122,22 +126,9 @@ services:
     networks:
       - pa-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/server/status || exit 1"]
+      test: ["CMD-SHELL", "curl -sf -H \"X-Api-Key: ${WAHA_API_KEY:-}\" http://localhost:3000/api/server/status || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: pa-cloudflared
-    restart: always
-    profiles: ["prod"]
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
-    networks:
-      - pa-net
-    depends_on:
-      backend:
-        condition: service_healthy

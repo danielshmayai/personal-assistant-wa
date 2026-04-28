@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 from app.graph.state import PAState
@@ -30,7 +31,7 @@ def build_graph():
 
 
 async def inject_memory_node(state: PAState) -> dict:
-    context = await load_memory_context()
+    context = await load_memory_context(state.get("user_input", ""))
     return {"memory_context": context}
 
 
@@ -45,11 +46,18 @@ def _get_graph():
     return _graph
 
 
+def extract_text(content) -> str:
+    """Normalise Gemini 2.5+ list-typed content to a plain string."""
+    if isinstance(content, list):
+        return "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    return content or ""
+
+
 def _last_ai_reply(messages: list) -> str:
     """Return the content of the last AIMessage that has no tool calls."""
     for msg in reversed(messages):
         if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-            return msg.content or ""
+            return extract_text(msg.content)
     return ""
 
 
@@ -64,7 +72,7 @@ async def stream_graph(user_text: str, chat_id: str):
     input_state = {
         "user_input": user_text,
         "chat_id": chat_id,
-        "messages": [HumanMessage(content=user_text)],
+        "messages": [HumanMessage(content=user_text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})],
     }
     reply_parts: list[str] = []
 
@@ -75,8 +83,10 @@ async def stream_graph(user_text: str, chat_id: str):
         if ename == "on_chat_model_stream" and node == "agent":
             chunk = event["data"].get("chunk")
             if chunk and chunk.content and not getattr(chunk, "tool_call_chunks", None):
-                reply_parts.append(chunk.content)
-                yield {"type": "token", "content": chunk.content}
+                text = extract_text(chunk.content)
+                if text:
+                    reply_parts.append(text)
+                    yield {"type": "token", "content": text}
 
         elif ename == "on_tool_start":
             yield {
@@ -98,7 +108,7 @@ async def run_graph(text: str, chat_id: str) -> str:
         "recursion_limit": 8,  # max 3 tool call rounds before giving up
     }
     result = await graph.ainvoke(
-        {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text)]},
+        {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
         config=config,
     )
     raw = _last_ai_reply(result.get("messages", []))
