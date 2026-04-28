@@ -31,7 +31,7 @@ def build_graph():
 
 
 async def inject_memory_node(state: PAState) -> dict:
-    context = await load_memory_context()
+    context = await load_memory_context(state.get("user_input", ""))
     return {"memory_context": context}
 
 

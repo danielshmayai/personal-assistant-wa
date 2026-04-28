@@ -1,10 +1,9 @@
 """
-Web chat router — WebSocket streaming chat, conversations, memory, and file upload.
+Web chat router — WebSocket streaming chat, conversations, and file upload.
 
 Endpoints:
   WS  /ws/chat              — streaming chat  (?token=&chat_id=)
   GET /api/conversations    — list web conversations
-  GET /api/memory           — facts and rules for the sidebar
   POST /api/upload          — upload a file into media_cache
 """
 
@@ -177,17 +176,6 @@ async def delete_conversation(chat_id: str, _: str = Depends(_require_bearer)):
     await loop.run_in_executor(None, delete_web_conversation, chat_id)
     await delete_thread_checkpoints(chat_id)
     return {"ok": True}
-
-
-# ── GET /api/memory ───────────────────────────────────────────────────────────
-
-@router.get("/api/memory")
-async def get_memory(_: str = Depends(_require_bearer)):
-    from app.memory.store import get_all_facts_with_ids, get_all_rules_with_ids
-    loop = asyncio.get_running_loop()
-    facts = await loop.run_in_executor(None, get_all_facts_with_ids)
-    rules = await loop.run_in_executor(None, get_all_rules_with_ids)
-    return {"facts": facts, "rules": rules}
 
 
 # ── POST /api/upload ──────────────────────────────────────────────────────────

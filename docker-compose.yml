@@ -86,8 +86,12 @@ services:
       TUYA_ACCESS_KEY: ${TUYA_ACCESS_KEY:-}
       TUYA_API_ENDPOINT: ${TUYA_API_ENDPOINT:-https://openapi.tuyaeu.com}
       TUYA_PREFER_LOCAL: ${TUYA_PREFER_LOCAL:-false}
+      OBSIDIAN_VAULT_PATH: /app/obsidian_vault
+      OBSIDIAN_CATEGORIES: ${OBSIDIAN_CATEGORIES:-System,People,Entities,Investments,Projects,Preferences,Misc}
     ports:
       - "8000:8000"
+    volumes:
+      - ${HOST_OBSIDIAN_VAULT:-./obsidian_vault}:/app/obsidian_vault
     networks:
       - pa-net
     depends_on:

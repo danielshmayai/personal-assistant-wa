@@ -5,7 +5,7 @@ import re
 from langchain_core.messages import HumanMessage
 from app.llm import get_smart_llm
 from app.graph.state import PAState
-from app.memory.store import insert_rule, upsert_fact
+from app.memory import obsidian
 
 logger = logging.getLogger("pa.reflection")
 
@@ -99,10 +99,12 @@ async def reflection_node(state: PAState) -> dict:
             value_or_reason = val_match.group(1).strip() if val_match else ""
 
             if lesson_type == "RULE":
-                insert_rule(key_or_rule, value_or_reason, source="reflection")
+                obsidian.update_rule(key_or_rule)
                 logger.info("Reflection saved rule: %s", key_or_rule)
             elif lesson_type == "FACT":
-                upsert_fact(key_or_rule, value_or_reason, source="reflection")
+                # Reflection prompt doesn't extract category — default to Preferences.
+                # The fact body is value_or_reason; entity slug uses key_or_rule.
+                obsidian.save_fact("Preferences", key_or_rule, value_or_reason or key_or_rule)
                 logger.info("Reflection saved fact: %s = %s", key_or_rule, value_or_reason)
 
     except Exception:

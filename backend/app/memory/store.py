@@ -218,24 +218,26 @@ def delete_rule(rule_id: int) -> bool:
         conn.close()
 
 
-async def load_memory_context() -> str:
-    """Build a text block of all facts + rules for system prompt injection."""
+async def load_memory_context(query: str = "") -> str:
+    """Build a text block of rules + query-relevant facts from the Obsidian vault.
+
+    Rules from `System/Rules.md` always load. Facts are keyword-matched against
+    `query` (typically the latest user message) so injection stays bounded —
+    important on a 4GB Gemma 4 deployment.
+    """
+    from app.memory import obsidian
     loop = asyncio.get_running_loop()
-    facts = await loop.run_in_executor(None, get_all_facts)
-    rules = await loop.run_in_executor(None, get_all_rules)
+    rules = await loop.run_in_executor(None, obsidian.read_rules)
+    facts = await loop.run_in_executor(None, obsidian.read_relevant_facts, query)
 
-    if not facts and not rules:
-        return ""
-
-    parts = []
-    if facts:
-        lines = [f"- {f['key']}: {f['value']}" for f in facts[:50]]
-        parts.append("## Known Facts\n" + "\n".join(lines))
+    parts: list[str] = []
     if rules:
-        lines = [f"- {r['rule']}" + (f" (reason: {r['reason']})" if r['reason'] else "") for r in rules[:30]]
-        parts.append("## Rules & Preferences\n" + "\n".join(lines))
-
-    return "\n\n".join(parts)
+        parts.append("## Rules\n" + rules)
+    if facts:
+        parts.append("## Relevant Facts\n" + facts)
+    if not parts:
+        return ""
+    return "\n\n".join(parts)[:obsidian.MAX_INJECTED_BYTES]
 
 
 # ---------------------------------------------------------------------------

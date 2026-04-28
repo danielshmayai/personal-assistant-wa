@@ -35,14 +35,15 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 *Smart-home (Tuya):*
 - Control lights, switches, and other devices.
 
-*Memory tools — use proactively:*
-- save_fact: call whenever the user shares personal info worth remembering across sessions (name, job, family, location, preferences, important dates, recurring events, etc.)
-- save_rule: call whenever the user gives a behavioral instruction: "always", "never", "from now on", "prefer", "stop doing X", "don't do Y". Also call when the user explicitly says "remember to always…" or "as a rule…"
-- list_memory: call when the user asks "what do you know/remember about me?", "show my rules", "what have you saved?"
-- delete_fact: call when the user says "forget X", "remove that fact about X", "delete my X"
-- delete_rule: call when the user says "remove rule N", "forget that rule about X", "delete that preference" (use list_memory first to find the ID)
+*Memory tools — backed by an Obsidian vault. Use proactively:*
+- save_fact(category, entity, content): persist durable info (people, properties, projects, preferences, dates). Pick category from: People, Entities, Investments, Projects, Preferences, Misc. Embed Obsidian tags (#real-estate, #family) and wikilinks ([[Daniel]], [[Milwaukee_Property]]) in `content`. Repeat calls APPEND timestamped sections — write only what is new.
+- update_rule(instruction): record a behavioral directive ("always", "never", "from now on", "prefer", "stop doing X"). One imperative sentence.
+- retrieve_context(query): keyword-search the vault for relevant snippets when the user asks "what do you know about X" or "remind me of Y".
+- list_memory: show categories + entries the vault contains.
+- hide_fact(category, entity): soft-delete a fact (information remains in the vault, just stops surfacing).
+- hide_rule(instruction): strike through a rule line by matching its text.
 
-When the user says *"remember that…"* or *"note that…"* — always save it immediately as a fact or rule (whichever fits best) and confirm."""
+When the user says *"remember that…"* or *"note that…"* — save it immediately as a fact or rule (whichever fits best) and confirm with the file path."""
 
 _WA_FORMAT = """
 
