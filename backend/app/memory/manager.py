@@ -118,6 +118,49 @@ def search_vault(query: str) -> str:
 
 
 @tool
+def grep_note(filepath: str, keyword: str) -> str:
+    """Search inside a vault file and return only lines that match a keyword.
+
+    Token-efficient alternative to read_note — the server filters the file
+    and returns only relevant lines, not the full content.
+
+    Use for analysis questions on stored lists or documents:
+    - "how many contacts have email?" → grep_note(filepath=..., keyword="@")
+    - "find everyone from Tel Aviv" → grep_note(filepath=..., keyword="תל אביב")
+    - "list all phone numbers" → grep_note(filepath=..., keyword="05")
+
+    Returns the count of matches and the matching lines.
+    Prefer this over read_note whenever you only need to count or filter.
+
+    Example:
+        grep_note(filepath="Misc/רשימת_אנשי_קשר.md", keyword="@")
+    """
+    return obsidian.grep_note(filepath, keyword)
+
+
+@tool
+def read_note(filepath: str) -> str:
+    """Read the full content of a vault note into context for analysis.
+
+    Use when the user asks to analyze, count, search, filter, or summarize
+    the contents of a specific vault file — e.g. a contacts list, expense
+    log, or project file.
+
+    `filepath` is relative to vault root, e.g.:
+        "Misc/רשימת_אנשי_קשר.md"
+        "Projects/Home Renovation.md"
+
+    After calling this you can directly answer questions like:
+    "how many people have email?", "list everyone from Tel Aviv",
+    "find all entries with a phone number", etc.
+
+    Example:
+        read_note(filepath="Misc/רשימת_אנשי_קשר.md")
+    """
+    return obsidian.read_note(filepath)
+
+
+@tool
 def append_to_note(filepath: str, content: str, header: str = "") -> str:
     """Append content to any existing Markdown note in the Obsidian vault.
 
@@ -150,5 +193,5 @@ def append_to_note(filepath: str, content: str, header: str = "") -> str:
 # Convenience list for graph nodes to import — keep this name stable.
 MEMORY_TOOLS = [
     save_fact, update_rule, retrieve_context, search_vault,
-    list_memory, hide_fact, hide_rule, append_to_note,
+    list_memory, hide_fact, hide_rule, append_to_note, read_note, grep_note,
 ]
