@@ -52,3 +52,9 @@ TUYA_ACCESS_ID = os.getenv("TUYA_ACCESS_ID", "")
 TUYA_ACCESS_KEY = os.getenv("TUYA_ACCESS_KEY", "")
 TUYA_API_ENDPOINT = os.getenv("TUYA_API_ENDPOINT", "https://openapi.tuyaeu.com")
 TUYA_PREFER_LOCAL = os.getenv("TUYA_PREFER_LOCAL", "false").lower() == "true"
+
+# ── Obsidian Vault ──────────────────────────────────────────────────────────
+
+# Path INSIDE the container where the vault volume is mounted.
+# The docker-compose volume maps OBSIDIAN_VAULT_HOST_PATH → /vault.
+OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "/app/obsidian_vault")

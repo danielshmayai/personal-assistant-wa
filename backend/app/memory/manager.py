@@ -99,5 +99,56 @@ def hide_rule(instruction: str) -> str:
     return obsidian.hide_rule(instruction)
 
 
+@tool
+def search_vault(query: str) -> str:
+    """Search the entire Obsidian vault for notes relevant to a topic.
+
+    Use before answering questions that may benefit from stored context:
+    tasks, expenses, project notes, contacts, daily logs, etc.
+
+    Searches across ALL vault folders (not just the structured memory
+    categories), so it finds hand-written notes, daily journals, imported
+    documents, etc.
+
+    Returns up to 8 ranked snippets with their file paths.
+
+    Example: search_vault(query="home renovation budget")
+    """
+    return obsidian.retrieve_context(query)
+
+
+@tool
+def append_to_note(filepath: str, content: str, header: str = "") -> str:
+    """Append content to any existing Markdown note in the Obsidian vault.
+
+    Use when you need to add information to a SPECIFIC existing file
+    (e.g. a daily note, a project file, an expense log) rather than
+    creating a structured memory fact.
+
+    `filepath` — path relative to vault root, e.g.:
+        "Daily/2024-01-15.md"
+        "Projects/Home Renovation.md"
+        "Finance/Expenses 2024.md"
+
+    `header` (optional) — section heading to append under, e.g. "## Tasks".
+        If the header doesn't exist it will be created at the end of the file.
+        If omitted, content is appended at the very end of the file.
+
+    The file must already exist. To create new structured memory notes use
+    save_fact() instead.
+
+    Example:
+        append_to_note(
+            filepath="Daily/2024-01-15.md",
+            content="- Buy paint for living room",
+            header="## Tasks"
+        )
+    """
+    return obsidian.append_to_note(filepath, content, header)
+
+
 # Convenience list for graph nodes to import — keep this name stable.
-MEMORY_TOOLS = [save_fact, update_rule, retrieve_context, list_memory, hide_fact, hide_rule]
+MEMORY_TOOLS = [
+    save_fact, update_rule, retrieve_context, search_vault,
+    list_memory, hide_fact, hide_rule, append_to_note,
+]
