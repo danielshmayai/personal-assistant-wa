@@ -259,7 +259,8 @@ def test_fastapi_app_has_webhook_waha_route():
 # ---------------------------------------------------------------------------
 
 EXPECTED_MEMORY_TOOL_NAMES = {
-    "save_fact", "update_rule", "retrieve_context", "list_memory", "hide_fact", "hide_rule"
+    "save_fact", "update_rule", "retrieve_context", "search_vault",
+    "list_memory", "hide_fact", "hide_rule", "append_to_note",
 }
 
 
