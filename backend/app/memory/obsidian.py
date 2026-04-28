@@ -422,7 +422,29 @@ def append_to_note(filepath: str, content: str, header: str = "") -> str:
         return f"Appended under '{header}' in {filepath}"
 
 
-def list_visible(category: str | None = None) -> str:
+def read_note(filepath: str, max_chars: int = 32_000) -> str:
+    """Return the full content of a vault note for in-context analysis.
+
+    Use when the user asks to analyze, count, filter, or summarize the
+    contents of a specific vault file (e.g. a contacts list).
+    `filepath` is relative to vault root, e.g. "Misc/רשימת_אנשי_קשר.md".
+    """
+    clean = filepath.lstrip("/").replace("\\", "/")
+    path = (VAULT_ROOT / clean).resolve()
+    root = VAULT_ROOT.resolve()
+    if root not in path.parents and path != root:
+        return "Error: path traversal blocked"
+    if not clean.endswith(".md"):
+        return "Error: only .md files are supported"
+    if not path.exists():
+        return f"Error: file not found: {filepath!r}"
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if len(text) > max_chars:
+            text = text[:max_chars] + f"\n\n[…truncated at {max_chars} chars]"
+        return text
+    except OSError as e:
+        return f"Error reading file: {e}"
     """Directory listing of visible (non-hidden) fact files, plus rules count."""
     if not VAULT_ROOT.exists():
         return "Vault is empty."
