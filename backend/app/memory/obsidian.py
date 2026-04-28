@@ -33,7 +33,7 @@ MAX_SNIPPET_CHARS = 400
 _MAX_CATEGORY_LEN = 64
 _MAX_ENTITY_LEN = 80
 
-_SLUG_RE = re.compile(r"[^A-Za-z0-9_\- ]+")
+_SLUG_RE = re.compile(r"[^\w\- ]+")  # \w is Unicode-aware in Python 3
 _STOPWORDS = {"the", "and", "for", "with", "that", "this", "from", "what", "about"}
 
 # Per-path locks for in-process write safety
@@ -243,7 +243,8 @@ def read_rules() -> str:
 
 
 def _tokenize(query: str) -> list[str]:
-    tokens = re.findall(r"[A-Za-z0-9_]{3,}", (query or "").lower())
+    # \w matches Unicode letters/digits — needed for Hebrew/Arabic queries
+    tokens = re.findall(r"\w{2,}", (query or "").lower())
     return [t for t in tokens if t not in _STOPWORDS]
 
 

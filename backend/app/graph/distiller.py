@@ -2,7 +2,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
 from app.llm import get_gemini_llm
 from app.graph.state import PAState
 from app.config import USER_TIMEZONE
@@ -81,32 +81,78 @@ def _to_whatsapp(text: str) -> str:
 def _sanitize_for_gemini(messages: list, n: int = 20) -> list:
     """Slice last n messages and ensure valid Gemini turn ordering.
 
-    Gemini requires: function_call turn must immediately follow a user turn or
-    a function_response turn. This prevents 400 errors when history is sliced
-    mid-sequence or when AIMessage content is a list (Gemini 2.5 format).
+    Gemini requires strict alternation and complete function-call sequences.
+    This function handles three failure modes:
+      1. Window sliced mid-sequence (orphaned ToolMessage or AIMessage(tool_calls) at head)
+      2. Dangling AIMessage(tool_calls) at tail with no following ToolMessage
+      3. `function_call` key in additional_kwargs conflicting with tool_calls
     """
     window = list(messages)[-n:]
-    # Never start mid-sequence — a ToolMessage or AIMessage(tool_calls) at position
-    # 0 would violate Gemini's ordering constraint.
     while window and not isinstance(window[0], HumanMessage):
         window = window[1:]
-    # Normalise list-typed AIMessage content to plain string so LangChain
-    # doesn't accidentally produce duplicate or mistyped model turns.
-    result = []
+
+    # Pass 1 — normalize ALL AIMessages: flatten list content, strip function_call.
+    normalized: list = []
     for msg in window:
-        if isinstance(msg, AIMessage) and isinstance(msg.content, list):
-            text = "".join(
-                b.get("text", "") if isinstance(b, dict) else str(b)
-                for b in msg.content
-            )
+        if isinstance(msg, AIMessage):
+            content = msg.content
+            if isinstance(content, list):
+                content = "".join(
+                    b.get("text", "") if isinstance(b, dict) else str(b)
+                    for b in content
+                )
+            # function_call in additional_kwargs conflicts with tool_calls for Gemini
+            extra = {
+                k: v
+                for k, v in (getattr(msg, "additional_kwargs", None) or {}).items()
+                if k != "function_call"
+            }
             msg = AIMessage(
-                content=text,
-                tool_calls=getattr(msg, "tool_calls", []) or [],
+                content=content,
+                tool_calls=list(getattr(msg, "tool_calls", None) or []),
                 id=getattr(msg, "id", None),
-                additional_kwargs=dict(getattr(msg, "additional_kwargs", {})),
-                response_metadata=dict(getattr(msg, "response_metadata", {})),
+                additional_kwargs=extra,
+                response_metadata=dict(getattr(msg, "response_metadata", None) or {}),
             )
-        result.append(msg)
+        normalized.append(msg)
+
+    # Pass 2 — enforce complete tool-call sequences; drop dangling ones.
+    result: list = []
+    i = 0
+    while i < len(normalized):
+        msg = normalized[i]
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            # Collect the ToolMessages that immediately follow
+            j = i + 1
+            while j < len(normalized) and isinstance(normalized[j], ToolMessage):
+                j += 1
+            if j > i + 1:
+                # Complete sequence — include AI turn + all tool responses
+                result.extend(normalized[i:j])
+                i = j
+            else:
+                # Dangling — no tool response in window; emit content-only if available
+                if msg.content:
+                    result.append(AIMessage(
+                        content=msg.content,
+                        id=getattr(msg, "id", None),
+                        additional_kwargs=dict(msg.additional_kwargs),
+                        response_metadata=dict(msg.response_metadata),
+                    ))
+                i += 1
+        elif isinstance(msg, ToolMessage):
+            # Orphaned ToolMessage (preceding AIMessage was removed) — skip
+            if result and isinstance(result[-1], AIMessage) and getattr(result[-1], "tool_calls", None):
+                result.append(msg)
+            i += 1
+        else:
+            result.append(msg)
+            i += 1
+
+    # Re-trim in case cleanup exposed a new non-Human head
+    while result and not isinstance(result[0], HumanMessage):
+        result.pop(0)
+
     return result
 
 
