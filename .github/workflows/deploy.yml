@@ -4,90 +4,133 @@ on:
   push:
     branches:
       - main
+  # Allow manual deploys from the GitHub Actions UI
   workflow_dispatch:
 
+# Prevent concurrent deploys — if a new push arrives while deploying,
+# cancel the in-progress run rather than queue behind it.
 concurrency:
   group: deploy-production
   cancel-in-progress: true
 
+# Minimal GitHub token permissions — this workflow only reads repo content.
 permissions:
   contents: read
 
 jobs:
   sanity:
     name: Sanity Tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, pa]
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install deps and run sanity tests
+      - name: Pull latest code
+        shell: powershell
         run: |
-          pip install -r backend/requirements.txt -r backend/requirements-dev.txt -q
-          pytest backend/tests/test_sanity.py -v
+          cd D:\Claude\pa
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Run sanity tests
+        shell: powershell
+        run: |
+          cd D:\Claude\pa\backend
+          if (-not (Test-Path ".venv")) { python -m venv .venv }
+          .venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt -q
+          .venv\Scripts\pytest tests/test_sanity.py -v
 
   deploy:
     name: Pull & Rebuild Backend
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, pa]
     needs: sanity
+    # Require the DEPLOY_GATE secret to match a known value.
+    # Set DEPLOY_GATE in GitHub repo → Settings → Secrets to any non-empty string.
+    # This prevents a compromised GitHub account token from auto-deploying without
+    # also having access to the Secrets store.
     env:
       DEPLOY_GATE: ${{ secrets.DEPLOY_GATE }}
 
     steps:
       - name: Verify deploy gate
+        shell: powershell
         run: |
-          if [ -z "$DEPLOY_GATE" ]; then
-            echo "DEPLOY_GATE secret is not set — deployment blocked."
+          if (-not $env:DEPLOY_GATE) {
+            Write-Host "DEPLOY_GATE secret is not set - deployment blocked."
             exit 1
-          fi
+          }
+          Write-Host "Deploy gate verified."
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Pull latest code
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Rebuild and restart backend
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          docker compose up --build -d backend
+
+      - name: Verify backend is healthy
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          Write-Host "Waiting for backend health check..."
+          $healthy = $false
+          for ($i = 1; $i -le 12; $i++) {
+            $status = docker inspect --format='{{.State.Health.Status}}' pa-backend 2>$null
+            Write-Host "  attempt $i`: $status"
+            if ($status -eq "healthy") {
+              Write-Host "Backend is healthy."
+              $healthy = $true
+              break
+            }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $healthy) {
+            Write-Host "Backend did not become healthy within 60s."
+            docker logs pa-backend --tail 40
+            exit 1
+          }
+
+      - name: Notify WhatsApp (success)
+        if: success()
+        shell: powershell
         env:
           WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
           WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
           MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
           WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
           COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          $sha = $env:COMMIT_SHA.Substring(0, 7)
+          $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
+          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $env:WAHA_SESSION } | ConvertTo-Json
+          try {
+            Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
+          } catch {
+            Write-Host "WhatsApp notification skipped: $_"
+          }
+
+      - name: Notify WhatsApp (failure)
+        if: failure()
+        shell: powershell
+        env:
+          WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
+          WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
+          MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
+          WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
           REPO: ${{ github.repository }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          envs: WAHA_BASE_URL,WAHA_API_KEY,MY_WHATSAPP_ID,WAHA_SESSION,COMMIT_SHA,REPO
-          script_stop: true
-          # appleboy runs each line via the default shell; use explicit powershell.exe
-          script: powershell -NoProfile -ExecutionPolicy Bypass -Command "
-            Set-Location D:\Claude\pa;
-            git fetch origin main;
-            git reset --hard origin/main;
-            docker compose up --build -d backend;
-
-            Write-Host 'Waiting for backend to become healthy...';
-            $ok = $false;
-            for ($i = 1; $i -le 18; $i++) {
-              $s = docker inspect --format='{{.State.Health.Status}}' pa-backend 2>$null;
-              Write-Host \"  attempt $i`: $s\";
-              if ($s -eq 'healthy') { $ok = $true; break }
-              Start-Sleep -Seconds 5
-            };
-            if (-not $ok) {
-              docker logs pa-backend --tail 50;
-              \$env:MSG = '[PA Deploy] FAILED https://github.com/' + \$env:REPO + '/actions'
-            } else {
-              \$sha = \$env:COMMIT_SHA.Substring(0,7);
-              \$env:MSG = '[PA Deploy] SUCCESS ' + \$sha
-            };
-
-            \$body = '{\"chatId\":\"' + \$env:MY_WHATSAPP_ID + '\",\"text\":\"' + \$env:MSG + '\",\"session\":\"' + \$env:WAHA_SESSION + '\"}';
-            try {
-              Invoke-RestMethod -Uri \"\$env:WAHA_BASE_URL/api/sendText\" -Method Post -ContentType 'application/json' -Headers @{'X-Api-Key'=\$env:WAHA_API_KEY} -Body \$body
-            } catch { Write-Host 'WA notify skipped: ' + \$_ };
-
-            if (-not \$ok) { exit 1 }
-          "
+        run: |
+          $sha = $env:COMMIT_SHA.Substring(0, 7)
+          $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
+          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $env:WAHA_SESSION } | ConvertTo-Json
+          try {
+            Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
+          } catch {
+            Write-Host "WhatsApp notification skipped: $_"
+          }
