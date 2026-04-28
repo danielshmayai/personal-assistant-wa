@@ -475,6 +475,9 @@ def read_note(filepath: str, max_chars: int = 32_000) -> str:
         return text
     except OSError as e:
         return f"Error reading file: {e}"
+
+
+def list_visible(category: str = "") -> str:
     """Directory listing of visible (non-hidden) fact files, plus rules count."""
     if not VAULT_ROOT.exists():
         return "Vault is empty."

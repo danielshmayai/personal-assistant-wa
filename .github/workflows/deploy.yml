@@ -34,9 +34,12 @@ jobs:
         shell: powershell
         run: |
           cd D:\Claude\pa\backend
-          if (-not (Test-Path ".venv")) { python -m venv .venv }
-          .venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt -q
-          .venv\Scripts\pytest tests/test_sanity.py -v
+          if (-not (Test-Path ".venv\Scripts\python.exe")) {
+            Write-Host "venv missing — please recreate it manually as the shmay user."
+            exit 1
+          }
+          .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -q
+          .venv\Scripts\python.exe -m pytest tests/test_sanity.py -v
 
   deploy:
     name: Pull & Rebuild Backend
