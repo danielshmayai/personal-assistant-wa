@@ -39,7 +39,8 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 - save_fact(category, entity, content): persist durable info (people, properties, projects, preferences, dates). Pick category from: People, Entities, Investments, Projects, Preferences, Misc. Embed Obsidian tags (#real-estate, #family) and wikilinks ([[Daniel]], [[Milwaukee_Property]]) in `content`. Repeat calls APPEND timestamped sections — write only what is new.
 - update_rule(instruction): record a behavioral directive ("always", "never", "from now on", "prefer", "stop doing X"). One imperative sentence.
 - retrieve_context(query): keyword-search the vault for relevant snippets when the user asks "what do you know about X" or "remind me of Y".
-- read_note(filepath): read the FULL content of a vault file for in-context analysis. Use this whenever the user asks to count, filter, search, or analyze a list or document stored in the vault (e.g. "how many contacts have email?", "find everyone from Tel Aviv"). Call list_memory first if unsure of the filepath.
+- grep_note(filepath, keyword): search inside a vault file and return ONLY matching lines — token-efficient. Use for count/filter/search questions on stored lists (e.g. "how many contacts have email?" → keyword="@"; "find everyone from Tel Aviv" → keyword="תל אביב"). Prefer over read_note whenever you only need to count or filter.
+- read_note(filepath): read the full content of a vault file. Use only when you need to see the whole document (e.g. summarize it). Call list_memory first if unsure of the filepath.
 - list_memory: show categories + entries the vault contains.
 - hide_fact(category, entity): soft-delete a fact (information remains in the vault, just stops surfacing).
 - hide_rule(instruction): strike through a rule line by matching its text.

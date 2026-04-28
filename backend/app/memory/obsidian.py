@@ -422,6 +422,36 @@ def append_to_note(filepath: str, content: str, header: str = "") -> str:
         return f"Appended under '{header}' in {filepath}"
 
 
+def grep_note(filepath: str, keyword: str, max_results: int = 100) -> str:
+    """Return only the lines of a vault file that contain `keyword`.
+
+    Server-side filtering — only matching lines are returned, keeping
+    token usage minimal even for large files.
+    """
+    clean = filepath.lstrip("/").replace("\\", "/")
+    path = (VAULT_ROOT / clean).resolve()
+    root = VAULT_ROOT.resolve()
+    if root not in path.parents and path != root:
+        return "Error: path traversal blocked"
+    if not path.exists():
+        return f"Error: file not found: {filepath!r}"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        kw_lower = keyword.lower()
+        matches = [(i + 1, ln) for i, ln in enumerate(lines) if kw_lower in ln.lower()]
+        total = len(matches)
+        if total == 0:
+            return f"No lines containing {keyword!r} in {filepath}"
+        shown = matches[:max_results]
+        out = [f"Found {total} line(s) containing {keyword!r} in {filepath}:"]
+        out.extend(f"  {no}: {ln}" for no, ln in shown)
+        if total > max_results:
+            out.append(f"  … and {total - max_results} more (increase max_results if needed)")
+        return "\n".join(out)
+    except OSError as e:
+        return f"Error reading file: {e}"
+
+
 def read_note(filepath: str, max_chars: int = 32_000) -> str:
     """Return the full content of a vault note for in-context analysis.
 
