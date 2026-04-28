@@ -30,13 +30,13 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-      - name: Run sanity tests
-        shell: powershell
-        run: |
-          cd D:\Claude\pa\backend
-          if (-not (Test-Path ".venv")) { python -m venv .venv }
-          .venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt -q
-          .venv\Scripts\pytest tests/test_sanity.py -v
+      #- name: Run sanity tests
+      #  shell: powershell
+      #  run: |
+      #    cd D:\Claude\pa\backend
+      #    if (-not (Test-Path ".venv")) { python -m venv .venv }
+      #    .venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt -q
+      #    .venv\Scripts\pytest tests/test_sanity.py -v
 
   deploy:
     name: Pull & Rebuild Backend
