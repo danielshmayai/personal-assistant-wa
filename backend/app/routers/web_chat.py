@@ -70,6 +70,9 @@ async def websocket_chat(websocket: WebSocket, token: str = "", chat_id: str = "
     loop = asyncio.get_running_loop()
     logger.info("Web chat connected: chat_id=%s", chat_id)
 
+    from app.broadcast import NotificationManager
+    NotificationManager.register(chat_id, websocket)
+
     # Register / touch conversation record
     try:
         from app.memory.store import upsert_web_conversation
@@ -155,6 +158,9 @@ async def websocket_chat(websocket: WebSocket, token: str = "", chat_id: str = "
 
     except WebSocketDisconnect:
         logger.info("Web chat disconnected: chat_id=%s", chat_id)
+    finally:
+        from app.broadcast import NotificationManager
+        NotificationManager.unregister(chat_id)
 
 
 # ── GET /api/conversations ────────────────────────────────────────────────────

@@ -1292,6 +1292,11 @@ let activeSpeakBtn = null;
 const micBtn       = document.getElementById('mic-btn');
 const defaultPlaceholder = messageInput.placeholder;
 
+// Hide mic button on non-secure contexts (HTTP) — getUserMedia requires HTTPS
+if (!window.isSecureContext) {
+  micBtn.style.display = 'none';
+}
+
 // Pick the best supported MIME type for recording
 const AUDIO_MIME = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus']
   .find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';

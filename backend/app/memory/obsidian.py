@@ -349,6 +349,78 @@ def read_relevant_facts(query: str, byte_budget: int = MAX_INJECTED_BYTES) -> st
     return "\n".join(parts)
 
 
+def append_to_note(filepath: str, content: str, header: str = "") -> str:
+    """Append content to any existing Markdown note by relative file path.
+
+    `filepath` is relative to VAULT_ROOT, e.g. "Daily/2024-01-15.md" or
+    "Projects/Home Renovation.md".  If `header` is given (e.g. "## Tasks"),
+    the content is inserted at the end of that section; if the header does
+    not exist it is created.  Atomic write via a .tmp file so Obsidian never
+    sees a partial save.
+    """
+    # Sanitise: strip leading slashes, block traversal
+    clean = filepath.lstrip("/").replace("\\", "/")
+    path = (VAULT_ROOT / clean).resolve()
+    root = VAULT_ROOT.resolve()
+    if root not in path.parents and path != root:
+        return "Error: path traversal blocked"
+    if not clean.endswith(".md"):
+        return "Error: only .md files are supported"
+
+    with _lock_for(path):
+        if not path.exists():
+            return f"Error: file not found: {filepath!r}. Use save_fact() to create new notes."
+
+        if not header:
+            with path.open("a", encoding="utf-8", newline="\n") as f:
+                f.write(f"\n{content.strip()}\n")
+            logger.info("Appended to %s", path.relative_to(VAULT_ROOT))
+            return f"Appended to {filepath}"
+
+        # Locate the header line (match ignoring leading #s and whitespace)
+        target = header.lstrip("#").strip()
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+
+        insert_idx: int | None = None
+        section_level = 0
+        for i, line in enumerate(lines):
+            if not line.startswith("#"):
+                continue
+            level = len(line) - len(line.lstrip("#"))
+            title = line.lstrip("#").strip()
+            if title == target:
+                section_level = level
+                # Scan forward to end of section (next heading of same/higher level)
+                for j in range(i + 1, len(lines)):
+                    jl = lines[j]
+                    if jl.startswith("#"):
+                        jlevel = len(jl) - len(jl.lstrip("#"))
+                        if jlevel <= section_level:
+                            insert_idx = j
+                            break
+                else:
+                    insert_idx = len(lines)
+                break
+
+        if insert_idx is None:
+            # Header missing — append it + content
+            addition = f"\n{header}\n\n{content.strip()}\n"
+            with path.open("a", encoding="utf-8", newline="\n") as f:
+                f.write(addition)
+            logger.info("Created header %r in %s", header, path.relative_to(VAULT_ROOT))
+            return f"Created section '{header}' and appended to {filepath}"
+
+        # Insert before the next section, keeping a blank separator
+        lines.insert(insert_idx, "")
+        lines.insert(insert_idx, content.strip())
+        tmp = path.with_suffix(".md.tmp")
+        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+        os.replace(tmp, path)
+        logger.info("Appended under %r in %s", header, path.relative_to(VAULT_ROOT))
+        return f"Appended under '{header}' in {filepath}"
+
+
 def list_visible(category: str | None = None) -> str:
     """Directory listing of visible (non-hidden) fact files, plus rules count."""
     if not VAULT_ROOT.exists():
