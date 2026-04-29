@@ -122,7 +122,10 @@ if os.path.isdir(_static_dir):
 
     @app.get("/")
     async def serve_index():
-        return FileResponse(os.path.join(_static_dir, "index.html"))
+        return FileResponse(
+            os.path.join(_static_dir, "index.html"),
+            headers={"Cache-Control": "no-cache, must-revalidate", "Pragma": "no-cache"},
+        )
 
     @app.get("/manifest.json")
     async def serve_manifest():
