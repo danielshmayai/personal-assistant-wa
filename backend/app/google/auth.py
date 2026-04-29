@@ -78,6 +78,7 @@ def get_credentials(chat_id: str) -> Credentials | None:
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
         scopes=token_data["scopes"].split(",") if token_data["scopes"] else SCOPES,
+        expiry=token_data["token_expiry"],
     )
 
     if creds.expired and creds.refresh_token:
