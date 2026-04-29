@@ -1,6 +1,6 @@
 """
-Verifier node — reviews the agent's completed response against the plan's
-success_criteria and self-corrects when issues are found.
+Verifier node — reviews the agent's completed response and self-corrects
+when tool calls failed or the response is incomplete.
 
 Flow:
   agent finishes (no tool_calls)
@@ -8,13 +8,11 @@ Flow:
           → passed or max retries → reflection → END
           → failed, retries < 2  → inject correction HumanMessage → agent
 
-Optimization: purely conversational turns (requires_tools=False AND no
-ToolMessages in history) skip the LLM call entirely and auto-pass.
+Fast path: if the agent made no tool calls at all (pure conversation),
+skip the LLM verification entirely — it's unnecessary overhead.
 """
 
-import json
 import logging
-
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import BaseModel
 
@@ -65,17 +63,17 @@ If any check fails:
 
 
 async def verifier_node(state: PAState) -> dict:
-    plan_data = json.loads(state.get("agent_plan", "{}"))
-    requires_tools = plan_data.get("requires_tools", True)
+    # Fast path: agent made no tool calls → pure conversation → skip verification
     tool_msgs_exist = any(isinstance(m, ToolMessage) for m in state["messages"])
-
-    # Fast path: conversational message with no tools — always passes
-    if not requires_tools and not tool_msgs_exist:
-        logger.info("Verifier: skipping verification (conversational, no tools)")
+    if not tool_msgs_exist:
+        logger.info("Verifier: skipping (no tools called)")
         return {"verification_passed": True}
 
     user_input = state.get("user_input", "")
-    success_criteria = state.get("success_criteria", "Provide a complete, accurate response")
+    success_criteria = (
+        state.get("success_criteria")
+        or f"Completely and accurately address: {user_input}"
+    )
     agent_reply = _extract_last_reply(state["messages"])
     tool_results = _extract_tool_results(state["messages"])
 
