@@ -131,6 +131,16 @@ if os.path.isdir(_static_dir):
     async def serve_manifest():
         return FileResponse(os.path.join(_static_dir, "manifest.json"), media_type="application/manifest+json")
 
+    @app.get("/sw.js")
+    async def serve_sw():
+        # Service workers must be served with no-cache so the browser always
+        # checks for a byte-change, which is how update detection works.
+        return FileResponse(
+            os.path.join(_static_dir, "sw.js"),
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache, must-revalidate", "Pragma": "no-cache"},
+        )
+
 
 class TestRequest(BaseModel):
     text: str
