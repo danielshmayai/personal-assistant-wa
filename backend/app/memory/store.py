@@ -70,21 +70,37 @@ def save_google_token(chat_id: str, creds) -> None:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO google_tokens (chat_id, access_token, refresh_token, token_expiry, scopes)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (chat_id) DO UPDATE
-                SET access_token = EXCLUDED.access_token,
-                    refresh_token = EXCLUDED.refresh_token,
-                    token_expiry = EXCLUDED.token_expiry,
-                    scopes = EXCLUDED.scopes
-            """, (
-                chat_id,
-                encrypt(creds.token or ""),
-                encrypt(creds.refresh_token or ""),
-                creds.expiry,
-                ",".join(creds.scopes) if creds.scopes else "",
-            ))
+            if creds.refresh_token:
+                cur.execute("""
+                    INSERT INTO google_tokens (chat_id, access_token, refresh_token, token_expiry, scopes)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE
+                    SET access_token = EXCLUDED.access_token,
+                        refresh_token = EXCLUDED.refresh_token,
+                        token_expiry = EXCLUDED.token_expiry,
+                        scopes = EXCLUDED.scopes
+                """, (
+                    chat_id,
+                    encrypt(creds.token or ""),
+                    encrypt(creds.refresh_token),
+                    creds.expiry,
+                    ",".join(creds.scopes) if creds.scopes else "",
+                ))
+            else:
+                # refresh_token absent (normal on token-refresh responses) — preserve existing
+                cur.execute("""
+                    INSERT INTO google_tokens (chat_id, access_token, refresh_token, token_expiry, scopes)
+                    VALUES (%s, %s, '', %s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE
+                    SET access_token = EXCLUDED.access_token,
+                        token_expiry = EXCLUDED.token_expiry,
+                        scopes = EXCLUDED.scopes
+                """, (
+                    chat_id,
+                    encrypt(creds.token or ""),
+                    creds.expiry,
+                    ",".join(creds.scopes) if creds.scopes else "",
+                ))
         conn.commit()
         logger.info("Saved Google token for chat_id=%s", chat_id)
     finally:
