@@ -210,8 +210,8 @@ def test_should_continue_routes_to_tools_when_tool_calls_present():
     assert should_continue(state) == "tools"
 
 
-def test_should_continue_routes_to_reflection_when_no_tool_calls():
-    """should_continue must return 'reflection' when last message has no tool_calls."""
+def test_should_continue_routes_to_verifier_when_no_tool_calls():
+    """should_continue must return 'verifier' (not 'reflection') when last message has no tool_calls."""
     from app.graph.tool_node import should_continue
     from unittest.mock import MagicMock
 
@@ -219,7 +219,7 @@ def test_should_continue_routes_to_reflection_when_no_tool_calls():
     msg.tool_calls = []
     state = {"messages": [msg]}
 
-    assert should_continue(state) == "reflection"
+    assert should_continue(state) == "verifier"
 
 
 # ---------------------------------------------------------------------------
