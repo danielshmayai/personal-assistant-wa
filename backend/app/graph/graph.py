@@ -5,7 +5,6 @@ from langgraph.graph import StateGraph, START, END
 from app.graph.state import PAState
 from app.graph.distiller import agent_node, _to_whatsapp
 from app.graph.tool_node import tool_executor_node, should_continue
-from app.graph.planner import planner_node
 from app.graph.verifier import verifier_node, route_after_verify
 from app.memory.store import load_memory_context
 from app.memory.reflection import reflection_node
@@ -13,28 +12,28 @@ from app.graph.checkpointer import get_checkpointer
 
 logger = logging.getLogger("pa.graph")
 
+_RECURSION_LIMIT = 25
+
 
 def build_graph():
     """Assemble the PA Reasoning Agent graph.
 
-    START → inject_memory → planner → agent → [tools ↺ | verifier]
-                                          ↑              |
-                                          └─── [fail] ───┤  (max 2 retries)
-                                                         ↓ [pass | give_up]
-                                                     reflection → END
+    START → inject_memory → agent → [tools ↺ | verifier]
+                                ↑              |
+                                └── [fail] ────┤  (max 2 retries)
+                                               ↓ [pass | give_up]
+                                           reflection → END
     """
     builder = StateGraph(PAState)
 
     builder.add_node("inject_memory", inject_memory_node)
-    builder.add_node("planner", planner_node)
     builder.add_node("agent", agent_node)
     builder.add_node("tools", tool_executor_node)
     builder.add_node("verifier", verifier_node)
     builder.add_node("reflection", reflection_node)
 
     builder.add_edge(START, "inject_memory")
-    builder.add_edge("inject_memory", "planner")
-    builder.add_edge("planner", "agent")
+    builder.add_edge("inject_memory", "agent")
     builder.add_conditional_edges(
         "agent", should_continue, {"tools": "tools", "verifier": "verifier"}
     )
@@ -79,13 +78,9 @@ def _last_ai_reply(messages: list) -> str:
 
 
 async def stream_graph(user_text: str, chat_id: str):
-    """Async generator of WebSocket event dicts for the web UI.
-
-    Yields token/tool_start/tool_end/done dicts, filtering out reflection-node
-    tokens and tool-call argument fragments.
-    """
+    """Async generator of WebSocket event dicts for the web UI."""
     graph = _get_graph()
-    config = {"configurable": {"thread_id": chat_id}, "recursion_limit": 8}
+    config = {"configurable": {"thread_id": chat_id}, "recursion_limit": _RECURSION_LIMIT}
     input_state = {
         "user_input": user_text,
         "chat_id": chat_id,
@@ -115,11 +110,6 @@ async def stream_graph(user_text: str, chat_id: str):
         elif ename == "on_tool_end":
             yield {"type": "tool_end", "name": event.get("name", "")}
 
-        # Surface planner and verifier nodes as UI badges
-        elif ename == "on_chat_model_start" and node == "planner":
-            yield {"type": "tool_start", "name": "_planner", "input": {}}
-        elif ename == "on_chat_model_end" and node == "planner":
-            yield {"type": "tool_end", "name": "_planner"}
         elif ename == "on_chat_model_start" and node == "verifier":
             yield {"type": "tool_start", "name": "_verifier", "input": {}}
         elif ename == "on_chat_model_end" and node == "verifier":
@@ -132,7 +122,7 @@ async def run_graph(text: str, chat_id: str) -> str:
     graph = _get_graph()
     config = {
         "configurable": {"thread_id": chat_id},
-        "recursion_limit": 8,  # max 3 tool call rounds before giving up
+        "recursion_limit": _RECURSION_LIMIT,
     }
     result = await graph.ainvoke(
         {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
