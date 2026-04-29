@@ -86,4 +86,8 @@ def get_credentials(chat_id: str) -> Credentials | None:
         save_google_token(chat_id, creds)
         logger.info("Refreshed Google token for chat_id=%s", chat_id)
 
+    if creds.expired:
+        logger.info("Google credentials expired and no refresh_token for chat_id=%s — re-auth required", chat_id)
+        return None
+
     return creds
