@@ -1,5 +1,6 @@
 import logging
 import secrets
+import datetime
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -62,7 +63,14 @@ def handle_callback(code: str, state: str) -> None:
     if verifier:
         flow.code_verifier = verifier
     flow.fetch_token(code=code)
-    save_google_token(chat_id, flow.credentials)
+    creds = flow.credentials
+    # google-auth-oauthlib may not set expiry on the Credentials object; pull it
+    # from the underlying OAuth2Session so token_expiry is never stored as NULL.
+    if creds.expiry is None:
+        expires_at = getattr(flow, "oauth2session", None) and flow.oauth2session.token.get("expires_at")
+        if expires_at:
+            creds.expiry = datetime.datetime.utcfromtimestamp(expires_at)
+    save_google_token(chat_id, creds)
     logger.info("Google token saved for chat_id=%s", chat_id)
 
 
@@ -81,7 +89,9 @@ def get_credentials(chat_id: str) -> Credentials | None:
         expiry=token_data["token_expiry"],
     )
 
-    if creds.expired and creds.refresh_token:
+    # Refresh if expired OR if expiry is None (token was saved before the expiry
+    # fix and we can't tell whether it's still valid).
+    if (creds.expired or creds.expiry is None) and creds.refresh_token:
         creds.refresh(Request())
         save_google_token(chat_id, creds)
         logger.info("Refreshed Google token for chat_id=%s", chat_id)
