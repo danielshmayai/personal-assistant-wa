@@ -387,6 +387,25 @@ body {
 .system-msg { align-self: center; color: var(--text3); font-size: 12px; padding: 3px 0; margin: 4px 0; }
 .hidden { display: none !important; }
 
+/* ── Update toast ── */
+#update-toast {
+  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 14px; padding: 11px 14px 11px 16px;
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: var(--shadow); z-index: 300; white-space: nowrap;
+  font-size: 13px; color: var(--text);
+  animation: fadeIn .25s ease;
+}
+#update-toast button {
+  background: linear-gradient(135deg, var(--user-1), var(--user-2));
+  border: none; border-radius: 8px; color: #fff;
+  cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600;
+  padding: 6px 14px; flex-shrink: 0;
+  transition: opacity .15s;
+}
+#update-toast button:hover { opacity: .88; }
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.14); border-radius: 2px; }
@@ -1214,6 +1233,51 @@ if (token) {
   connectWebSocket();
 } else {
   showLogin();
+}
+
+// ── Service Worker registration & update flow ────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(registration => {
+
+    // Called whenever a new SW is found (install triggered).
+    registration.addEventListener('updatefound', () => {
+      const newWorker = registration.installing;
+
+      newWorker.addEventListener('statechange', () => {
+        // Only show the toast when:
+        //  - the new SW has fully installed and is waiting, AND
+        //  - there is already a controller (i.e. this isn't the very first install)
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdateToast(registration);
+        }
+      });
+    });
+
+  }).catch(err => console.warn('SW registration failed:', err));
+
+  // When the active SW changes (after skipWaiting + clients.claim), reload.
+  // This fires after the user clicks "Update" and the new SW takes control.
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) { refreshing = true; window.location.reload(); }
+  });
+}
+
+function showUpdateToast(registration) {
+  if (document.getElementById('update-toast')) return; // already shown
+  const toast = document.createElement('div');
+  toast.id = 'update-toast';
+  toast.innerHTML = `
+    <span>✨ New version available</span>
+    <button id="update-btn">Update</button>
+  `;
+  document.body.appendChild(toast);
+
+  document.getElementById('update-btn').addEventListener('click', () => {
+    toast.remove();
+    // Tell the waiting SW to skip waiting — triggers controllerchange → reload.
+    if (registration.waiting) registration.waiting.postMessage('SKIP_WAITING');
+  });
 }
 </script>
 </body>
