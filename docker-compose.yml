@@ -92,6 +92,7 @@ services:
       - "8000:8000"
     volumes:
       - ${HOST_OBSIDIAN_VAULT:-./obsidian_vault}:/app/obsidian_vault
+      - ./backend/app/static:/app/app/static:ro
     networks:
       - pa-net
     depends_on:
