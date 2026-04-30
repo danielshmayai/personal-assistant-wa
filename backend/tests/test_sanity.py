@@ -509,12 +509,40 @@ def test_fetch_url_returns_text(monkeypatch):
 
 
 def test_get_weather_returns_response(monkeypatch):
-    """get_weather must return the wttr.in response text."""
+    """get_weather must return location name, current conditions, and 7-day forecast."""
     import asyncio
 
+    GEO_JSON = {
+        "results": [{
+            "name": "Tel Aviv",
+            "country": "Israel",
+            "latitude": 32.08,
+            "longitude": 34.78,
+        }]
+    }
+    FORECAST_JSON = {
+        "current_weather": {"temperature": 28, "windspeed": 14, "weathercode": 0},
+        "daily": {
+            "time":                        ["2024-05-01", "2024-05-02", "2024-05-03",
+                                            "2024-05-04", "2024-05-05", "2024-05-06", "2024-05-07"],
+            "temperature_2m_max":          [30, 29, 27, 26, 28, 31, 32],
+            "temperature_2m_min":          [21, 20, 18, 17, 19, 22, 23],
+            "precipitation_probability_max":[0,  5, 60, 20,  0,  0,  0],
+            "weathercode":                 [0,   2,  63,  2,  0,  0,  1],
+        },
+    }
+
+    call_count = 0
+
     async def fake_get(*args, **kwargs):
+        nonlocal call_count
         resp = MagicMock()
-        resp.text = "Tel Aviv: ☀️ +28°C"
+        resp.raise_for_status = MagicMock()
+        if call_count == 0:
+            resp.json = MagicMock(return_value=GEO_JSON)
+        else:
+            resp.json = MagicMock(return_value=FORECAST_JSON)
+        call_count += 1
         return resp
 
     with patch("httpx.AsyncClient") as mock_client_cls:
@@ -529,7 +557,9 @@ def test_get_weather_returns_response(monkeypatch):
             get_weather.ainvoke({"location": "Tel Aviv"})
         )
 
-    assert "Tel Aviv" in result or "28" in result
+    assert "Tel Aviv" in result
+    assert "28" in result        # current temperature
+    assert "7-day forecast" in result
 
 
 def test_wikipedia_search_returns_summary(monkeypatch):
