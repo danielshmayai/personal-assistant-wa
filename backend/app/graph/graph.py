@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 from langchain_core.messages import HumanMessage, AIMessage
@@ -5,8 +6,9 @@ from langgraph.graph import StateGraph, START, END
 from app.graph.state import PAState
 from app.graph.distiller import agent_node, _to_whatsapp
 from app.graph.tool_node import tool_executor_node, should_continue
-from app.memory.store import load_memory_context
-from app.memory.reflection import reflection_node
+from app.memory.store import load_memory_context, log_conversation
+from app.memory.reflection import reflection_node, format_conversation_transcript
+from app.memory.episodes import create_episode
 from app.graph.checkpointer import get_checkpointer
 
 logger = logging.getLogger("pa.graph")
@@ -68,6 +70,14 @@ def _last_ai_reply(messages: list) -> str:
     return ""
 
 
+async def _log(chat_id: str, transcript: str) -> None:
+    """Fire-and-forget: write conversation transcript to the log table."""
+    try:
+        await asyncio.get_running_loop().run_in_executor(None, log_conversation, chat_id, transcript)
+    except Exception:
+        logger.debug("Failed to log conversation for %s", chat_id)
+
+
 async def stream_graph(user_text: str, chat_id: str):
     """Async generator of WebSocket event dicts for the web UI."""
     graph = _get_graph()
@@ -101,7 +111,12 @@ async def stream_graph(user_text: str, chat_id: str):
         elif ename == "on_tool_end":
             yield {"type": "tool_end", "name": event.get("name", "")}
 
-    yield {"type": "done", "full_reply": "".join(reply_parts)}
+    full_reply = "".join(reply_parts)
+    if full_reply:
+        transcript = f"User: {user_text}\nAssistant: {full_reply}"
+        asyncio.ensure_future(_log(chat_id, transcript))
+        asyncio.ensure_future(create_episode(chat_id, transcript))
+    yield {"type": "done", "full_reply": full_reply}
 
 
 async def run_graph(text: str, chat_id: str) -> str:
@@ -116,4 +131,8 @@ async def run_graph(text: str, chat_id: str) -> str:
     )
     raw = _last_ai_reply(result.get("messages", []))
     reply = _to_whatsapp(raw) or "[No response generated]"
+    transcript = format_conversation_transcript(result.get("messages", []))
+    if transcript:
+        asyncio.ensure_future(_log(chat_id, transcript))
+        asyncio.ensure_future(create_episode(chat_id, transcript))
     return reply + " ⚡"

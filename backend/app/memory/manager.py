@@ -4,8 +4,11 @@ All operations are backed by `app.memory.obsidian` (markdown files in a
 host-mounted Obsidian vault). Soft-delete semantics: `hide_*` flips a flag
 rather than removing data.
 """
+import logging
 from langchain_core.tools import tool
 from app.memory import obsidian
+
+logger = logging.getLogger("pa.memory")
 
 
 _CATEGORY_LIST = "People, Entities, Investments, Projects, Preferences, Misc"
@@ -48,7 +51,17 @@ def update_rule(instruction: str) -> str:
 
     Example: update_rule(instruction="Always reply in Hebrew.")
     """
-    return obsidian.update_rule(instruction)
+    from app.memory.embeddings import find_similar_rule, store_rule_embedding
+    similar = find_similar_rule(instruction)
+    if similar:
+        if similar.strip().lower() == instruction.strip().lower():
+            return "Rule already exists (semantically equivalent)."
+        # Retire the outdated rule and replace with the refined version
+        obsidian.hide_rule(similar)
+        logger.info("Replaced similar rule with refined version: %r", instruction)
+    result = obsidian.update_rule(instruction)
+    store_rule_embedding(instruction)
+    return result
 
 
 @tool

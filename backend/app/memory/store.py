@@ -17,6 +17,14 @@ def init_memory_tables():
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS vault_embeddings (
+                    filepath TEXT PRIMARY KEY,
+                    embedding vector(768) NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS memory_facts (
                     id SERIAL PRIMARY KEY,
@@ -50,6 +58,29 @@ def init_memory_tables():
                     refresh_token TEXT,
                     token_expiry TIMESTAMP,
                     scopes TEXT
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS rule_embeddings (
+                    rule_text TEXT PRIMARY KEY,
+                    embedding vector(768) NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS episodes (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    embedding vector(768),
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_log (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    transcript TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
             cur.execute("""
@@ -237,20 +268,38 @@ def delete_rule(rule_id: int) -> bool:
 async def load_memory_context(query: str = "") -> str:
     """Build a text block of rules + query-relevant facts from the Obsidian vault.
 
-    Rules from `System/Rules.md` always load. Facts are keyword-matched against
-    `query` (typically the latest user message) so injection stays bounded —
-    important on a 4GB Gemma 4 deployment.
+    Tries semantic (pgvector) search first; falls back to keyword matching.
     """
     from app.memory import obsidian
+    from app.memory.embeddings import semantic_search
     loop = asyncio.get_running_loop()
     rules = await loop.run_in_executor(None, obsidian.read_rules)
-    facts = await loop.run_in_executor(None, obsidian.read_relevant_facts, query)
+
+    facts = ""
+    episodes: list[str] = []
+    if query:
+        try:
+            filepaths = await loop.run_in_executor(None, semantic_search, query)
+            non_system = [f for f in filepaths if not f.startswith("System/")]
+            if non_system:
+                facts = await loop.run_in_executor(None, obsidian.read_facts_by_paths, non_system)
+        except Exception:
+            pass
+        try:
+            from app.memory.episodes import get_relevant_episodes
+            episodes = await get_relevant_episodes(query)
+        except Exception:
+            pass
+    if not facts:
+        facts = await loop.run_in_executor(None, obsidian.read_relevant_facts, query)
 
     parts: list[str] = []
     if rules:
         parts.append("## Rules\n" + rules)
     if facts:
         parts.append("## Relevant Facts\n" + facts)
+    if episodes:
+        parts.append("## Past relevant conversations\n" + "\n".join(f"- {e}" for e in episodes))
     if not parts:
         return ""
     return "\n\n".join(parts)[:obsidian.MAX_INJECTED_BYTES]
@@ -332,6 +381,86 @@ def delete_web_conversation(chat_id: str) -> bool:
         if deleted:
             logger.info("Deleted conversation: %s", chat_id)
         return deleted
+    finally:
+        conn.close()
+
+
+def save_episode(chat_id: str, summary: str, vec_str: str | None = None) -> None:
+    """Store an LLM-generated conversation summary, optionally with its embedding."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            if vec_str:
+                cur.execute(
+                    "INSERT INTO episodes (chat_id, summary, embedding) VALUES (%s, %s, %s::vector)",
+                    (chat_id, summary, vec_str),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO episodes (chat_id, summary) VALUES (%s, %s)",
+                    (chat_id, summary),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def search_episodes(vec_str: str, limit: int = 3) -> list[str]:
+    """Return episode summaries ranked by cosine similarity to vec_str."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT summary FROM episodes
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (vec_str, limit),
+            )
+            return [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def log_conversation(chat_id: str, transcript: str) -> None:
+    """Persist a finished conversation transcript for self-review."""
+    if not transcript.strip():
+        return
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO conversation_log (chat_id, transcript) VALUES (%s, %s)",
+                (chat_id, transcript),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_recent_conversations(hours: int = 24) -> list[dict]:
+    """Return transcripts logged in the last N hours, newest first."""
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT chat_id, transcript, created_at
+                FROM conversation_log
+                WHERE created_at > %s
+                ORDER BY created_at DESC
+                LIMIT 50
+                """,
+                (cutoff,),
+            )
+            return [
+                {"chat_id": r[0], "transcript": r[1], "created_at": r[2].isoformat()}
+                for r in cur.fetchall()
+            ]
     finally:
         conn.close()
 

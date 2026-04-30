@@ -477,6 +477,28 @@ def read_note(filepath: str, max_chars: int = 32_000) -> str:
         return f"Error reading file: {e}"
 
 
+def read_facts_by_paths(filepaths: list[str], byte_budget: int = MAX_INJECTED_BYTES) -> str:
+    """Read snippets from the given vault-relative filepaths (result of semantic search)."""
+    parts: list[str] = []
+    used = 0
+    for rel in filepaths:
+        path = (VAULT_ROOT / rel).resolve()
+        if not path.exists() or _is_hidden(path):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        _, body = _parse_frontmatter(text)
+        snippet = body.strip()[:MAX_SNIPPET_CHARS]
+        block = f"### {rel}\n{snippet}\n"
+        if used + len(block) > byte_budget:
+            break
+        parts.append(block)
+        used += len(block)
+    return "\n".join(parts)
+
+
 def list_visible(category: str = "") -> str:
     """Directory listing of visible (non-hidden) fact files, plus rules count."""
     if not VAULT_ROOT.exists():

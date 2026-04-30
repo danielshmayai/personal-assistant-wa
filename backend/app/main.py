@@ -162,6 +162,21 @@ async def test_graph(
     return {"input": req.text, "reply": reply}
 
 
+@app.post("/admin/self-review")
+@limiter.limit("5/minute")
+async def trigger_self_review(
+    request: Request,
+    hours: int = 24,
+    x_test_token: str = Header(default=""),
+):
+    """Trigger a self-review of the last N hours of conversations. Requires X-Test-Token."""
+    if not TEST_TOKEN or x_test_token != TEST_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Test-Token header")
+    from app.memory.self_review import run_self_review
+    result = await run_self_review(hours=hours)
+    return {"result": result}
+
+
 @app.get("/health")
 @limiter.limit("60/minute")
 async def health(request: Request):
