@@ -40,8 +40,8 @@ async def tool_executor_node(state: PAState) -> dict:
 
 
 def should_continue(state: PAState) -> str:
-    """Route to tool_executor if the agent made tool calls, else to verifier."""
+    """Route to tool_executor if the agent made tool calls, else to reflection."""
     last = state["messages"][-1]
     if getattr(last, "tool_calls", None):
         return "tools"
-    return "verifier"
+    return "reflection"
