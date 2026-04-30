@@ -512,14 +512,11 @@ def test_get_weather_returns_response(monkeypatch):
     """get_weather must return location name, current conditions, and 7-day forecast."""
     import asyncio
 
-    GEO_JSON = {
-        "results": [{
-            "name": "Tel Aviv",
-            "country": "Israel",
-            "latitude": 32.08,
-            "longitude": 34.78,
-        }]
-    }
+    GEO_JSON = [{
+        "display_name": "Tel Aviv, Tel Aviv District, Israel",
+        "lat": "32.08",
+        "lon": "34.78",
+    }]
     FORECAST_JSON = {
         "current_weather": {"temperature": 28, "windspeed": 14, "weathercode": 0},
         "daily": {
