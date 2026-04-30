@@ -39,6 +39,9 @@ NOTHING_TO_REVIEW
 
 async def run_self_review(hours: int = 24) -> str:
     """Analyze conversations from the last `hours` hours and rebuild vault embeddings."""
+    from app.memory.capabilities import sync_capabilities
+    sync_capabilities()
+
     from app.memory.embeddings import rebuild_vault_embeddings, rebuild_rule_embeddings
     embedded, rules_embedded = await asyncio.gather(
         rebuild_vault_embeddings(),

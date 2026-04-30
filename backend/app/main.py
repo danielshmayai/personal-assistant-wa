@@ -95,6 +95,8 @@ async def lifespan(app: FastAPI):
     await _register_waha_webhook()
     from app.whatsapp import detect_own_lid
     await detect_own_lid()
+    from app.memory.capabilities import sync_capabilities
+    sync_capabilities()
     yield
 
 
