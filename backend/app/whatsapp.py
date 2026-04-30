@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, Query, Request, Response
 import httpx
@@ -231,6 +232,14 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
         logger.info("Self-chat: %.80s...", full_text)
         reply = await _process_message(full_text, chat_id)
         await send_whatsapp_message(chat_id, reply)
+        return Response(status_code=200)
+
+    # --- WATCHED LEADS: log silently, no reply ---
+    from app import leads as _leads
+    if _leads.is_watched(chat_id):
+        direction = "outbound" if payload.get("fromMe", False) else "inbound"
+        logger.info("Lead message: chat=%s dir=%s %.60s", chat_id, direction, full_text)
+        asyncio.create_task(_leads.log_and_extract(chat_id, direction, full_text))
         return Response(status_code=200)
 
     # --- GROUPS and DMs: respond only when @danidin / !danidin prefix is used ---

@@ -91,6 +91,28 @@ def init_memory_tables():
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS watched_leads (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT UNIQUE NOT NULL,
+                    phone TEXT NOT NULL,
+                    label TEXT DEFAULT '',
+                    obsidian_note TEXT DEFAULT '',
+                    extracted_data JSONB DEFAULT '{}',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    last_activity TIMESTAMPTZ
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS lead_messages (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    ts TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS lead_messages_chat_id_idx ON lead_messages(chat_id)")
         conn.commit()
     finally:
         conn.close()

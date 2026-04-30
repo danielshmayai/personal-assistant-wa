@@ -19,6 +19,7 @@ from app.whatsapp import router as waha_router
 from app.memory.store import init_memory_tables, _get_conn
 from app.routers.google_auth import router as google_auth_router
 from app.routers.web_chat import router as web_chat_router
+from app.routers.leads import router as leads_router
 from app.graph.checkpointer import setup_checkpointer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -107,7 +108,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Test-Token"],
 )
 
@@ -116,6 +117,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(waha_router)
 app.include_router(google_auth_router)
 app.include_router(web_chat_router)
+app.include_router(leads_router)
 
 # Serve the web UI static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
