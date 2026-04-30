@@ -173,26 +173,42 @@ async def fetch_url(url: str) -> str:
 
 @tool
 async def get_weather(location: str) -> str:
-    """Get current weather AND a 7-day daily forecast for any city or location.
+    """Get current weather AND a 7-day daily forecast for any city or location,
+    including small Israeli towns, moshavim, and kibbutzim.
     Returns today's conditions plus max/min temperatures, rain probability,
     and weather description for each of the next 7 days.
-    Example: get_weather("Tel Aviv") or get_weather("London, UK")"""
+    Example: get_weather("Tel Aviv") or get_weather("נילי") or get_weather("Modi'in")"""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Step 1: geocode the location name → lat/lon
+            # Step 1: geocode via OpenStreetMap Nominatim — best Hebrew/Israeli coverage
             geo = await client.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params={"name": location, "count": 1, "language": "en", "format": "json"},
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": location, "format": "json", "limit": 1, "accept-language": "en"},
+                headers={"User-Agent": "personal-assistant-bot/1.0"},
             )
             geo.raise_for_status()
-            results = geo.json().get("results")
-            if not results:
-                return f"Could not find location: '{location}'."
-            place = results[0]
-            lat, lon = place["latitude"], place["longitude"]
-            place_name = f"{place.get('name', location)}, {place.get('country', '')}"
+            geo_results = geo.json()
 
-            # Step 2: fetch current conditions + 7-day daily forecast
+            # Fallback: append "Israel" and retry if not found
+            if not geo_results:
+                geo2 = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": f"{location}, Israel", "format": "json", "limit": 1, "accept-language": "en"},
+                    headers={"User-Agent": "personal-assistant-bot/1.0"},
+                )
+                geo2.raise_for_status()
+                geo_results = geo2.json()
+
+            if not geo_results:
+                return f"Could not find location: '{location}'. Try adding the country, e.g. '{location}, Israel'."
+
+            place = geo_results[0]
+            lat = float(place["lat"])
+            lon = float(place["lon"])
+            place_name = place.get("display_name", location).split(",")[0:2]
+            place_name = ", ".join(place_name)
+
+            # Step 2: 7-day forecast from Open-Meteo (lat/lon based — works everywhere)
             fc = await client.get(
                 "https://api.open-meteo.com/v1/forecast",
                 params={
@@ -211,25 +227,23 @@ async def get_weather(location: str) -> str:
         daily = data.get("daily", {})
 
         lines = [f"📍 {place_name}", ""]
-
-        # Current conditions
         lines.append(f"**Now:** {_wmo_label(cw.get('weathercode', 0))}  "
                      f"{cw.get('temperature', '?')}°C  "
                      f"💨 {cw.get('windspeed', '?')} km/h")
         lines.append("")
         lines.append("**7-day forecast:**")
 
-        dates   = daily.get("time", [])
-        t_max   = daily.get("temperature_2m_max", [])
-        t_min   = daily.get("temperature_2m_min", [])
-        rain    = daily.get("precipitation_probability_max", [])
-        wcodes  = daily.get("weathercode", [])
+        dates  = daily.get("time", [])
+        t_max  = daily.get("temperature_2m_max", [])
+        t_min  = daily.get("temperature_2m_min", [])
+        rain   = daily.get("precipitation_probability_max", [])
+        wcodes = daily.get("weathercode", [])
 
         for i, date in enumerate(dates):
             day_label = _day_label(date, i)
-            desc  = _wmo_label(wcodes[i] if i < len(wcodes) else 0)
-            hi    = f"{t_max[i]:.0f}" if i < len(t_max) else "?"
-            lo    = f"{t_min[i]:.0f}" if i < len(t_min) else "?"
+            desc = _wmo_label(wcodes[i] if i < len(wcodes) else 0)
+            hi   = f"{t_max[i]:.0f}" if i < len(t_max) else "?"
+            lo   = f"{t_min[i]:.0f}" if i < len(t_min) else "?"
             rain_pct = f"{rain[i]:.0f}%" if i < len(rain) and rain[i] is not None else "?"
             lines.append(f"  {day_label}: {desc}  ↑{hi}°/↓{lo}°C  🌧 {rain_pct}")
 
