@@ -34,6 +34,12 @@ CLIENT_CONFIG = {
 
 
 
+def _token_key(chat_id: str) -> str:
+    """Web conversations use a new chat_id every session, so all web users
+    share a single stable token key.  WhatsApp threads keep their phone number."""
+    return "web_user" if chat_id.startswith("web") else chat_id
+
+
 def get_auth_url(chat_id: str) -> str:
     nonce = secrets.token_urlsafe(32)
     save_oauth_state(nonce, chat_id)  # persisted in Postgres — survives restarts
@@ -70,12 +76,13 @@ def handle_callback(code: str, state: str) -> None:
         expires_at = getattr(flow, "oauth2session", None) and flow.oauth2session.token.get("expires_at")
         if expires_at:
             creds.expiry = datetime.datetime.utcfromtimestamp(expires_at)
-    save_google_token(chat_id, creds)
-    logger.info("Google token saved for chat_id=%s", chat_id)
+    save_google_token(_token_key(chat_id), creds)
+    logger.info("Google token saved for key=%s (chat_id=%s)", _token_key(chat_id), chat_id)
 
 
 def get_credentials(chat_id: str) -> Credentials | None:
-    token_data = load_google_token(chat_id)
+    key = _token_key(chat_id)
+    token_data = load_google_token(key)
     if not token_data:
         return None
 
@@ -93,11 +100,11 @@ def get_credentials(chat_id: str) -> Credentials | None:
     # fix and we can't tell whether it's still valid).
     if (creds.expired or creds.expiry is None) and creds.refresh_token:
         creds.refresh(Request())
-        save_google_token(chat_id, creds)
-        logger.info("Refreshed Google token for chat_id=%s", chat_id)
+        save_google_token(key, creds)
+        logger.info("Refreshed Google token for key=%s", key)
 
     if creds.expired:
-        logger.info("Google credentials expired and no refresh_token for chat_id=%s — re-auth required", chat_id)
+        logger.info("Google credentials expired and no refresh_token for key=%s — re-auth required", key)
         return None
 
     return creds
