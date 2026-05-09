@@ -5,7 +5,7 @@ from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 import app.config as _cfg
-from app.memory.store import save_google_token, load_google_token, delete_google_token, save_oauth_state, pop_oauth_state
+from app.memory.store import save_google_token, load_google_token, delete_google_token, save_oauth_state, pop_oauth_state, peek_oauth_state, delete_oauth_state
 
 logger = logging.getLogger("pa.google.auth")
 
@@ -66,7 +66,9 @@ def get_auth_url(chat_id: str) -> str:
 
 
 def handle_callback(code: str, state: str) -> None:
-    chat_id = pop_oauth_state(state)  # atomic read-and-delete from Postgres
+    # Peek first — state is only deleted after the token is successfully saved,
+    # so a failed token exchange doesn't burn the nonce and the user can retry.
+    chat_id = peek_oauth_state(state)
     if not chat_id:
         raise ValueError("Unknown or expired OAuth state -- please start the auth flow again")
 
@@ -84,6 +86,7 @@ def handle_callback(code: str, state: str) -> None:
         if expires_at:
             creds.expiry = datetime.datetime.utcfromtimestamp(expires_at)
     save_google_token(_token_key(chat_id), creds)
+    delete_oauth_state(state)  # only delete after token is safely stored
     logger.info("Google token saved for key=%s (chat_id=%s)", _token_key(chat_id), chat_id)
 
 

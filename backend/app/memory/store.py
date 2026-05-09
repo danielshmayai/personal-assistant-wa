@@ -359,17 +359,46 @@ def save_oauth_state(nonce: str, chat_id: str) -> None:
 
 
 def pop_oauth_state(nonce: str) -> str | None:
-    """Return and delete the chat_id for the given nonce. Returns None if not found or expired (>10 min)."""
+    """Return and delete the chat_id for the given nonce. Returns None if not found or expired (>1 hour).
+
+    Prefer peek_oauth_state + delete_oauth_state when you need to retry on failure.
+    """
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM oauth_pending_states WHERE nonce = %s AND created_at > NOW() - INTERVAL '10 minutes' RETURNING chat_id",
+                "DELETE FROM oauth_pending_states WHERE nonce = %s AND created_at > NOW() - INTERVAL '1 hour' RETURNING chat_id",
                 (nonce,),
             )
             row = cur.fetchone()
         conn.commit()
         return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def peek_oauth_state(nonce: str) -> str | None:
+    """Return the chat_id for a nonce without deleting it. Returns None if not found or expired (>1 hour)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT chat_id FROM oauth_pending_states WHERE nonce = %s AND created_at > NOW() - INTERVAL '1 hour'",
+                (nonce,),
+            )
+            row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def delete_oauth_state(nonce: str) -> None:
+    """Delete a nonce after successful token exchange."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM oauth_pending_states WHERE nonce = %s", (nonce,))
+        conn.commit()
     finally:
         conn.close()
 
