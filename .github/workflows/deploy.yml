@@ -104,15 +104,15 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          $cfg = Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '=' -and $_ -notmatch '^\s*#' } |
-            ForEach-Object { $k,$v = $_ -split '=',2; @{$k.Trim()=$v.Trim()} } |
-            ForEach-Object { $_ }
-          $env_map = @{}; $cfg | ForEach-Object { $_.GetEnumerator() | ForEach-Object { $env_map[$_.Key] = $_.Value } }
+          $apiKey  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_API_KEY=' })  -replace '^WAHA_API_KEY=',''
+          $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
+          $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
+          if (-not $session) { $session = "default" }
           $sha = $env:COMMIT_SHA.Substring(0, 7)
           $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
-          $body = @{ chatId = $env_map['MY_WHATSAPP_ID']; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $env_map['WAHA_SESSION'] } | ConvertTo-Json
+          $body = @{ chatId = $chatId; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $session } | ConvertTo-Json
           try {
-            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env_map['WAHA_API_KEY']} -Body $body
+            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$apiKey} -Body $body
           } catch {
             Write-Host "WhatsApp notification skipped: $_"
           }
@@ -125,15 +125,15 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           REPO: ${{ github.repository }}
         run: |
-          $cfg = Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '=' -and $_ -notmatch '^\s*#' } |
-            ForEach-Object { $k,$v = $_ -split '=',2; @{$k.Trim()=$v.Trim()} } |
-            ForEach-Object { $_ }
-          $env_map = @{}; $cfg | ForEach-Object { $_.GetEnumerator() | ForEach-Object { $env_map[$_.Key] = $_.Value } }
+          $apiKey  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_API_KEY=' })  -replace '^WAHA_API_KEY=',''
+          $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
+          $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
+          if (-not $session) { $session = "default" }
           $sha = $env:COMMIT_SHA.Substring(0, 7)
           $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
-          $body = @{ chatId = $env_map['MY_WHATSAPP_ID']; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $env_map['WAHA_SESSION'] } | ConvertTo-Json
+          $body = @{ chatId = $chatId; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $session } | ConvertTo-Json
           try {
-            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env_map['WAHA_API_KEY']} -Body $body
+            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$apiKey} -Body $body
           } catch {
             Write-Host "WhatsApp notification skipped: $_"
           }
