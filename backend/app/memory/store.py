@@ -507,4 +507,17 @@ def list_web_conversations() -> list[dict]:
             cur.execute("""
                 SELECT id, title, created_at, updated_at
                 FROM web_conversations
-                ORDER BY update
+                ORDER BY updated_at DESC
+                LIMIT 50
+            """)
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "created_at": r[2].isoformat() if r[2] else None,
+                    "updated_at": r[3].isoformat() if r[3] else None,
+                }
+                for r in cur.fetchall()
+            ]
+    finally:
+        conn.close()
