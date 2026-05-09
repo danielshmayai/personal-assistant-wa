@@ -66,8 +66,8 @@ def get_auth_url(chat_id: str) -> str:
 
 
 def handle_callback(code: str, state: str) -> None:
-    # Peek first — state is only deleted after the token is successfully saved,
-    # so a failed token exchange doesn't burn the nonce and the user can retry.
+    # Peek first -- state is only deleted after the token is successfully saved,
+    # so a failed token exchange does not burn the nonce and the user can retry.
     chat_id = peek_oauth_state(state)
     if not chat_id:
         raise ValueError("Unknown or expired OAuth state -- please start the auth flow again")
@@ -107,7 +107,7 @@ def get_credentials(chat_id: str) -> Credentials | None:
     )
 
     # Refresh if expired OR if expiry is None (token was saved before the expiry
-    # fix and we can't tell whether it's still valid).
+    # fix and we can not tell whether it is still valid).
     if (creds.expired or creds.expiry is None) and creds.refresh_token:
         try:
             creds.refresh(Request())
@@ -115,8 +115,14 @@ def get_credentials(chat_id: str) -> Credentials | None:
             logger.info("Refreshed Google token for key=%s", key)
         except Exception as exc:
             logger.warning(
-                "Google token refresh failed for key=%s (%s) -- clearing stored token, re-auth required",
+                "Token refresh failed for key=%s (%s) -- clearing token, re-auth required",
                 key, exc,
             )
             delete_google_token(key)
-  
+            return None
+
+    if creds.expired:
+        logger.info("Credentials expired, no refresh_token for key=%s -- re-auth required", key)
+        return None
+
+    return creds
