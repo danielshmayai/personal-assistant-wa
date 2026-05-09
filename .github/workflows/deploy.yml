@@ -108,6 +108,11 @@ jobs:
           $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
           $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
           if (-not $session) { $session = "default" }
+          for ($i = 1; $i -le 12; $i++) {
+            $s = (Invoke-RestMethod -Uri "http://localhost:3000/api/sessions/$session" -Headers @{"X-Api-Key"=$apiKey} -ErrorAction SilentlyContinue).status
+            if ($s -eq "WORKING") { break }
+            Write-Host "WAHA session status: $s — waiting..."; Start-Sleep -Seconds 5
+          }
           $sha = $env:COMMIT_SHA.Substring(0, 7)
           $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
           $body = @{ chatId = $chatId; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $session } | ConvertTo-Json
@@ -129,6 +134,11 @@ jobs:
           $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
           $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
           if (-not $session) { $session = "default" }
+          for ($i = 1; $i -le 12; $i++) {
+            $s = (Invoke-RestMethod -Uri "http://localhost:3000/api/sessions/$session" -Headers @{"X-Api-Key"=$apiKey} -ErrorAction SilentlyContinue).status
+            if ($s -eq "WORKING") { break }
+            Write-Host "WAHA session status: $s — waiting..."; Start-Sleep -Seconds 5
+          }
           $sha = $env:COMMIT_SHA.Substring(0, 7)
           $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
           $body = @{ chatId = $chatId; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $session } | ConvertTo-Json
