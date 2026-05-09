@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import time
+import uuid
 from datetime import datetime, timezone
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
@@ -10,6 +12,7 @@ from app.memory.store import load_memory_context, log_conversation
 from app.memory.reflection import reflection_node, format_conversation_transcript
 from app.memory.episodes import create_episode
 from app.graph.checkpointer import get_checkpointer
+from app.config import LANGSMITH_API_KEY, LANGSMITH_PROJECT
 
 logger = logging.getLogger("pa.graph")
 
@@ -55,6 +58,17 @@ def _get_graph():
     return _graph
 
 
+def _langsmith_meta(request_id: str, chat_id: str) -> dict:
+    """Extra RunnableConfig fields for LangSmith — empty when tracing is off."""
+    if not LANGSMITH_API_KEY:
+        return {}
+    return {
+        "run_name": f"pa/{chat_id[:16]}",
+        "metadata": {"request_id": request_id, "chat_id": chat_id},
+        "tags": ["pa"],
+    }
+
+
 def extract_text(content) -> str:
     """Normalise Gemini 2.5+ list-typed content to a plain string."""
     if isinstance(content, list):
@@ -80,14 +94,29 @@ async def _log(chat_id: str, transcript: str) -> None:
 
 async def stream_graph(user_text: str, chat_id: str):
     """Async generator of WebSocket event dicts for the web UI."""
+    from app.context import request_id_var
+    request_id = request_id_var.get() or str(uuid.uuid4())
+
     graph = _get_graph()
-    config = {"configurable": {"thread_id": chat_id}, "recursion_limit": _RECURSION_LIMIT}
+    config = {
+        "configurable": {"thread_id": chat_id},
+        "recursion_limit": _RECURSION_LIMIT,
+        **_langsmith_meta(request_id, chat_id),
+    }
     input_state = {
         "user_input": user_text,
         "chat_id": chat_id,
         "messages": [HumanMessage(content=user_text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})],
     }
     reply_parts: list[str] = []
+
+    logger.info(
+        "graph: stream start chat_id=%s request_id=%s",
+        chat_id,
+        request_id,
+        extra={"event": "graph_stream_start", "chat_id": chat_id, "request_id": request_id},
+    )
+    t0 = time.monotonic()
 
     async for event in graph.astream_events(input_state, config, version="v2"):
         ename = event["event"]
@@ -112,6 +141,21 @@ async def stream_graph(user_text: str, chat_id: str):
             yield {"type": "tool_end", "name": event.get("name", "")}
 
     full_reply = "".join(reply_parts)
+    duration_ms = round((time.monotonic() - t0) * 1000)
+    logger.info(
+        "graph: stream end chat_id=%s request_id=%s duration_ms=%d",
+        chat_id,
+        request_id,
+        duration_ms,
+        extra={
+            "event": "graph_stream_end",
+            "chat_id": chat_id,
+            "request_id": request_id,
+            "duration_ms": duration_ms,
+            "reply_len": len(full_reply),
+        },
+    )
+
     if full_reply:
         transcript = f"User: {user_text}\nAssistant: {full_reply}"
         asyncio.ensure_future(_log(chat_id, transcript))
@@ -120,17 +164,47 @@ async def stream_graph(user_text: str, chat_id: str):
 
 
 async def run_graph(text: str, chat_id: str) -> str:
+    from app.context import request_id_var
+    request_id = request_id_var.get() or str(uuid.uuid4())
+
     graph = _get_graph()
     config = {
         "configurable": {"thread_id": chat_id},
         "recursion_limit": _RECURSION_LIMIT,
+        **_langsmith_meta(request_id, chat_id),
     }
+
+    logger.info(
+        "graph: run start chat_id=%s request_id=%s",
+        chat_id,
+        request_id,
+        extra={"event": "graph_run_start", "chat_id": chat_id, "request_id": request_id},
+    )
+    t0 = time.monotonic()
+
     result = await graph.ainvoke(
         {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
         config=config,
     )
+
+    duration_ms = round((time.monotonic() - t0) * 1000)
     raw = _last_ai_reply(result.get("messages", []))
     reply = _to_whatsapp(raw) or "[No response generated]"
+
+    logger.info(
+        "graph: run end chat_id=%s request_id=%s duration_ms=%d",
+        chat_id,
+        request_id,
+        duration_ms,
+        extra={
+            "event": "graph_run_end",
+            "chat_id": chat_id,
+            "request_id": request_id,
+            "duration_ms": duration_ms,
+            "reply_len": len(reply),
+        },
+    )
+
     transcript = format_conversation_transcript(result.get("messages", []))
     if transcript:
         asyncio.ensure_future(_log(chat_id, transcript))

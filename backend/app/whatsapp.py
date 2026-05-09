@@ -266,13 +266,32 @@ def _is_rtl(text: str) -> bool:
 
 async def _process_message(text: str, chat_id: str) -> str:
     """Run text through the LangGraph pipeline. Returns the reply string."""
-    # Import here to avoid circular imports at module load.
+    from app.context import request_id_var
     from app.graph.graph import run_graph
+    request_id = request_id_var.get()
     try:
         reply = await run_graph(text, chat_id)
     except Exception:
-        logger.exception("Graph execution failed")
+        logger.exception(
+            "Graph execution failed chat_id=%s request_id=%s",
+            chat_id,
+            request_id,
+            extra={"event": "graph_error", "chat_id": chat_id, "request_id": request_id},
+        )
         reply = "[Error] Something went wrong processing your message."
     # For RTL replies (Hebrew/Arabic), prepend RLM so the prefix anchors to the right.
     prefix = "\u200f[ *danidin* ]" if _is_rtl(reply) else "[ *danidin* ]"
-    return f"{prefix} {reply}"
+    full_reply = f"{prefix} {reply}"
+    logger.info(
+        "whatsapp: reply sent chat_id=%s request_id=%s len=%d",
+        chat_id,
+        request_id,
+        len(full_reply),
+        extra={
+            "event": "reply_sent",
+            "chat_id": chat_id,
+            "request_id": request_id,
+            "reply_len": len(full_reply),
+        },
+    )
+    return full_reply

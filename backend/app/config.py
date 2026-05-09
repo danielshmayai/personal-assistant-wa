@@ -58,3 +58,13 @@ TUYA_PREFER_LOCAL = os.getenv("TUYA_PREFER_LOCAL", "false").lower() == "true"
 # Path INSIDE the container where the vault volume is mounted.
 # The docker-compose volume maps OBSIDIAN_VAULT_HOST_PATH → /vault.
 OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "/app/obsidian_vault")
+
+# ── Observability ────────────────────────────────────────────────────────────
+
+# When set, enables LangSmith tracing for all LangGraph runs.
+# Also set LANGSMITH_PROJECT to route traces to the right project.
+LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY", "")
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "pa-assistant")
+
+# Set LOG_FORMAT=text to get human-readable logs instead of JSON lines.
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json")

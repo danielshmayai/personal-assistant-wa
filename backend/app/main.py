@@ -22,7 +22,9 @@ from app.routers.web_chat import router as web_chat_router
 from app.routers.leads import router as leads_router
 from app.graph.checkpointer import setup_checkpointer
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+from app.logging_config import setup_logging
+from app.config import LOG_FORMAT
+setup_logging(json_format=(LOG_FORMAT == "json"))
 logger = logging.getLogger("pa.main")
 
 WEBHOOK_EVENTS = ["message", "message.any"]
@@ -67,6 +69,22 @@ async def _register_waha_webhook() -> None:
     logger.error("Could not register WAHA webhook after 5 attempts — messages will not arrive")
 
 
+def _setup_langsmith() -> None:
+    """Configure LangChain env vars for LangSmith tracing when API key is present."""
+    import os
+    from app.config import LANGSMITH_API_KEY, LANGSMITH_PROJECT
+    if not LANGSMITH_API_KEY:
+        return
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_API_KEY", LANGSMITH_API_KEY)
+    os.environ.setdefault("LANGCHAIN_PROJECT", LANGSMITH_PROJECT)
+    logger.info(
+        "LangSmith tracing enabled project=%s",
+        LANGSMITH_PROJECT,
+        extra={"event": "langsmith_enabled", "project": LANGSMITH_PROJECT},
+    )
+
+
 def _log_security_warnings() -> None:
     """Emit startup warnings for insecure configuration."""
     from app.config import DB_ENCRYPTION_KEY
@@ -82,6 +100,7 @@ def _log_security_warnings() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _setup_langsmith()
     _log_security_warnings()
     try:
         init_memory_tables()
