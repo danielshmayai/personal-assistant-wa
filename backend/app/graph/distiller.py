@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -175,7 +176,12 @@ async def agent_node(state: PAState) -> dict:
 
     messages = [SystemMessage(content=system)] + _sanitize_for_gemini(state["messages"])
 
-    response = await llm.ainvoke(messages)
+    try:
+        response = await asyncio.wait_for(llm.ainvoke(messages), timeout=30.0)
+    except asyncio.TimeoutError:
+        logger.error("Gemini API call timed out after 30s for chat_id=%s", chat_id)
+        return {"messages": [AIMessage(content="Sorry, I'm taking too long to respond right now. Please try again.")]}
+
     try:
         response.additional_kwargs["ts"] = datetime.now(timezone.utc).isoformat()
     except Exception:
