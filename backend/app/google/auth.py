@@ -9,7 +9,7 @@ from app.memory.store import save_google_token, load_google_token, delete_google
 
 logger = logging.getLogger("pa.google.auth")
 
-# PKCE code verifiers keyed by nonce — these only live for the duration of one
+# PKCE code verifiers keyed by nonce -- these only live for the duration of one
 # auth flow and don't need to survive restarts (user would re-initiate anyway).
 _pending_verifiers: dict[str, str] = {}
 
@@ -27,7 +27,7 @@ def _client_config() -> dict:
     if not _cfg.GOOGLE_CLIENT_ID or not _cfg.GOOGLE_CLIENT_SECRET:
         raise RuntimeError(
             "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env. "
-            "Get them from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs."
+            "Get them from Google Cloud Console -> APIs & Services -> Credentials -> OAuth 2.0 Client IDs."
         )
     return {
         "web": {
@@ -48,7 +48,7 @@ def _token_key(chat_id: str) -> str:
 
 def get_auth_url(chat_id: str) -> str:
     nonce = secrets.token_urlsafe(32)
-    save_oauth_state(nonce, chat_id)  # persisted in Postgres — survives restarts
+    save_oauth_state(nonce, chat_id)  # persisted in Postgres -- survives restarts
 
     cfg = _client_config()
     flow = Flow.from_client_config(cfg, scopes=SCOPES)
@@ -68,7 +68,7 @@ def get_auth_url(chat_id: str) -> str:
 def handle_callback(code: str, state: str) -> None:
     chat_id = pop_oauth_state(state)  # atomic read-and-delete from Postgres
     if not chat_id:
-        raise ValueError("Unknown or expired OAuth state — please start the auth flow again")
+        raise ValueError("Unknown or expired OAuth state -- please start the auth flow again")
 
     verifier = _pending_verifiers.pop(state, None)
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, state=state)
@@ -112,4 +112,8 @@ def get_credentials(chat_id: str) -> Credentials | None:
             logger.info("Refreshed Google token for key=%s", key)
         except Exception as exc:
             logger.warning(
-                "Google token refresh failed for key=%s (%s) — 
+                "Google token refresh failed for key=%s (%s) -- clearing stored token, re-auth required",
+                key, exc,
+            )
+            delete_google_token(key)
+  
