@@ -40,11 +40,33 @@ def _webhook_url() -> str:
     return f"{base}?secret={WEBHOOK_SECRET}" if WEBHOOK_SECRET else base
 
 
+async def _waha_webhook_already_configured(client: httpx.AsyncClient, headers: dict) -> bool:
+    """Return True if WAHA already has the correct webhook URL and events configured.
+
+    Avoids an unnecessary PUT that restarts the WhatsApp session on every backend restart.
+    """
+    try:
+        r = await client.get(f"{WAHA_BASE_URL}/api/sessions/{WAHA_SESSION}", headers=headers)
+        if r.status_code != 200:
+            return False
+        data = r.json()
+        configured = {
+            w.get("url"): set(w.get("events", []))
+            for w in (data.get("config") or {}).get("webhooks", [])
+        }
+        want_url = _webhook_url()
+        want_events = set(WEBHOOK_EVENTS)
+        return configured.get(want_url) == want_events
+    except Exception:
+        return False
+
+
 async def _register_waha_webhook() -> None:
     """Ensure the WAHA session has the backend webhook configured.
 
-    Retries up to 5 times with 5s delay — WAHA may still be starting when
-    the backend comes up, especially after a full stack restart.
+    Checks the current config first and skips the PUT if the webhook is already
+    correct — a PUT restarts the WhatsApp session which delays notifications.
+    Retries up to 5 times with 5s delay for the case where WAHA is still starting.
     """
     headers = {"Content-Type": "application/json"}
     if WAHA_API_KEY:
@@ -54,6 +76,9 @@ async def _register_waha_webhook() -> None:
     for attempt in range(1, 6):
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
+                if await _waha_webhook_already_configured(client, headers):
+                    logger.info("WAHA webhook already configured correctly — skipping PUT")
+                    return
                 r = await client.put(
                     f"{WAHA_BASE_URL}/api/sessions/{WAHA_SESSION}",
                     json=payload,
