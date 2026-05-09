@@ -14,6 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import (
     OLLAMA_BASE_URL, WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION,
     WEBHOOK_SECRET, TEST_TOKEN, ALLOWED_ORIGIN,
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
 )
 from app.whatsapp import router as waha_router
 from app.memory.store import init_memory_tables, _get_conn
@@ -100,6 +101,16 @@ def _log_security_warnings() -> None:
         logger.warning(
             "SECURITY: ALLOWED_ORIGIN is not set — CORS falls back to localhost only. "
             "Set ALLOWED_ORIGIN=https://<your-tunnel-domain> in production."
+        )
+    if not GOOGLE_CLIENT_ID:
+        logger.warning(
+            "CONFIG: GOOGLE_CLIENT_ID is not set — Google OAuth will fail with 'invalid_client'. "
+            "Set GOOGLE_CLIENT_ID in .env (from Google Cloud Console → OAuth 2.0 Clients)."
+        )
+    if not GOOGLE_CLIENT_SECRET:
+        logger.warning(
+            "CONFIG: GOOGLE_CLIENT_SECRET is not set — Google OAuth token exchange will fail. "
+            "Set GOOGLE_CLIENT_SECRET in .env (from Google Cloud Console → OAuth 2.0 Clients)."
         )
 
 

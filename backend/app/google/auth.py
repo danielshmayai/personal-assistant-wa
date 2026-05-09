@@ -4,7 +4,7 @@ import datetime
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
-from app.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
+import app.config as _cfg
 from app.memory.store import save_google_token, load_google_token, save_oauth_state, pop_oauth_state
 
 logger = logging.getLogger("pa.google.auth")
@@ -22,16 +22,22 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
 ]
 
-CLIENT_CONFIG = {
-    "web": {
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
-        "redirect_uris": [GOOGLE_REDIRECT_URI],
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
+def _client_config() -> dict:
+    """Build the OAuth client config dict at call time so env vars are always current."""
+    if not _cfg.GOOGLE_CLIENT_ID or not _cfg.GOOGLE_CLIENT_SECRET:
+        raise RuntimeError(
+            "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env. "
+            "Get them from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs."
+        )
+    return {
+        "web": {
+            "client_id": _cfg.GOOGLE_CLIENT_ID,
+            "client_secret": _cfg.GOOGLE_CLIENT_SECRET,
+            "redirect_uris": [_cfg.GOOGLE_REDIRECT_URI],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
     }
-}
-
 
 
 def _token_key(chat_id: str) -> str:
@@ -44,8 +50,9 @@ def get_auth_url(chat_id: str) -> str:
     nonce = secrets.token_urlsafe(32)
     save_oauth_state(nonce, chat_id)  # persisted in Postgres — survives restarts
 
-    flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES)
-    flow.redirect_uri = GOOGLE_REDIRECT_URI
+    cfg = _client_config()
+    flow = Flow.from_client_config(cfg, scopes=SCOPES)
+    flow.redirect_uri = _cfg.GOOGLE_REDIRECT_URI
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -64,8 +71,8 @@ def handle_callback(code: str, state: str) -> None:
         raise ValueError("Unknown or expired OAuth state — please start the auth flow again")
 
     verifier = _pending_verifiers.pop(state, None)
-    flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, state=state)
-    flow.redirect_uri = GOOGLE_REDIRECT_URI
+    flow = Flow.from_client_config(_client_config(), scopes=SCOPES, state=state)
+    flow.redirect_uri = _cfg.GOOGLE_REDIRECT_URI
     if verifier:
         flow.code_verifier = verifier
     flow.fetch_token(code=code)
@@ -90,8 +97,8 @@ def get_credentials(chat_id: str) -> Credentials | None:
         token=token_data["access_token"],
         refresh_token=token_data["refresh_token"],
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=GOOGLE_CLIENT_ID,
-        client_secret=GOOGLE_CLIENT_SECRET,
+        client_id=_cfg.GOOGLE_CLIENT_ID,
+        client_secret=_cfg.GOOGLE_CLIENT_SECRET,
         scopes=token_data["scopes"].split(",") if token_data["scopes"] else SCOPES,
         expiry=token_data["token_expiry"],
     )
