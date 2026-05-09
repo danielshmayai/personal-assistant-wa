@@ -403,3 +403,139 @@ def test_worker_status_reports_running_and_queue_depth():
         assert after["running"] is False
 
     asyncio.get_event_loop().run_until_complete(run())
+
+
+# ---------------------------------------------------------------------------
+# 6. DB-backed queue — persist_job integration
+# ---------------------------------------------------------------------------
+
+def test_enqueue_calls_persist_job_for_new_message():
+    """enqueue() must call persist_job when a new message_id is seen."""
+    from app.worker import enqueue, _processed_ids
+    import app.job_queue as jq
+
+    _processed_ids.clear()
+    calls: list[tuple] = []
+    orig = jq.persist_job
+    try:
+        def recording_persist(mid, cid, txt):
+            calls.append((mid, cid, txt))
+            return True
+        jq.persist_job = recording_persist
+        result = enqueue("msg-db-001", "chat-db", "hello db")
+    finally:
+        jq.persist_job = orig
+
+    assert result is True
+    assert calls == [("msg-db-001", "chat-db", "hello db")]
+
+
+def test_enqueue_skips_when_db_reports_duplicate():
+    """enqueue() must return False when persist_job signals a DB-level duplicate."""
+    from app.worker import enqueue, _processed_ids
+    _processed_ids.clear()
+
+    import app.job_queue as jq
+    orig = jq.persist_job
+    try:
+        jq.persist_job = lambda mid, cid, txt: False  # simulate DB duplicate
+        result = enqueue("msg-db-dup", "chat-db", "hello")
+    finally:
+        jq.persist_job = orig
+
+    assert result is False
+
+
+def test_process_one_sets_processing_then_done_on_success():
+    """_process_one must mark the job processing, then done on success."""
+    from app.worker import _Msg, _process_one
+
+    status_calls: list[tuple] = []
+
+    import app.job_queue as jq
+    orig_update = jq.update_job_status
+    try:
+        jq.update_job_status = lambda mid, status, error=None: status_calls.append((mid, status))
+
+        async def fake_process(text, chat_id):
+            return "reply"
+
+        async def fake_send(chat_id, text):
+            return True
+
+        msg = _Msg(message_id="msg-status-ok", chat_id="chat-x", full_text="ping")
+        with (
+            patch("app.whatsapp._process_message", side_effect=fake_process),
+            patch("app.whatsapp.send_whatsapp_message", side_effect=fake_send),
+        ):
+            asyncio.get_event_loop().run_until_complete(_process_one(msg))
+    finally:
+        jq.update_job_status = orig_update
+
+    assert status_calls[0] == ("msg-status-ok", "processing")
+    assert status_calls[-1] == ("msg-status-ok", "done")
+
+
+def test_process_one_increments_failed_status_on_each_attempt():
+    """_process_one must call update_job_status('failed', ...) for every failed attempt."""
+    from app.worker import _Msg, _process_one, _MAX_ATTEMPTS
+
+    status_calls: list[tuple] = []
+
+    import app.job_queue as jq
+    orig_update = jq.update_job_status
+    try:
+        jq.update_job_status = lambda mid, status, error=None: status_calls.append((mid, status))
+
+        async def fake_process(text, chat_id):
+            return "reply"
+
+        async def always_fail(chat_id, text):
+            raise RuntimeError("down")
+
+        msg = _Msg(message_id="msg-status-fail", chat_id="chat-x", full_text="ping")
+        with (
+            patch("app.worker.asyncio.sleep", new_callable=AsyncMock),
+            patch("app.whatsapp._process_message", side_effect=fake_process),
+            patch("app.whatsapp.send_whatsapp_message", side_effect=always_fail),
+        ):
+            asyncio.get_event_loop().run_until_complete(_process_one(msg))
+    finally:
+        jq.update_job_status = orig_update
+
+    failed_calls = [s for _, s in status_calls if s == "failed"]
+    assert len(failed_calls) == _MAX_ATTEMPTS
+
+
+def test_recover_jobs_requeues_pending_jobs():
+    """recover_jobs must re-enqueue pending DB jobs into the asyncio queue."""
+    from app.worker import recover_jobs, _processed_ids, _queue, start_worker, stop_worker
+
+    _processed_ids.clear()
+    while not _queue.empty():
+        _queue.get_nowait()
+
+    fake_jobs = [
+        {"message_id": "rec-001", "chat_id": "chat-a", "full_text": "hello"},
+        {"message_id": "rec-002", "chat_id": "chat-b", "full_text": "world"},
+    ]
+
+    import app.job_queue as jq
+    orig_load = jq.load_pending_jobs
+    orig_update = jq.update_job_status
+    try:
+        jq.load_pending_jobs = lambda: fake_jobs
+        jq.update_job_status = lambda *a, **kw: None
+
+        async def run():
+            task = start_worker()
+            await recover_jobs()
+            await stop_worker()
+
+        asyncio.get_event_loop().run_until_complete(run())
+    finally:
+        jq.load_pending_jobs = orig_load
+        jq.update_job_status = orig_update
+
+    assert "rec-001" in _processed_ids
+    assert "rec-002" in _processed_ids

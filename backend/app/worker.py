@@ -11,7 +11,9 @@ logger = logging.getLogger("pa.worker")
 # In-process queue — single worker, no persistence across restarts.
 _queue: asyncio.Queue = asyncio.Queue()
 
-# Dedup: message_id → epoch timestamp when first seen.
+# L1 dedup cache: message_id → epoch timestamp when first seen.
+# Prevents re-processing within the same process lifetime (fast path).
+# DB constraint is the L2 guard for cross-restart idempotency.
 _processed_ids: dict[str, float] = {}
 _DEDUP_WINDOW_SECS = 3600  # prune entries older than 1 hour
 
@@ -40,19 +42,32 @@ def _prune_dedup_cache() -> None:
 def enqueue(message_id: str, chat_id: str, full_text: str) -> bool:
     """Add a message to the async processing queue.
 
-    Returns False if message_id was already seen within the dedup window (1 hour).
+    Returns False if message_id was already seen (in-memory L1 or DB L2 check).
     Logs a warning when queue depth reaches 10.
     """
     _prune_dedup_cache()
+
+    # L1: in-memory dedup (fast path, same process lifetime)
     if message_id and message_id in _processed_ids:
         logger.info(
-            "worker: duplicate message_id=%s — skipping",
+            "worker: duplicate message_id=%s (in-memory) — skipping",
             message_id,
-            extra={"event": "dedup_hit", "message_id": message_id},
+            extra={"event": "dedup_hit", "message_id": message_id, "layer": "memory"},
         )
         return False
+
+    # L2: DB persist + idempotency (cross-restart durability)
     if message_id:
+        from app.job_queue import persist_job
+        if not persist_job(message_id, chat_id, full_text):
+            logger.info(
+                "worker: duplicate message_id=%s (db) — skipping",
+                message_id,
+                extra={"event": "dedup_hit", "message_id": message_id, "layer": "db"},
+            )
+            return False
         _processed_ids[message_id] = time.time()
+
     depth = _queue.qsize()
     if depth >= 10:
         logger.warning(
@@ -90,10 +105,14 @@ def worker_status() -> dict:
 async def _process_one(msg: _Msg) -> None:
     # Deferred import to avoid circular dependency (worker ↔ whatsapp).
     from app.whatsapp import _process_message, send_whatsapp_message
+    from app.job_queue import update_job_status, STATUS_PROCESSING, STATUS_DONE, STATUS_FAILED
 
     # Propagate request_id to all awaited code via ContextVar.
     token = request_id_var.set(msg.request_id)
     last_exc: Exception | None = None
+
+    update_job_status(msg.message_id, STATUS_PROCESSING)
+
     try:
         for attempt in range(1, _MAX_ATTEMPTS + 1):
             if attempt > 1:
@@ -117,6 +136,7 @@ async def _process_one(msg: _Msg) -> None:
             try:
                 reply = await _process_message(msg.full_text, msg.chat_id)
                 await send_whatsapp_message(msg.chat_id, reply)
+                update_job_status(msg.message_id, STATUS_DONE)
                 logger.info(
                     "worker: ok message_id=%s request_id=%s attempt=%d",
                     msg.message_id,
@@ -133,6 +153,7 @@ async def _process_one(msg: _Msg) -> None:
                 return
             except Exception as exc:
                 last_exc = exc
+                update_job_status(msg.message_id, STATUS_FAILED, str(exc))
                 logger.warning(
                     "worker: attempt %d/%d failed message_id=%s request_id=%s: %s",
                     attempt,
@@ -167,6 +188,40 @@ async def _process_one(msg: _Msg) -> None:
             "attempts": _MAX_ATTEMPTS,
         },
     )
+
+
+async def recover_jobs() -> None:
+    """Re-enqueue jobs that were pending or processing when the server last stopped.
+
+    Called once at startup after start_worker(). Bypasses DB persist since the
+    jobs already exist; only re-adds them to the in-memory asyncio.Queue.
+    """
+    try:
+        from app.job_queue import load_pending_jobs, update_job_status, STATUS_PENDING
+        loop = asyncio.get_running_loop()
+        jobs = await loop.run_in_executor(None, load_pending_jobs)
+    except Exception:
+        logger.warning("worker: could not load pending jobs for recovery")
+        return
+
+    if not jobs:
+        return
+
+    logger.info("worker: recovering %d pending job(s) from DB", len(jobs))
+    for job in jobs:
+        message_id = job["message_id"]
+        chat_id = job["chat_id"]
+        full_text = job["full_text"]
+
+        # Reset any "processing" rows back to pending (server crashed mid-flight).
+        update_job_status(message_id, STATUS_PENDING)
+
+        # Register in L1 cache to prevent double-enqueue if WAHA retransmits.
+        if message_id and message_id not in _processed_ids:
+            _processed_ids[message_id] = time.time()
+
+        _queue.put_nowait(_Msg(message_id=message_id, chat_id=chat_id, full_text=full_text))
+        logger.info("worker: recovered job message_id=%s chat_id=%s", message_id, chat_id)
 
 
 async def _worker_loop() -> None:

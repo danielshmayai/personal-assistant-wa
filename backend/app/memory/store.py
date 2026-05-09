@@ -116,6 +116,8 @@ def init_memory_tables():
         conn.commit()
     finally:
         conn.close()
+    from app.job_queue import init_table as _init_job_queue
+    _init_job_queue()
 
 
 def save_google_token(chat_id: str, creds) -> None:

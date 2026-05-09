@@ -133,8 +133,9 @@ async def lifespan(app: FastAPI):
     await detect_own_lid()
     from app.memory.capabilities import sync_capabilities
     sync_capabilities()
-    from app.worker import start_worker, stop_worker
+    from app.worker import start_worker, stop_worker, recover_jobs
     start_worker()
+    await recover_jobs()
     yield
     await stop_worker()
 
