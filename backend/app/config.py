@@ -31,6 +31,11 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
 # ── Security ────────────────────────────────────────────────────────────────
 
+# Allowed origin for CORS. Set to your Cloudflare tunnel domain in production.
+# Example: ALLOWED_ORIGIN=https://pa.yourdomain.com
+# Falls back to localhost origins for local dev when unset.
+ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "")
+
 # Shared secret the backend requires on every incoming WAHA webhook call.
 # Include it in the webhook URL: http://backend:8000/webhook/waha?secret=<value>
 # Generate: openssl rand -hex 32

@@ -3,6 +3,7 @@ Tests for the async message worker queue.
 
 Covers:
 - Webhook returns 202 immediately (no graph call in request path)
+- Webhook rejects requests with wrong/missing WEBHOOK_SECRET (per-request enforcement)
 - Worker processes message and invokes graph + send
 - Duplicate message_id is ignored (dedup)
 - Worker retries on transient error, gives up after max attempts
@@ -33,6 +34,76 @@ def _clean():
     for key in list(sys.modules):
         if key.startswith("app."):
             del sys.modules[key]
+
+
+# Fake test token values — deliberately not real credentials.
+_FAKE_TOKEN = "tok-abc123"
+_FAKE_WRONG = "tok-wrong99"
+
+
+# ---------------------------------------------------------------------------
+# 0. WEBHOOK_SECRET per-request enforcement
+# ---------------------------------------------------------------------------
+
+def test_webhook_rejects_wrong_token():
+    """Webhook must return 403 when WEBHOOK_SECRET is set and the query param doesn't match."""
+    body = {
+        "event": "message.any",
+        "payload": {"id": "msg-sec-001", "fromMe": True, "from": "x@c.us", "to": "x@c.us", "body": "hi", "hasMedia": False},
+    }
+
+    async def run():
+        with patch("app.whatsapp.WEBHOOK_SECRET", _FAKE_TOKEN):
+            from app.whatsapp import waha_webhook
+            mock_request = AsyncMock()
+            mock_request.json = AsyncMock(return_value=body)
+            mock_request.client = MagicMock()
+            response = await waha_webhook(mock_request, secret=_FAKE_WRONG)
+        assert response.status_code == 403
+
+    asyncio.get_event_loop().run_until_complete(run())
+
+
+def test_webhook_rejects_empty_token():
+    """Webhook must return 403 when WEBHOOK_SECRET is set and query param is absent."""
+    body = {
+        "event": "message.any",
+        "payload": {"id": "msg-sec-002", "fromMe": True, "from": "x@c.us", "to": "x@c.us", "body": "hi", "hasMedia": False},
+    }
+
+    async def run():
+        with patch("app.whatsapp.WEBHOOK_SECRET", _FAKE_TOKEN):
+            from app.whatsapp import waha_webhook
+            mock_request = AsyncMock()
+            mock_request.json = AsyncMock(return_value=body)
+            mock_request.client = MagicMock()
+            response = await waha_webhook(mock_request, secret="")
+        assert response.status_code == 403
+
+    asyncio.get_event_loop().run_until_complete(run())
+
+
+def test_webhook_accepts_valid_token():
+    """Webhook must process the request when the correct WEBHOOK_SECRET is supplied."""
+    body = {
+        "event": "message.any",
+        "payload": {"id": "msg-sec-003", "fromMe": True, "from": "x@c.us", "to": "x@c.us", "body": "hi", "hasMedia": False},
+    }
+
+    async def run():
+        with (
+            patch("app.whatsapp.WEBHOOK_SECRET", _FAKE_TOKEN),
+            patch("app.whatsapp.MY_WHATSAPP_ID", "x@c.us"),
+            patch("app.whatsapp.enqueue", return_value=True),
+        ):
+            from app.whatsapp import waha_webhook
+            mock_request = AsyncMock()
+            mock_request.json = AsyncMock(return_value=body)
+            mock_request.client = MagicMock()
+            response = await waha_webhook(mock_request, secret=_FAKE_TOKEN)
+        assert response.status_code in (200, 202)
+
+    asyncio.get_event_loop().run_until_complete(run())
 
 
 # ---------------------------------------------------------------------------

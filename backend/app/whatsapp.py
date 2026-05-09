@@ -190,6 +190,8 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     - Group chat: IGNORE unless message starts with @danidin or !danidin.
     - DMs from others: IGNORE completely.
     """
+    # Secret is validated on every inbound call (not just at startup).
+    # Falls open only when WEBHOOK_SECRET env var is unset (dev mode); startup warning fires in that case.
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         logger.warning("Webhook rejected: invalid or missing secret (remote=%s)", request.client)
         return Response(status_code=403)

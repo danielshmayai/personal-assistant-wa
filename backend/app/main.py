@@ -13,7 +13,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.config import (
     OLLAMA_BASE_URL, WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION,
-    WEBHOOK_SECRET, TEST_TOKEN,
+    WEBHOOK_SECRET, TEST_TOKEN, ALLOWED_ORIGIN,
 )
 from app.whatsapp import router as waha_router
 from app.memory.store import init_memory_tables, _get_conn
@@ -91,11 +91,16 @@ def _log_security_warnings() -> None:
     if not WEBHOOK_SECRET:
         logger.warning("SECURITY: WEBHOOK_SECRET is not set — webhook endpoint is unauthenticated")
     if not TEST_TOKEN:
-        logger.warning("SECURITY: TEST_TOKEN is not set — POST /test is open (disable or set token in prod)")
+        logger.warning("SECURITY: TEST_TOKEN is not set — WebSocket and API endpoints reject all connections")
     if not DB_ENCRYPTION_KEY:
         logger.warning("SECURITY: DB_ENCRYPTION_KEY is not set — Google tokens stored in plaintext")
     if not WAHA_API_KEY:
         logger.warning("SECURITY: WAHA_API_KEY is not set — WAHA dashboard has no API authentication")
+    if not ALLOWED_ORIGIN:
+        logger.warning(
+            "SECURITY: ALLOWED_ORIGIN is not set — CORS falls back to localhost only. "
+            "Set ALLOWED_ORIGIN=https://<your-tunnel-domain> in production."
+        )
 
 
 @asynccontextmanager
@@ -125,10 +130,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PA Backend", version="0.2.0", lifespan=lifespan)
 
-# CORS — allow all origins for this personal deployment (auth enforced per endpoint)
+# CORS — restricted to the configured tunnel domain (or localhost for dev).
+# Set ALLOWED_ORIGIN=https://<tunnel-domain> in production.
+_cors_origins = (
+    [ALLOWED_ORIGIN]
+    if ALLOWED_ORIGIN
+    else ["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:8000"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Test-Token"],
