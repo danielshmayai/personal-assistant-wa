@@ -5,7 +5,7 @@ from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 import app.config as _cfg
-from app.memory.store import save_google_token, load_google_token, save_oauth_state, pop_oauth_state
+from app.memory.store import save_google_token, load_google_token, delete_google_token, save_oauth_state, pop_oauth_state
 
 logger = logging.getLogger("pa.google.auth")
 
@@ -106,12 +106,10 @@ def get_credentials(chat_id: str) -> Credentials | None:
     # Refresh if expired OR if expiry is None (token was saved before the expiry
     # fix and we can't tell whether it's still valid).
     if (creds.expired or creds.expiry is None) and creds.refresh_token:
-        creds.refresh(Request())
-        save_google_token(key, creds)
-        logger.info("Refreshed Google token for key=%s", key)
-
-    if creds.expired:
-        logger.info("Google credentials expired and no refresh_token for key=%s — re-auth required", key)
-        return None
-
-    return creds
+        try:
+            creds.refresh(Request())
+            save_google_token(key, creds)
+            logger.info("Refreshed Google token for key=%s", key)
+        except Exception as exc:
+            logger.warning(
+                "Google token refresh failed for key=%s (%s) — 

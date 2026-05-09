@@ -160,6 +160,18 @@ def save_google_token(chat_id: str, creds) -> None:
         conn.close()
 
 
+def delete_google_token(chat_id: str) -> None:
+    """Remove a stored Google token (forces re-auth on next Google tool call)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM google_tokens WHERE chat_id = %s", (chat_id,))
+        conn.commit()
+        logger.info("Deleted Google token for chat_id=%s", chat_id)
+    finally:
+        conn.close()
+
+
 def load_google_token(chat_id: str) -> dict | None:
     from app.crypto import decrypt
     conn = _get_conn()
@@ -495,17 +507,4 @@ def list_web_conversations() -> list[dict]:
             cur.execute("""
                 SELECT id, title, created_at, updated_at
                 FROM web_conversations
-                ORDER BY updated_at DESC
-                LIMIT 50
-            """)
-            return [
-                {
-                    "id": r[0],
-                    "title": r[1],
-                    "created_at": r[2].isoformat() if r[2] else None,
-                    "updated_at": r[3].isoformat() if r[3] else None,
-                }
-                for r in cur.fetchall()
-            ]
-    finally:
-        conn.close()
+                ORDER BY update
