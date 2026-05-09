@@ -98,7 +98,10 @@ async def lifespan(app: FastAPI):
     await detect_own_lid()
     from app.memory.capabilities import sync_capabilities
     sync_capabilities()
+    from app.worker import start_worker, stop_worker
+    start_worker()
     yield
+    await stop_worker()
 
 
 app = FastAPI(title="PA Backend", version="0.2.0", lifespan=lifespan)
@@ -184,6 +187,7 @@ async def trigger_self_review(
 @app.get("/health")
 @limiter.limit("60/minute")
 async def health(request: Request):
+    from app.worker import worker_status
     checks = {}
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
@@ -203,5 +207,6 @@ async def health(request: Request):
         checks["postgres"] = "ok"
     except Exception:
         checks["postgres"] = "error"
+    checks["worker"] = worker_status()
     all_ok = checks["ollama"] == "ok" and checks["postgres"] == "ok"
     return {"status": "ok" if all_ok else "degraded", "checks": checks}

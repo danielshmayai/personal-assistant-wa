@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Query, Request, Response
 import httpx
 from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID, MY_WHATSAPP_LID, WEBHOOK_SECRET
+from app.worker import enqueue
 
 logger = logging.getLogger("pa.whatsapp")
 router = APIRouter()
@@ -216,10 +217,12 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
 
     chat_id = _extract_chat_id(body)
 
+    message_id = payload.get("id", "")
+
     # Cache media bytes from the webhook payload NOW (before the agent runs).
     if media_ctx:
         from app.media_cache import store_from_payload
-        store_from_payload(payload.get("id", ""), payload)
+        store_from_payload(message_id, payload)
 
     # Build the full message for the agent: media tag (if any) + caption/text
     if media_ctx:
@@ -227,12 +230,11 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     else:
         full_text = text
 
-    # --- SELF-CHAT: respond to everything ---
+    # --- SELF-CHAT: enqueue for async processing ---
     if _is_self_chat(body):
         logger.info("Self-chat: %.80s...", full_text)
-        reply = await _process_message(full_text, chat_id)
-        await send_whatsapp_message(chat_id, reply)
-        return Response(status_code=200)
+        enqueue(message_id, chat_id, full_text)
+        return Response(status_code=202)
 
     # --- WATCHED LEADS: log silently, no reply ---
     from app import leads as _leads
@@ -242,15 +244,15 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
         asyncio.create_task(_leads.log_and_extract(chat_id, direction, full_text))
         return Response(status_code=200)
 
-    # --- GROUPS and DMs: respond only when @danidin / !danidin prefix is used ---
+    # --- GROUPS and DMs: enqueue when @danidin / !danidin prefix is used ---
     text_lower = text.lower()
     for trigger in BOT_TRIGGERS:
         if text_lower.startswith(trigger):
             stripped = full_text[len(trigger):].strip()
             if stripped:
                 logger.info("Trigger '%s' in chat %s: %.80s...", trigger, chat_id, stripped)
-                reply = await _process_message(stripped, chat_id)
-                await send_whatsapp_message(chat_id, reply)
+                enqueue(message_id, chat_id, stripped)
+                return Response(status_code=202)
             return Response(status_code=200)
 
     # No trigger and not self-chat — ignore.
