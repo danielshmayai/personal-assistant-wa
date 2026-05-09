@@ -113,6 +113,14 @@ def init_memory_tables():
                 )
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS lead_messages_chat_id_idx ON lead_messages(chat_id)")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_summaries (
+                    chat_id TEXT PRIMARY KEY,
+                    summary TEXT NOT NULL,
+                    message_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
         conn.commit()
     finally:
         conn.close()
@@ -483,6 +491,39 @@ def get_recent_conversations(hours: int = 24) -> list[dict]:
                 {"chat_id": r[0], "transcript": r[1], "created_at": r[2].isoformat()}
                 for r in cur.fetchall()
             ]
+    finally:
+        conn.close()
+
+
+def get_conversation_summary(chat_id: str) -> tuple[str, int] | None:
+    """Return (summary, message_count) for the given chat_id, or None if not found."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT summary, message_count FROM conversation_summaries WHERE chat_id = %s",
+                (chat_id,),
+            )
+            row = cur.fetchone()
+            return (row[0], row[1]) if row else None
+    finally:
+        conn.close()
+
+
+def upsert_conversation_summary(chat_id: str, summary: str, message_count: int) -> None:
+    """Insert or update the rolling conversation summary for a chat."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO conversation_summaries (chat_id, summary, message_count, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (chat_id) DO UPDATE
+                SET summary = EXCLUDED.summary,
+                    message_count = EXCLUDED.message_count,
+                    updated_at = NOW()
+            """, (chat_id, summary, message_count))
+        conn.commit()
     finally:
         conn.close()
 

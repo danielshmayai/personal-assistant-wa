@@ -8,9 +8,10 @@ from langgraph.graph import StateGraph, START, END
 from app.graph.state import PAState
 from app.graph.distiller import agent_node, _to_whatsapp
 from app.graph.tool_node import tool_executor_node, should_continue
-from app.memory.store import load_memory_context, log_conversation
+from app.memory.store import load_memory_context, log_conversation, get_conversation_summary
 from app.memory.reflection import reflection_node, format_conversation_transcript
 from app.memory.episodes import create_episode
+from app.memory.summarizer import summarize_conversation
 from app.graph.checkpointer import get_checkpointer
 from app.config import LANGSMITH_API_KEY, LANGSMITH_PROJECT
 
@@ -43,7 +44,20 @@ def build_graph():
 
 
 async def inject_memory_node(state: PAState) -> dict:
+    chat_id = state.get("chat_id", "")
     context = await load_memory_context(state.get("user_input", ""))
+
+    if chat_id:
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, get_conversation_summary, chat_id)
+            if result:
+                summary_text, _ = result
+                summary_block = f"## Conversation History Summary\n{summary_text}"
+                context = (summary_block + "\n\n" + context) if context else summary_block
+        except Exception:
+            pass
+
     return {"memory_context": context}
 
 
@@ -160,6 +174,7 @@ async def stream_graph(user_text: str, chat_id: str):
         transcript = f"User: {user_text}\nAssistant: {full_reply}"
         asyncio.ensure_future(_log(chat_id, transcript))
         asyncio.ensure_future(create_episode(chat_id, transcript))
+        asyncio.ensure_future(summarize_conversation(chat_id))
     yield {"type": "done", "full_reply": full_reply}
 
 
@@ -209,4 +224,5 @@ async def run_graph(text: str, chat_id: str) -> str:
     if transcript:
         asyncio.ensure_future(_log(chat_id, transcript))
         asyncio.ensure_future(create_episode(chat_id, transcript))
+        asyncio.ensure_future(summarize_conversation(chat_id))
     return reply + " ⚡"
