@@ -38,20 +38,17 @@ jobs:
             Write-Host "venv missing - please recreate it manually as the shmay user."
             exit 1
           }
-          # Only re-install packages when requirements files have changed.
-          # Heavy packages like faster-whisper/ctranslate2 (~150 MB) make a full
-          # reinstall very slow; skipping it on unchanged requirements saves 5-10 min.
-          $reqHash = (Get-FileHash requirements.txt -Algorithm MD5).Hash
-          $devHash = (Get-FileHash requirements-dev.txt -Algorithm MD5).Hash
-          $newHash = "$reqHash|$devHash"
-          $hashFile = ".venv\.req_hash"
-          $oldHash  = if (Test-Path $hashFile) { (Get-Content $hashFile -Raw).Trim() } else { "" }
-          if ($newHash -ne $oldHash) {
-            Write-Host "Requirements changed — running pip install..."
-            .venv\Scripts\python.exe -m pip install --prefer-binary -r requirements.txt -r requirements-dev.txt -q
-            $newHash | Set-Content $hashFile
+          # Check if key packages are importable — skip pip install when they are.
+          # The machine also runs Docker containers (PA, WAHA, Postgres, Ollama) so
+          # available RAM is limited. Running pip install when packages are already
+          # present has caused OOM crashes that kill the runner process.
+          $pkgCheck = .venv\Scripts\python.exe -c "import fastapi, langchain_core, psycopg2, langchain_google_genai, langgraph, edge_tts, tinytuya, httpx; print('ok')" 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "All packages present — skipping pip install."
           } else {
-            Write-Host "Requirements unchanged — skipping pip install."
+            Write-Host "Packages missing ($pkgCheck) — running pip install..."
+            .venv\Scripts\python.exe -m pip install --prefer-binary -q -r requirements.txt -r requirements-dev.txt
+            if ($LASTEXITCODE -ne 0) { exit 1 }
           }
           .venv\Scripts\python.exe -m pytest tests/test_sanity.py -v
 
