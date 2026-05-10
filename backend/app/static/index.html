@@ -1430,15 +1430,25 @@ function speakText(text, btn) {
   }
   const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
   const utt = new SpeechSynthesisUtterance(plain);
-  // Prefer a natural-sounding voice
+
+  // Detect language from content and set utt.lang so the browser chooses the right engine
+  const isHe = /[֐-׿]/.test(plain);
+  const isAr = /[؀-ۿ]/.test(plain);
+  utt.lang = isHe ? 'he-IL' : isAr ? 'ar-SA' : 'en-US';
+
   const pickVoice = () => {
     const voices = speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    const prefix = utt.lang.split('-')[0];
+    // Prefer a voice in the detected language
+    const langMatch = voices.find(v => v.lang.startsWith(prefix));
+    if (langMatch) return langMatch;
+    // English fallback: prefer quality named voices
     return voices.find(v => /google|samantha|karen|daniel|moira/i.test(v.name))
         || voices.find(v => v.lang.startsWith('en') && v.localService)
         || voices[0];
   };
-  const voice = pickVoice();
-  if (voice) utt.voice = voice;
+
   utt.rate = 1.05;
   if (btn) {
     btn.innerHTML = STOP_SVG;
@@ -1450,11 +1460,19 @@ function speakText(text, btn) {
     if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
     if (activeSpeakBtn === btn) activeSpeakBtn = null;
   };
-  // Voices may not be loaded yet on first call
+
+  const doSpeak = () => {
+    const voice = pickVoice();
+    if (voice) utt.voice = voice;
+    speechSynthesis.speak(utt);
+  };
+
+  // Wait for voices to load if not yet available (common on first call)
   if (speechSynthesis.getVoices().length === 0) {
-    speechSynthesis.addEventListener('voiceschanged', () => { if (!utt.voice) utt.voice = pickVoice(); }, { once: true });
+    speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true });
+  } else {
+    doSpeak();
   }
-  speechSynthesis.speak(utt);
 }
 
 // ── Mobile sidebar toggle ───────────────────────────────────────────────────
