@@ -664,6 +664,31 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   font-family: inherit; font-size: 13px; font-weight: 600;
   padding: 8px 20px; transition: background .15s;
 }
+/* Mode / fan speed button group */
+.sh-control-label { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
+.sh-mode-group { display: flex; flex-wrap: wrap; gap: 5px; }
+.sh-mode-btn {
+  flex: 1; min-width: 0;
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: 7px;
+  color: var(--text2); cursor: pointer; font-family: inherit; font-size: 11px;
+  font-weight: 500; padding: 5px 4px; transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.sh-mode-btn:hover:not(:disabled) { background: var(--accent-dim); color: var(--accent); border-color: rgba(99,102,241,.25); }
+.sh-mode-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(99,102,241,.35); font-weight: 600; }
+.sh-mode-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+
+/* Curtain controls */
+.sh-curtain-btns { display: flex; gap: 6px; }
+.sh-curtain-btn {
+  flex: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px;
+  color: var(--text2); cursor: pointer; font-family: inherit; font-size: 11px;
+  font-weight: 600; padding: 7px 4px; transition: background .15s, color .15s;
+  text-align: center;
+}
+.sh-curtain-btn:hover:not(:disabled) { background: var(--accent-dim); color: var(--accent); }
+.sh-curtain-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+
 #sh-retry-btn:hover { background: rgba(99,102,241,.18); }
 
 #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(3px); z-index: 40; }
@@ -1847,16 +1872,32 @@ let shPendingControls = {};
 let shRefreshTimer   = null;
 
 const DEVICE_ICONS = {
-  dj: '💡', dc: '✨', tgq: '💡', gyd: '💡', fwd: '💡', dd: '💡',
-  kg: '🔌', cz: '🔌', pc: '🔌', dlq: '🔌',
-  kt: '❄️',
-  fs: '🌀',
-  cl: '🎚️',
+  // Lights
+  dj: '💡', dc: '✨', tgq: '💡', gyd: '💡', fwd: '💡', dd: '💡', xdd: '💡', sxd: '💡',
+  // Switches / outlets
+  kg: '🔌', cz: '🔌', pc: '🔌', dlq: '🔌', tdq: '🔌',
+  // AC / climate
+  kt: '❄️', wk: '🌡️', wkf: '🌡️',
+  // Fan
+  fs: '🌀', fsd: '🌀',
+  // Curtain / blind
+  cl: '🪟', clkg: '🪟', ckmfr: '🪟', cjkg: '🪟',
+  // Sensor / other
+  pir: '👁️', co2bj: '🌬️', wsdcg: '🌡️',
 };
-const LIGHT_CATS = new Set(['dj', 'dc', 'tgq', 'gyd', 'fwd', 'dd', 'cl']);
+const LIGHT_CATS   = new Set(['dj','dc','tgq','gyd','fwd','dd','xdd','sxd']);
+const AC_CATS      = new Set(['kt','wk','wkf']);
+const FAN_CATS     = new Set(['fs','fsd']);
+const CURTAIN_CATS = new Set(['cl','clkg','ckmfr','cjkg']);
 
 function shIcon(cat) { return DEVICE_ICONS[cat] || '🏠'; }
-function shIsLight(cat) { return LIGHT_CATS.has(cat); }
+function shIsLight(cat)   { return LIGHT_CATS.has(cat); }
+function shIsAC(cat)      { return AC_CATS.has(cat); }
+function shIsFan(cat)     { return FAN_CATS.has(cat); }
+function shIsCurtain(cat) { return CURTAIN_CATS.has(cat); }
+
+const AC_MODES  = ['cool','heat','fan','dry','auto'];
+const FAN_SPEEDS = ['low','medium','high','auto'];
 
 function openSmartHome() {
   chatMain.classList.add('hidden');
@@ -1934,48 +1975,131 @@ function renderDeviceGrid() {
   shDevices.forEach(d => grid.appendChild(buildDeviceCard(d)));
 }
 
+// Returns all switch-type DPS keys in a status dict, sorted numerically
+function shSwitchKeys(st) {
+  return Object.keys(st)
+    .filter(k => /^switch(_\d+|_led|)?$/.test(k))
+    .sort((a, b) => {
+      const n = k => parseInt(k.replace(/\D/g, '') || '0');
+      return n(a) - n(b);
+    });
+}
+
+function shToggleLabel(key, idx, total, isOn, online) {
+  if (!online) return 'Offline';
+  if (total === 1) return isOn ? 'On' : 'Off';
+  if (key === 'switch_led') return 'LED';
+  return `Channel ${idx + 1}`;
+}
+
 function buildDeviceCard(device) {
   const { id, name, category, online } = device;
   const st    = shStatuses[id] || {};
-  const isOn  = !!(st.switch_1 ?? st.switch_led ?? st.switch);
   const light = shIsLight(category);
   const hasBright = light && st.bright_value !== undefined;
   const hasTemp   = light && st.temp_value   !== undefined;
+
+  const switchKeys  = shSwitchKeys(st);
+  const effectiveKeys = switchKeys.length ? switchKeys : ['switch_1'];
+  const anyOn = effectiveKeys.some(k => !!st[k]);
 
   const card = document.createElement('div');
   card.className = `device-card ${online ? 'online' : 'offline'}`;
   card.dataset.deviceId = id;
 
+  const isAC      = shIsAC(category);
+  const isFan     = shIsFan(category);
+  const isCurtain = shIsCurtain(category);
+
   const brightPct = hasBright ? Math.round((st.bright_value / 1000) * 100) : 100;
+  const togglesHtml = effectiveKeys.map((k, i) => {
+    const isOn = !!st[k];
+    const label = shToggleLabel(k, i, effectiveKeys.length, isOn, online);
+    return `
+    <div class="device-toggle-row">
+      <span class="device-toggle-label">${escHtml(label)}</span>
+      <label class="toggle-switch">
+        <input type="checkbox" class="sh-toggle" data-id="${escHtml(id)}" data-key="${escHtml(k)}"
+          ${isOn ? 'checked' : ''} ${online ? '' : 'disabled'}>
+        <span class="toggle-track"></span>
+      </label>
+    </div>`;
+  }).join('');
+
+  // AC controls
+  const acTempSet  = st.temp_set ?? st.temp_set_f;
+  const acMode     = st.mode ?? st.work_mode ?? '';
+  const acFanSpeed = st.fan_speed_enum ?? st.windspeed ?? '';
+  const acModesHtml = isAC ? AC_MODES.map(m =>
+    `<button class="sh-mode-btn ${acMode === m ? 'active' : ''}" data-id="${escHtml(id)}" data-cmd="mode" data-val="${m}" ${online && anyOn ? '' : 'disabled'}>${m[0].toUpperCase() + m.slice(1)}</button>`
+  ).join('') : '';
+  const acFanHtml = isAC ? FAN_SPEEDS.map(s =>
+    `<button class="sh-mode-btn ${acFanSpeed === s ? 'active' : ''}" data-id="${escHtml(id)}" data-cmd="fan_speed_enum" data-val="${s}" ${online && anyOn ? '' : 'disabled'}>${s[0].toUpperCase() + s.slice(1)}</button>`
+  ).join('') : '';
+
+  // Fan speed controls
+  const fanSpeed = st.fan_speed_percent ?? null;
+  const fanSpeedEnum = st.fan_speed_enum ?? st.windspeed ?? '';
+  const fanSpeedHtml = isFan && fanSpeed !== null ? `
+    <div class="device-slider-row">
+      <div class="device-slider-label"><span>Speed</span><span class="sh-fan-val">${fanSpeed}%</span></div>
+      <input type="range" class="device-slider sh-fanspeed" data-id="${escHtml(id)}"
+        min="1" max="100" value="${fanSpeed}" ${online && anyOn ? '' : 'disabled'}>
+    </div>` : (isFan && fanSpeedEnum ? `
+    <div class="sh-mode-group">
+      ${FAN_SPEEDS.filter(s => ['low','medium','high'].includes(s)).map(s =>
+        `<button class="sh-mode-btn ${fanSpeedEnum === s ? 'active' : ''}" data-id="${escHtml(id)}" data-cmd="fan_speed_enum" data-val="${s}" ${online && anyOn ? '' : 'disabled'}>${s[0].toUpperCase() + s.slice(1)}</button>`
+      ).join('')}
+    </div>` : '');
+
+  // Curtain controls
+  const curtainPct = st.percent_control ?? null;
+  const curtainHtml = isCurtain ? `
+    <div class="sh-curtain-btns">
+      <button class="sh-curtain-btn" data-id="${escHtml(id)}" data-cmd="control" data-val="open" ${online ? '' : 'disabled'}>▲ Open</button>
+      <button class="sh-curtain-btn" data-id="${escHtml(id)}" data-cmd="control" data-val="stop" ${online ? '' : 'disabled'}>■ Stop</button>
+      <button class="sh-curtain-btn" data-id="${escHtml(id)}" data-cmd="control" data-val="close" ${online ? '' : 'disabled'}>▼ Close</button>
+    </div>
+    ${curtainPct !== null ? `
+    <div class="device-slider-row">
+      <div class="device-slider-label"><span>Position</span><span class="sh-curtain-val">${curtainPct}%</span></div>
+      <input type="range" class="device-slider sh-curtainpos" data-id="${escHtml(id)}"
+        min="0" max="100" value="${curtainPct}" ${online ? '' : 'disabled'}>
+    </div>` : ''}` : '';
+
   card.innerHTML = `
     <div class="device-card-header">
       <div class="device-icon">${shIcon(category)}</div>
       <div class="device-name">${escHtml(name)}</div>
       <div class="device-status-dot ${online ? 'online' : 'offline'}" title="${online ? 'Online' : 'Offline'}"></div>
     </div>
-    <div class="device-toggle-row">
-      <span class="device-toggle-label">${online ? (isOn ? 'On' : 'Off') : 'Offline'}</span>
-      <label class="toggle-switch">
-        <input type="checkbox" class="sh-toggle" data-id="${escHtml(id)}"
-          ${isOn ? 'checked' : ''} ${online ? '' : 'disabled'}>
-        <span class="toggle-track"></span>
-      </label>
-    </div>
-    ${hasBright ? `
-    <div class="device-slider-row">
-      <div class="device-slider-label">
-        <span>Brightness</span>
-        <span class="sh-bright-val">${brightPct}%</span>
-      </div>
-      <input type="range" class="device-slider sh-brightness" data-id="${escHtml(id)}"
-        min="10" max="1000" value="${st.bright_value}" ${online && isOn ? '' : 'disabled'}>
-    </div>` : ''}
-    ${hasTemp ? `
-    <div class="device-slider-row">
-      <div class="device-slider-label"><span>Warm</span><span>Cool</span></div>
-      <input type="range" class="device-slider sh-colortemp" data-id="${escHtml(id)}"
-        min="0" max="1000" value="${st.temp_value}" ${online && isOn ? '' : 'disabled'}>
-    </div>` : ''}
+    ${isCurtain ? curtainHtml : `
+      ${togglesHtml}
+      ${hasBright ? `
+      <div class="device-slider-row">
+        <div class="device-slider-label">
+          <span>Brightness</span>
+          <span class="sh-bright-val">${brightPct}%</span>
+        </div>
+        <input type="range" class="device-slider sh-brightness" data-id="${escHtml(id)}"
+          min="10" max="1000" value="${st.bright_value}" ${online && anyOn ? '' : 'disabled'}>
+      </div>` : ''}
+      ${hasTemp ? `
+      <div class="device-slider-row">
+        <div class="device-slider-label"><span>Warm</span><span>Cool</span></div>
+        <input type="range" class="device-slider sh-colortemp" data-id="${escHtml(id)}"
+          min="0" max="1000" value="${st.temp_value}" ${online && anyOn ? '' : 'disabled'}>
+      </div>` : ''}
+      ${isAC && acTempSet !== undefined ? `
+      <div class="device-slider-row">
+        <div class="device-slider-label"><span>Temperature</span><span class="sh-actemp-val">${acTempSet}°</span></div>
+        <input type="range" class="device-slider sh-actemp" data-id="${escHtml(id)}"
+          min="16" max="30" step="1" value="${acTempSet}" ${online && anyOn ? '' : 'disabled'}>
+      </div>` : ''}
+      ${isAC && acModesHtml ? `<div class="sh-control-label">Mode</div><div class="sh-mode-group">${acModesHtml}</div>` : ''}
+      ${isAC && acFanHtml ? `<div class="sh-control-label">Fan</div><div class="sh-mode-group">${acFanHtml}</div>` : ''}
+      ${fanSpeedHtml}
+    `}
   `;
   return card;
 }
@@ -1983,23 +2107,30 @@ function buildDeviceCard(device) {
 function updateCardControls(deviceId) {
   const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
   if (!card) return;
-  const st   = shStatuses[deviceId] || {};
-  const isOn = !!(st.switch_1 ?? st.switch_led ?? st.switch);
-  const tog  = card.querySelector('.sh-toggle');
-  if (tog) tog.checked = isOn;
-  const lbl = card.querySelector('.device-toggle-label');
-  if (lbl) lbl.textContent = isOn ? 'On' : 'Off';
+  const st = shStatuses[deviceId] || {};
+  const effectiveKeys = shSwitchKeys(st);
+  const anyOn = effectiveKeys.some(k => !!st[k]);
+
+  card.querySelectorAll('.sh-toggle').forEach((tog, i) => {
+    const k   = tog.dataset.key;
+    const isOn = !!st[k];
+    tog.checked = isOn;
+    const row = tog.closest('.device-toggle-row');
+    const lbl = row && row.querySelector('.device-toggle-label');
+    if (lbl) lbl.textContent = shToggleLabel(k, i, effectiveKeys.length, isOn, true);
+  });
+
   const bSlider = card.querySelector('.sh-brightness');
   if (bSlider && st.bright_value !== undefined) {
-    bSlider.value = st.bright_value;
-    bSlider.disabled = !isOn;
+    bSlider.value    = st.bright_value;
+    bSlider.disabled = !anyOn;
     const bVal = card.querySelector('.sh-bright-val');
     if (bVal) bVal.textContent = Math.round((st.bright_value / 1000) * 100) + '%';
   }
   const tSlider = card.querySelector('.sh-colortemp');
   if (tSlider && st.temp_value !== undefined) {
-    tSlider.value = st.temp_value;
-    tSlider.disabled = !isOn;
+    tSlider.value    = st.temp_value;
+    tSlider.disabled = !anyOn;
   }
 }
 
@@ -2013,20 +2144,27 @@ function flashCard(deviceId) {
 // Toggle on/off via event delegation
 document.getElementById('device-grid').addEventListener('change', async e => {
   if (!e.target.classList.contains('sh-toggle')) return;
-  const id     = e.target.dataset.id;
-  const newVal = e.target.checked;
-  const card   = e.target.closest('.device-card');
+  const id        = e.target.dataset.id;
+  const switchKey = e.target.dataset.key || 'switch_1';
+  const newVal    = e.target.checked;
+  const card      = e.target.closest('.device-card');
 
-  // Optimistic UI
-  const lbl = card && card.querySelector('.device-toggle-label');
-  if (lbl) lbl.textContent = newVal ? 'On' : 'Off';
+  // Optimistic: update this row's label (single-switch: On/Off, multi-switch: keep channel name)
+  const row = e.target.closest('.device-toggle-row');
+  const lbl = row && row.querySelector('.device-toggle-label');
+  if (lbl && (lbl.textContent === 'On' || lbl.textContent === 'Off')) {
+    lbl.textContent = newVal ? 'On' : 'Off';
+  }
+
+  // Optimistic: recompute anyOn to enable/disable sliders
+  const st = shStatuses[id] || {};
+  const simulatedSt = { ...st, [switchKey]: newVal };
+  const anyOn = shSwitchKeys(simulatedSt).some(k => !!simulatedSt[k]) || newVal;
   const bSlider = card && card.querySelector('.sh-brightness');
   const tSlider = card && card.querySelector('.sh-colortemp');
-  if (bSlider) bSlider.disabled = !newVal;
-  if (tSlider) tSlider.disabled = !newVal;
+  if (bSlider) bSlider.disabled = !anyOn;
+  if (tSlider) tSlider.disabled = !anyOn;
 
-  const st = shStatuses[id] || {};
-  const switchKey = 'switch_led' in st ? 'switch_led' : ('switch' in st ? 'switch' : 'switch_1');
   shPendingControls[id] = true;
   try {
     await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
@@ -2036,11 +2174,12 @@ document.getElementById('device-grid').addEventListener('change', async e => {
     shStatuses[id] = { ...st, [switchKey]: newVal };
     flashCard(id);
   } catch {
-    // Rollback
     e.target.checked = !newVal;
-    if (lbl) lbl.textContent = !newVal ? 'On' : 'Off';
-    if (bSlider) bSlider.disabled = newVal;
-    if (tSlider) tSlider.disabled = newVal;
+    if (lbl && (lbl.textContent === 'On' || lbl.textContent === 'Off')) {
+      lbl.textContent = !newVal ? 'On' : 'Off';
+    }
+    if (bSlider) bSlider.disabled = anyOn;
+    if (tSlider) tSlider.disabled = anyOn;
   } finally {
     delete shPendingControls[id];
   }
@@ -2083,6 +2222,100 @@ document.getElementById('device-grid').addEventListener('input', e => {
       } catch { /* corrected on next refresh */ }
       finally { delete shPendingControls[id]; }
     }, 400);
+  }
+  // AC temperature slider
+  if (e.target.classList.contains('sh-actemp')) {
+    const id  = e.target.dataset.id;
+    const val = parseInt(e.target.value);
+    const card = e.target.closest('.device-card');
+    const disp = card && card.querySelector('.sh-actemp-val');
+    if (disp) disp.textContent = val + '°';
+    clearTimeout(shSliderDebounce[id + '_actemp']);
+    shSliderDebounce[id + '_actemp'] = setTimeout(async () => {
+      shPendingControls[id] = true;
+      try {
+        await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
+          method: 'POST',
+          body: JSON.stringify({ commands: { temp_set: val } }),
+        });
+        shStatuses[id] = { ...(shStatuses[id] || {}), temp_set: val };
+      } catch { /* corrected on next refresh */ }
+      finally { delete shPendingControls[id]; }
+    }, 400);
+  }
+  // Fan speed % slider
+  if (e.target.classList.contains('sh-fanspeed')) {
+    const id  = e.target.dataset.id;
+    const val = parseInt(e.target.value);
+    const card = e.target.closest('.device-card');
+    const disp = card && card.querySelector('.sh-fan-val');
+    if (disp) disp.textContent = val + '%';
+    clearTimeout(shSliderDebounce[id + '_fan']);
+    shSliderDebounce[id + '_fan'] = setTimeout(async () => {
+      shPendingControls[id] = true;
+      try {
+        await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
+          method: 'POST',
+          body: JSON.stringify({ commands: { fan_speed_percent: val } }),
+        });
+        shStatuses[id] = { ...(shStatuses[id] || {}), fan_speed_percent: val };
+      } catch { /* corrected on next refresh */ }
+      finally { delete shPendingControls[id]; }
+    }, 400);
+  }
+  // Curtain position slider
+  if (e.target.classList.contains('sh-curtainpos')) {
+    const id  = e.target.dataset.id;
+    const val = parseInt(e.target.value);
+    const card = e.target.closest('.device-card');
+    const disp = card && card.querySelector('.sh-curtain-val');
+    if (disp) disp.textContent = val + '%';
+    clearTimeout(shSliderDebounce[id + '_curtain']);
+    shSliderDebounce[id + '_curtain'] = setTimeout(async () => {
+      shPendingControls[id] = true;
+      try {
+        await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
+          method: 'POST',
+          body: JSON.stringify({ commands: { percent_control: val } }),
+        });
+        shStatuses[id] = { ...(shStatuses[id] || {}), percent_control: val };
+      } catch { /* corrected on next refresh */ }
+      finally { delete shPendingControls[id]; }
+    }, 400);
+  }
+});
+
+// Mode buttons (AC mode, fan speed enum) and curtain open/stop/close
+document.getElementById('device-grid').addEventListener('click', async e => {
+  const modeBtn    = e.target.closest('.sh-mode-btn');
+  const curtainBtn = e.target.closest('.sh-curtain-btn');
+  const btn = modeBtn || curtainBtn;
+  if (!btn || btn.disabled) return;
+
+  const id  = btn.dataset.id;
+  const cmd = btn.dataset.cmd;
+  const val = btn.dataset.val;
+
+  btn.disabled = true;
+  shPendingControls[id] = true;
+  try {
+    await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
+      method: 'POST',
+      body: JSON.stringify({ commands: { [cmd]: val } }),
+    });
+    shStatuses[id] = { ...(shStatuses[id] || {}), [cmd]: val };
+    flashCard(id);
+    // Update active state on sibling buttons
+    if (modeBtn) {
+      const group = modeBtn.closest('.sh-mode-group');
+      if (group) group.querySelectorAll('.sh-mode-btn[data-cmd="' + cmd + '"]').forEach(b => {
+        b.classList.toggle('active', b.dataset.val === val);
+      });
+    }
+  } catch { /* silent — refresh will correct */ }
+  finally {
+    btn.disabled = false;
+    delete shPendingControls[id];
   }
 });
 
