@@ -172,6 +172,7 @@ def _sanitize_for_gemini(messages: list, n: int = 20) -> list:
 
 async def agent_node(state: PAState) -> dict:
     """Single Gemini node: decides which tool to call (if any) and generates the reply."""
+    import traceback
     from app.google.tools import get_google_tools
     from app.tuya.tools import get_tuya_tools
     from app.memory.manager import MEMORY_TOOLS
@@ -189,7 +190,22 @@ async def agent_node(state: PAState) -> dict:
         + get_schedule_tools(chat_id)
     )
 
-    llm = get_gemini_llm().bind_tools(tools)
+    tool_names = [t.name for t in tools]
+    logger.info("agent_node: binding %d tools: %s", len(tool_names), tool_names)
+
+    try:
+        llm = get_gemini_llm().bind_tools(tools)
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error("bind_tools FAILED: %s\n%s", e, tb)
+        error_msg = (
+            f"⚠️ bind_tools נכשל: `{e}`\n\n"
+            f"כלים שנטענו ({len(tool_names)}):\n"
+            + "\n".join(f"• {n}" for n in tool_names)
+            + f"\n\n```\n{tb[-1500:]}\n```"
+        )
+        return {"messages": [AIMessage(content=error_msg)]}
+
     system = _build_system_prompt(state.get("memory_context", ""), state.get("chat_id", ""))
 
     messages = [SystemMessage(content=system)] + _sanitize_for_gemini(state["messages"])
