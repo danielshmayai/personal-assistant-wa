@@ -346,6 +346,37 @@ body {
 }
 .message-assistant a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .message-assistant a:hover { opacity: .8; }
+.message-assistant a[href^="https://wa.me/"] {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #25D366; color: #fff; border-radius: 999px;
+  padding: 3px 10px; font-size: 0.85rem; text-decoration: none;
+  font-weight: 600;
+}
+.message-assistant a[href^="https://wa.me/"]::before { content: "💬 "; }
+.message-assistant a[href^="https://wa.me/"]:hover { opacity: .85; }
+
+/* ── Reasoning block ── */
+.reasoning-block {
+  margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px; overflow: hidden; font-size: 0.8rem; opacity: 0.7;
+}
+.reasoning-block summary {
+  padding: 4px 10px; cursor: pointer; user-select: none;
+  background: rgba(255,255,255,0.05); list-style: none;
+}
+.reasoning-block summary::-webkit-details-marker { display: none; }
+.reasoning-block summary::before { content: "▶  "; font-size: 0.65rem; }
+details[open].reasoning-block summary::before { content: "▼  "; }
+.reasoning-content { padding: 8px 10px; white-space: pre-wrap; word-break: break-word; color: var(--text2); }
+
+/* ── TTS toggle ── */
+#tts-toggle-btn {
+  background: none; border: none; font-size: 1.1rem; cursor: pointer;
+  opacity: 0.35; transition: opacity .2s; line-height: 1; padding: 4px;
+  border-radius: 6px; color: var(--text);
+}
+#tts-toggle-btn:hover { opacity: 0.65; }
+#tts-toggle-btn.active { opacity: 1; }
 
 /* Tool badges */
 .tool-badge {
@@ -741,6 +772,7 @@ body {
         </svg>
       </button>
       <span class="header-title">Personal Assistant</span>
+      <button id="tts-toggle-btn" title="Auto-play voice" onclick="toggleTts()">🔊</button>
       <div class="header-status">
         <div class="status-dot" id="status-dot"></div>
         <span id="status-label">Connecting</span>
@@ -817,6 +849,8 @@ let activeToolBadges = {};
 let currentAiEl = null;
 let currentAiRaw = '';
 let currentAiTs = '';
+let currentThinkingEl = null;
+let currentThinkingRaw = '';
 let reconnectTimer = null;
 
 // ── DOM refs ────────────────────────────────────────────────────────────────
@@ -899,9 +933,13 @@ function handleServerMsg(msg) {
     case 'history':
       renderHistory(msg.messages);
       loadConversations();
+      syncTtsToggle();
       break;
     case 'conversation_updated':
       loadConversations();
+      break;
+    case 'thinking_token':
+      appendThinkingToken(msg.content);
       break;
     case 'token':
       appendToken(msg.content);
@@ -994,6 +1032,8 @@ function renderHistory(messages) {
   messagesEl.innerHTML = '';
   activeToolBadges = {};
   currentAiEl = null;
+  currentThinkingEl = null;
+  currentThinkingRaw = '';
   if (!messages.length) {
     addSystemMsg('Start a conversation to get going.');
     return;
@@ -1017,20 +1057,73 @@ function appendToken(tok) {
     messagesEl.appendChild(currentAiEl);
   }
   currentAiRaw += extractText(tok);
-  currentAiEl.innerHTML = marked.parse(currentAiRaw);
+  let bodyEl = currentAiEl.querySelector('.ai-text-body');
+  if (!bodyEl) {
+    bodyEl = document.createElement('div');
+    bodyEl.className = 'ai-text-body';
+    currentAiEl.appendChild(bodyEl);
+  }
+  bodyEl.innerHTML = marked.parse(currentAiRaw);
+  scrollBottom();
+}
+
+function appendThinkingToken(text) {
+  if (!currentAiEl) {
+    currentAiEl = document.createElement('div');
+    currentAiEl.className = 'message message-assistant streaming';
+    currentAiRaw = '';
+    currentAiTs = new Date().toISOString();
+    messagesEl.appendChild(currentAiEl);
+  }
+  if (!currentThinkingEl) {
+    const details = document.createElement('details');
+    details.className = 'reasoning-block';
+    details.innerHTML = '<summary>Reasoning</summary><div class="reasoning-content"></div>';
+    currentAiEl.insertBefore(details, currentAiEl.firstChild);
+    currentThinkingEl = details.querySelector('.reasoning-content');
+    currentThinkingRaw = '';
+  }
+  currentThinkingRaw += text;
+  currentThinkingEl.textContent = currentThinkingRaw;
   scrollBottom();
 }
 
 function finalizeAiMsg(fullReply) {
   if (currentAiEl) {
     currentAiEl.classList.remove('streaming');
-    const content = fullReply || currentAiRaw;
+    let content = fullReply || currentAiRaw;
+
+    // Extract inline <think>...</think> blocks (used by non-Gemini models)
     if (content) {
-      currentAiEl.innerHTML = marked.parse(content);
-      currentAiEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+      const thinkRe = /<think>([\s\S]*?)<\/think>/gi;
+      let thinkContent = '';
+      let match;
+      while ((match = thinkRe.exec(content)) !== null) thinkContent += match[1] + '\n';
+      const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+      if (thinkContent && !currentThinkingEl) {
+        const details = document.createElement('details');
+        details.className = 'reasoning-block';
+        details.innerHTML = '<summary>Reasoning</summary><div class="reasoning-content"></div>';
+        currentAiEl.insertBefore(details, currentAiEl.firstChild);
+        details.querySelector('.reasoning-content').textContent = thinkContent.trim();
+      }
+      content = cleanContent || content;
+    }
+
+    if (content) {
+      // Render markdown into a .ai-text-body wrapper if not already there
+      let bodyEl = currentAiEl.querySelector('.ai-text-body');
+      if (!bodyEl) {
+        bodyEl = document.createElement('div');
+        bodyEl.className = 'ai-text-body';
+        currentAiEl.appendChild(bodyEl);
+      }
+      bodyEl.innerHTML = marked.parse(content);
+      bodyEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
       if (isRtl(content)) currentAiEl.setAttribute('dir', 'rtl');
       attachSpeakBtn(currentAiEl, () => content);
-      if (autoSpeak) speakText(content, null);
+      if (getAutoSpeak()) speakText(content, null);
     }
     if (currentAiTs) {
       const timeEl = document.createElement('span');
@@ -1041,6 +1134,8 @@ function finalizeAiMsg(fullReply) {
     currentAiEl = null;
     currentAiRaw = '';
     currentAiTs = '';
+    currentThinkingEl = null;
+    currentThinkingRaw = '';
   }
   Object.values(activeToolBadges).forEach(el => el.remove());
   activeToolBadges = {};
@@ -1070,6 +1165,7 @@ function showToolBadge(name) {
     get_device_status: '🏠 Device status',
     control_device: '🏠 Controlling device',
     google_connect: '🔗 Google auth',
+    build_whatsapp_link: '💬 WhatsApp link',
   };
   if (activeToolBadges[name]) return;
   const badge = document.createElement('div');
@@ -1287,7 +1383,17 @@ function scrollBottom() {
 // ── Voice: STT (faster-whisper via backend) + TTS (SpeechSynthesis) ─────────
 let mediaRecorder  = null;
 let audioChunks    = [];
-let autoSpeak      = localStorage.getItem('pa_autospeak') === '1';
+function getAutoSpeak() { return localStorage.getItem(`pa_autospeak_${currentChatId}`) === '1'; }
+function setAutoSpeak(val) {
+  if (currentChatId) localStorage.setItem(`pa_autospeak_${currentChatId}`, val ? '1' : '0');
+  const btn = document.getElementById('tts-toggle-btn');
+  if (btn) btn.classList.toggle('active', val);
+}
+function toggleTts() { setAutoSpeak(!getAutoSpeak()); }
+function syncTtsToggle() {
+  const btn = document.getElementById('tts-toggle-btn');
+  if (btn) btn.classList.toggle('active', getAutoSpeak());
+}
 let activeSpeakBtn = null;
 const micBtn       = document.getElementById('mic-btn');
 const defaultPlaceholder = messageInput.placeholder;

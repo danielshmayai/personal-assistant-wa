@@ -21,6 +21,7 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 - wikipedia_search: look up facts, history, science, biographies
 - fetch_url: read any URL the user pastes (article, doc, product page, etc.)
 - get_weather: current weather for any city
+- build_whatsapp_link(phone, message=""): create a clickable wa.me link to open WhatsApp with a contact. Use whenever the user asks to "send WhatsApp to X" or "create a link to message Y".
 
 *Google tools:*
 - Gmail and Calendar — emails, meetings, scheduling. If Google is not connected, call google_connect and share the link.
