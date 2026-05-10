@@ -38,7 +38,21 @@ jobs:
             Write-Host "venv missing - please recreate it manually as the shmay user."
             exit 1
           }
-          .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -q
+          # Only re-install packages when requirements files have changed.
+          # Heavy packages like faster-whisper/ctranslate2 (~150 MB) make a full
+          # reinstall very slow; skipping it on unchanged requirements saves 5-10 min.
+          $reqHash = (Get-FileHash requirements.txt -Algorithm MD5).Hash
+          $devHash = (Get-FileHash requirements-dev.txt -Algorithm MD5).Hash
+          $newHash = "$reqHash|$devHash"
+          $hashFile = ".venv\.req_hash"
+          $oldHash  = if (Test-Path $hashFile) { (Get-Content $hashFile -Raw).Trim() } else { "" }
+          if ($newHash -ne $oldHash) {
+            Write-Host "Requirements changed — running pip install..."
+            .venv\Scripts\python.exe -m pip install --prefer-binary -r requirements.txt -r requirements-dev.txt -q
+            $newHash | Set-Content $hashFile
+          } else {
+            Write-Host "Requirements unchanged — skipping pip install."
+          }
           .venv\Scripts\python.exe -m pytest tests/test_sanity.py -v
 
   deploy:
@@ -73,6 +87,10 @@ jobs:
         shell: powershell
         run: |
           cd D:\Claude\pa
+          # DOCKER_BUILDKIT=1 enables BuildKit so the pip cache mount in the
+          # Dockerfile keeps downloaded wheels between builds.
+          $env:DOCKER_BUILDKIT = "1"
+          $env:COMPOSE_DOCKER_CLI_BUILD = "1"
           docker compose up --build -d backend
 
       - name: Verify backend is healthy
