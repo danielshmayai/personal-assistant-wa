@@ -256,10 +256,11 @@ async def speech_to_text(file: UploadFile, _: str = Depends(_require_bearer)):
 # ── GET /api/tts ──────────────────────────────────────────────────────────────
 
 _TTS_VOICES = {
-    "he": "he-IL-HilaNeural",
-    "ar": "ar-SA-ZariyahNeural",
-    "en": "en-US-AriaNeural",
+    "he": "he-IL-AvriNeural",
+    "ar": "ar-SA-HamedNeural",
+    "en": "en-US-GuyNeural",
 }
+_TTS_RATE = "+25%"
 
 @router.get("/api/tts")
 async def text_to_speech(text: str = Query(...), _: str = Depends(_require_bearer)):
@@ -273,7 +274,7 @@ async def text_to_speech(text: str = Query(...), _: str = Depends(_require_beare
 
     try:
         import edge_tts
-        communicate = edge_tts.Communicate(text, voice)
+        communicate = edge_tts.Communicate(text, voice, rate=_TTS_RATE)
         chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
