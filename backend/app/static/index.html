@@ -1332,6 +1332,8 @@ function setAutoSpeak(val) {
   if (currentChatId) localStorage.setItem(`pa_autospeak_${currentChatId}`, val ? '1' : '0');
   const btn = document.getElementById('tts-toggle-btn');
   if (btn) btn.classList.toggle('active', val);
+  // Speak a test phrase immediately so the user hears confirmation (and primes the speech engine)
+  if (val) speakText('Voice reading on', null);
 }
 function toggleTts() { setAutoSpeak(!getAutoSpeak()); }
 function syncTtsToggle() {
@@ -1422,56 +1424,61 @@ async function handleRecordingStop() {
 // ── TTS via browser SpeechSynthesis ──────────────────────────────────────────
 function speakText(text, btn) {
   if (!('speechSynthesis' in window)) return;
+
+  // Cancel any ongoing speech
   speechSynthesis.cancel();
   if (activeSpeakBtn) {
     activeSpeakBtn.innerHTML = SPEAK_SVG;
     activeSpeakBtn.classList.remove('speaking');
     activeSpeakBtn = null;
   }
-  const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
-  const utt = new SpeechSynthesisUtterance(plain);
 
-  // Detect language from content and set utt.lang so the browser chooses the right engine
+  const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
+  if (!plain.trim()) return;
+
+  // Use explicit hex ranges (avoids literal-char encoding issues in source files)
   const isHe = /[֐-׿]/.test(plain);
   const isAr = /[؀-ۿ]/.test(plain);
-  utt.lang = isHe ? 'he-IL' : isAr ? 'ar-SA' : 'en-US';
+  const lang = isHe ? 'he-IL' : isAr ? 'ar-SA' : 'en-US';
 
-  const pickVoice = () => {
-    const voices = speechSynthesis.getVoices();
+  const pickVoice = (voices) => {
     if (!voices.length) return null;
-    const prefix = utt.lang.split('-')[0];
-    // Prefer a voice in the detected language
-    const langMatch = voices.find(v => v.lang.startsWith(prefix));
-    if (langMatch) return langMatch;
-    // English fallback: prefer quality named voices
-    return voices.find(v => /google|samantha|karen|daniel|moira/i.test(v.name))
+    const prefix = lang.split('-')[0];
+    return voices.find(v => v.lang.startsWith(prefix))
+        || voices.find(v => /google|samantha|karen|daniel|moira/i.test(v.name))
         || voices.find(v => v.lang.startsWith('en') && v.localService)
         || voices[0];
   };
 
-  utt.rate = 1.05;
-  if (btn) {
-    btn.innerHTML = STOP_SVG;
-    btn.classList.add('speaking');
-    activeSpeakBtn = btn;
-    btn.onclick = () => { speechSynthesis.cancel(); };
-  }
-  utt.onend = utt.onerror = () => {
-    if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
-    if (activeSpeakBtn === btn) activeSpeakBtn = null;
-  };
-
   const doSpeak = () => {
-    const voice = pickVoice();
+    const utt = new SpeechSynthesisUtterance(plain);
+    utt.lang = lang;
+    utt.rate = 1.05;
+    const voice = pickVoice(speechSynthesis.getVoices());
     if (voice) utt.voice = voice;
+
+    if (btn) {
+      btn.innerHTML = STOP_SVG;
+      btn.classList.add('speaking');
+      activeSpeakBtn = btn;
+      btn.onclick = () => { speechSynthesis.cancel(); };
+    }
+    utt.onend = utt.onerror = () => {
+      if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
+      if (activeSpeakBtn === btn) activeSpeakBtn = null;
+    };
+
     speechSynthesis.speak(utt);
   };
 
-  // Wait for voices to load if not yet available (common on first call)
-  if (speechSynthesis.getVoices().length === 0) {
-    speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true });
+  // Chrome Android bug: cancel() followed immediately by speak() silently drops the utterance.
+  // A small delay lets the cancel complete before queuing the new utterance.
+  // Also handles the case where voices haven't loaded yet (first call).
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) {
+    speechSynthesis.addEventListener('voiceschanged', () => setTimeout(doSpeak, 100), { once: true });
   } else {
-    doSpeak();
+    setTimeout(doSpeak, 100);
   }
 }
 
