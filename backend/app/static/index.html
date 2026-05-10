@@ -1424,11 +1424,7 @@ async function handleRecordingStop() {
 // ── TTS via browser SpeechSynthesis ──────────────────────────────────────────
 function speakText(text, btn) {
   if (!('speechSynthesis' in window)) return;
-
-  // Track whether something was playing so we know if a cancel-delay is needed
-  const wasSpeaking = speechSynthesis.speaking || speechSynthesis.pending;
   speechSynthesis.cancel();
-
   if (activeSpeakBtn) {
     activeSpeakBtn.innerHTML = SPEAK_SVG;
     activeSpeakBtn.classList.remove('speaking');
@@ -1438,11 +1434,17 @@ function speakText(text, btn) {
   const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
   if (!plain.trim()) return;
 
+  // Detect language with explicit Unicode hex ranges (avoids source-encoding issues)
   const isHe = /[֐-׿]/.test(plain);
   const isAr = /[؀-ۿ]/.test(plain);
   const lang = isHe ? 'he-IL' : isAr ? 'ar-SA' : 'en-US';
 
-  const pickVoice = (voices) => {
+  const utt = new SpeechSynthesisUtterance(plain);
+  utt.lang = lang;
+  utt.rate = 1.05;
+
+  const pickVoice = () => {
+    const voices = speechSynthesis.getVoices();
     if (!voices.length) return null;
     const prefix = lang.split('-')[0];
     return voices.find(v => v.lang.startsWith(prefix))
@@ -1451,38 +1453,32 @@ function speakText(text, btn) {
         || voices[0];
   };
 
-  // Immediate button visual feedback — must happen before any delay so the
-  // click feels responsive and stays within Chrome's user-gesture activation window
+  const voice = pickVoice();
+  if (voice) utt.voice = voice;
+
   if (btn) {
     btn.innerHTML = STOP_SVG;
     btn.classList.add('speaking');
     activeSpeakBtn = btn;
     btn.onclick = () => { speechSynthesis.cancel(); };
   }
-
-  const doSpeak = () => {
-    const utt = new SpeechSynthesisUtterance(plain);
-    utt.lang = lang;
-    utt.rate = 1.05;
-    const voice = pickVoice(speechSynthesis.getVoices());
-    if (voice) utt.voice = voice;
-    utt.onend = utt.onerror = () => {
-      if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
-      if (activeSpeakBtn === btn) activeSpeakBtn = null;
-    };
-    speechSynthesis.speak(utt);
+  utt.onend = utt.onerror = () => {
+    if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
+    if (activeSpeakBtn === btn) activeSpeakBtn = null;
   };
 
-  const voices = speechSynthesis.getVoices();
-  if (!voices.length) {
-    // Voices not loaded yet — wait, then speak
-    speechSynthesis.addEventListener('voiceschanged', () => setTimeout(doSpeak, wasSpeaking ? 150 : 0), { once: true });
-  } else {
-    // Chrome Android bug: cancel() + immediate speak() silently drops the utterance.
-    // Only delay when we actually cancelled something; otherwise speak immediately
-    // so the call stays inside the user-gesture activation window for the speak button.
-    setTimeout(doSpeak, wasSpeaking ? 150 : 0);
+  // If voices aren't loaded yet, update the utterance when they arrive.
+  // The utterance is already queued — Chrome accepts a voice update before playback starts.
+  if (!voice) {
+    speechSynthesis.addEventListener('voiceschanged', () => {
+      const v = pickVoice();
+      if (v) utt.voice = v;
+    }, { once: true });
   }
+
+  // MUST be called synchronously within the user-gesture handler.
+  // Any setTimeout/async delay here silently breaks TTS on Chrome Android.
+  speechSynthesis.speak(utt);
 }
 
 // ── Mobile sidebar toggle ───────────────────────────────────────────────────
