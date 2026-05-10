@@ -168,12 +168,23 @@ async def get_device_status(device_id: str) -> str:
 
 
 @tool
-async def control_device(device_id: str, commands: dict[str, Any]) -> str:
-    """Control a Tuya device. Args: device_id, commands (DPS dict).
-    Examples: turn on={"switch_1":true}, brightness={"bright_value":512}, colour temp={"temp_value":400}.
-    Tries local LAN first, falls back to cloud."""
-    if not commands:
+async def control_device(device_id: str, commands_json: str) -> str:
+    """Control a Tuya device by sending DPS commands as a JSON string.
+
+    device_id: Tuya device ID (use list_tuya_devices to find it)
+    commands_json: JSON object string mapping DPS code to value.
+      To turn a switch on pass: {'switch_1': true}
+      To set brightness pass: {'bright_value': 512}
+      To set colour temperature pass: {'temp_value': 400}
+
+    Tries local LAN first, falls back to cloud API.
+    """
+    if not commands_json:
         return "No commands provided."
+    try:
+        commands: dict[str, Any] = json.loads(commands_json)
+    except (json.JSONDecodeError, ValueError) as exc:
+        return f"commands_json is not valid JSON: {exc}"
     try:
         result: dict[str, Any] | None = None
         if TUYA_PREFER_LOCAL:
