@@ -1425,8 +1425,10 @@ async function handleRecordingStop() {
 function speakText(text, btn) {
   if (!('speechSynthesis' in window)) return;
 
-  // Cancel any ongoing speech
+  // Track whether something was playing so we know if a cancel-delay is needed
+  const wasSpeaking = speechSynthesis.speaking || speechSynthesis.pending;
   speechSynthesis.cancel();
+
   if (activeSpeakBtn) {
     activeSpeakBtn.innerHTML = SPEAK_SVG;
     activeSpeakBtn.classList.remove('speaking');
@@ -1436,7 +1438,6 @@ function speakText(text, btn) {
   const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
   if (!plain.trim()) return;
 
-  // Use explicit hex ranges (avoids literal-char encoding issues in source files)
   const isHe = /[֐-׿]/.test(plain);
   const isAr = /[؀-ۿ]/.test(plain);
   const lang = isHe ? 'he-IL' : isAr ? 'ar-SA' : 'en-US';
@@ -1450,35 +1451,37 @@ function speakText(text, btn) {
         || voices[0];
   };
 
+  // Immediate button visual feedback — must happen before any delay so the
+  // click feels responsive and stays within Chrome's user-gesture activation window
+  if (btn) {
+    btn.innerHTML = STOP_SVG;
+    btn.classList.add('speaking');
+    activeSpeakBtn = btn;
+    btn.onclick = () => { speechSynthesis.cancel(); };
+  }
+
   const doSpeak = () => {
     const utt = new SpeechSynthesisUtterance(plain);
     utt.lang = lang;
     utt.rate = 1.05;
     const voice = pickVoice(speechSynthesis.getVoices());
     if (voice) utt.voice = voice;
-
-    if (btn) {
-      btn.innerHTML = STOP_SVG;
-      btn.classList.add('speaking');
-      activeSpeakBtn = btn;
-      btn.onclick = () => { speechSynthesis.cancel(); };
-    }
     utt.onend = utt.onerror = () => {
       if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
       if (activeSpeakBtn === btn) activeSpeakBtn = null;
     };
-
     speechSynthesis.speak(utt);
   };
 
-  // Chrome Android bug: cancel() followed immediately by speak() silently drops the utterance.
-  // A small delay lets the cancel complete before queuing the new utterance.
-  // Also handles the case where voices haven't loaded yet (first call).
   const voices = speechSynthesis.getVoices();
   if (!voices.length) {
-    speechSynthesis.addEventListener('voiceschanged', () => setTimeout(doSpeak, 100), { once: true });
+    // Voices not loaded yet — wait, then speak
+    speechSynthesis.addEventListener('voiceschanged', () => setTimeout(doSpeak, wasSpeaking ? 150 : 0), { once: true });
   } else {
-    setTimeout(doSpeak, 100);
+    // Chrome Android bug: cancel() + immediate speak() silently drops the utterance.
+    // Only delay when we actually cancelled something; otherwise speak immediately
+    // so the call stays inside the user-gesture activation window for the speak button.
+    setTimeout(doSpeak, wasSpeaking ? 150 : 0);
   }
 }
 
