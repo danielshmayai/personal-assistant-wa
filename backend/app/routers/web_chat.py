@@ -83,7 +83,13 @@ def _clean_for_tts(text: str) -> str:
 def _get_whisper():
     global _whisper
     if _whisper is None:
-        from faster_whisper import WhisperModel
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError:
+            raise RuntimeError(
+                "faster-whisper is not installed (it is available inside the Docker container). "
+                "STT is not supported in this environment."
+            )
         _whisper = WhisperModel("tiny", device="cpu", compute_type="int8")
         logger.info("Whisper tiny model loaded")
     return _whisper
