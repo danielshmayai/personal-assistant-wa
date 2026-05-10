@@ -255,6 +255,28 @@ async def speech_to_text(file: UploadFile, _: str = Depends(_require_bearer)):
 
 # ── GET /api/tts ──────────────────────────────────────────────────────────────
 
+# Google Neural2 voices keyed by (lang, gender).
+# Gender is inferred from the stored edge-tts voice name.
+_GOOGLE_VOICES: dict[tuple[str, str], tuple[str, str]] = {
+    ("he", "male"):   ("he-IL", "he-IL-Neural2-B"),
+    ("he", "female"): ("he-IL", "he-IL-Neural2-A"),
+    ("ar", "male"):   ("ar-XA", "ar-XA-Neural2-B"),
+    ("ar", "female"): ("ar-XA", "ar-XA-Neural2-A"),
+    ("en", "male"):   ("en-US", "en-US-Neural2-D"),
+    ("en", "female"): ("en-US", "en-US-Neural2-F"),
+}
+# edge-tts voice name fragments that indicate male gender
+_MALE_INDICATORS = {"Avri", "Guy", "Hamed"}
+
+
+def _rate_to_speaking_rate(rate: str) -> float:
+    """Convert edge-tts rate string (e.g. '+25%') to Google speakingRate float."""
+    try:
+        return max(0.25, min(4.0, 1.0 + int(rate.replace("%", "").replace("+", "")) / 100))
+    except Exception:
+        return 1.0
+
+
 @router.get("/api/tts")
 async def text_to_speech(text: str = Query(...), _: str = Depends(_require_bearer)):
     text = text.strip()
@@ -262,24 +284,58 @@ async def text_to_speech(text: str = Query(...), _: str = Depends(_require_beare
         raise HTTPException(status_code=400, detail="Empty text")
 
     from app.tts_config import get_tts_config
+    from app.config import GOOGLE_TTS_API_KEY
     cfg = get_tts_config()
-    voices = cfg["voices"]
+    edge_voices = cfg["voices"]
     rate = cfg["rate"]
 
     is_he = bool(re.search(r"[֐-׿]", text))
     is_ar = bool(re.search(r"[؀-ۿ]", text))
-    voice = voices["he" if is_he else "ar" if is_ar else "en"]
+    lang = "he" if is_he else "ar" if is_ar else "en"
+    edge_voice = edge_voices[lang]
+    gender = "male" if any(m in edge_voice for m in _MALE_INDICATORS) else "female"
 
+    # ── Primary: Google Cloud TTS Neural2 ────────────────────────────────────
+    if GOOGLE_TTS_API_KEY:
+        lang_code, google_voice = _GOOGLE_VOICES[(lang, gender)]
+        try:
+            import httpx, base64 as _b64
+            payload = {
+                "input": {"text": text},
+                "voice": {"languageCode": lang_code, "name": google_voice},
+                "audioConfig": {
+                    "audioEncoding": "MP3",
+                    "speakingRate": _rate_to_speaking_rate(rate),
+                },
+            }
+            async with httpx.AsyncClient(timeout=12) as client:
+                resp = await client.post(
+                    "https://texttospeech.googleapis.com/v1/text:synthesize",
+                    params={"key": GOOGLE_TTS_API_KEY},
+                    json=payload,
+                )
+            if resp.status_code == 200:
+                audio_data = _b64.b64decode(resp.json()["audioContent"])
+                logger.info("Google TTS: %d chars → %d bytes voice=%s rate=%s",
+                            len(text), len(audio_data), google_voice, rate)
+                return Response(content=audio_data, media_type="audio/mpeg")
+            logger.warning("Google TTS %d — falling back to edge-tts: %s",
+                           resp.status_code, resp.text[:200])
+        except Exception as exc:
+            logger.warning("Google TTS error (%s) — falling back to edge-tts", exc)
+
+    # ── Fallback: edge-tts ────────────────────────────────────────────────────
     try:
         import edge_tts
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        communicate = edge_tts.Communicate(text, edge_voice, rate=rate)
         chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 chunks.append(chunk["data"])
         audio_data = b"".join(chunks)
-        logger.info("TTS generated %d chars → %d bytes voice=%s rate=%s", len(text), len(audio_data), voice, rate)
+        logger.info("edge-tts: %d chars → %d bytes voice=%s rate=%s",
+                    len(text), len(audio_data), edge_voice, rate)
         return Response(content=audio_data, media_type="audio/mpeg")
     except Exception as exc:
-        logger.exception("TTS failed")
+        logger.exception("TTS failed (Google + edge-tts both failed)")
         raise HTTPException(status_code=500, detail=str(exc))

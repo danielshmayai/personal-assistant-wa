@@ -26,6 +26,9 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
 
+# Google Cloud Text-to-Speech (Neural2). Leave empty to skip and use edge-tts only.
+GOOGLE_TTS_API_KEY = os.getenv("GOOGLE_TTS_API_KEY", "")
+
 # Web search — set TAVILY_API_KEY for best results; falls back to DuckDuckGo if empty
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
