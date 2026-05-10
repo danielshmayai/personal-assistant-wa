@@ -255,32 +255,30 @@ async def speech_to_text(file: UploadFile, _: str = Depends(_require_bearer)):
 
 # ── GET /api/tts ──────────────────────────────────────────────────────────────
 
-_TTS_VOICES = {
-    "he": "he-IL-AvriNeural",
-    "ar": "ar-SA-HamedNeural",
-    "en": "en-US-GuyNeural",
-}
-_TTS_RATE = "+25%"
-
 @router.get("/api/tts")
 async def text_to_speech(text: str = Query(...), _: str = Depends(_require_bearer)):
     text = text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Empty text")
 
+    from app.tts_config import get_tts_config
+    cfg = get_tts_config()
+    voices = cfg["voices"]
+    rate = cfg["rate"]
+
     is_he = bool(re.search(r"[֐-׿]", text))
     is_ar = bool(re.search(r"[؀-ۿ]", text))
-    voice = _TTS_VOICES["he" if is_he else "ar" if is_ar else "en"]
+    voice = voices["he" if is_he else "ar" if is_ar else "en"]
 
     try:
         import edge_tts
-        communicate = edge_tts.Communicate(text, voice, rate=_TTS_RATE)
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
         chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 chunks.append(chunk["data"])
         audio_data = b"".join(chunks)
-        logger.info("TTS generated %d chars → %d bytes voice=%s", len(text), len(audio_data), voice)
+        logger.info("TTS generated %d chars → %d bytes voice=%s rate=%s", len(text), len(audio_data), voice, rate)
         return Response(content=audio_data, media_type="audio/mpeg")
     except Exception as exc:
         logger.exception("TTS failed")

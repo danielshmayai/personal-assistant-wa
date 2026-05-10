@@ -168,9 +168,10 @@ async def agent_node(state: PAState) -> dict:
     from app.tuya.tools import get_tuya_tools
     from app.memory.manager import MEMORY_TOOLS
     from app.web.tools import WEB_TOOLS
+    from app.tts_tool import TTS_TOOLS
 
     chat_id = state.get("chat_id", "")
-    tools = WEB_TOOLS + get_google_tools(chat_id) + get_tuya_tools() + MEMORY_TOOLS
+    tools = WEB_TOOLS + get_google_tools(chat_id) + get_tuya_tools() + MEMORY_TOOLS + TTS_TOOLS
 
     llm = get_gemini_llm().bind_tools(tools)
     system = _build_system_prompt(state.get("memory_context", ""), state.get("chat_id", ""))

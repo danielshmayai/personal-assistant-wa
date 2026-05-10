@@ -113,6 +113,13 @@ def init_memory_tables():
                 )
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS lead_messages_chat_id_idx ON lead_messages(chat_id)")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
         conn.commit()
     finally:
         conn.close()
@@ -550,5 +557,36 @@ def list_web_conversations() -> list[dict]:
                 }
                 for r in cur.fetchall()
             ]
+    finally:
+        conn.close()
+
+
+# ── app_settings ──────────────────────────────────────────────────────────────
+
+def get_app_setting(key: str):
+    """Return the JSONB value for *key*, or None if not set."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def set_app_setting(key: str, value) -> None:
+    """Upsert a JSONB *value* for *key*."""
+    import json as _json
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (%s, %s::jsonb, NOW())
+                ON CONFLICT (key) DO UPDATE
+                    SET value = EXCLUDED.value, updated_at = NOW()
+            """, (key, _json.dumps(value)))
+        conn.commit()
     finally:
         conn.close()
