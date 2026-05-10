@@ -1424,7 +1424,12 @@ async function handleRecordingStop() {
 // ── TTS via browser SpeechSynthesis ──────────────────────────────────────────
 function speakText(text, btn) {
   if (!('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
+
+  // Only cancel if something is currently playing. Unconditional cancel() + speak()
+  // in the same JS tick silently drops the new utterance on some Chrome builds
+  // (cancel is processed asynchronously by the browser's synthesis engine).
+  if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+
   if (activeSpeakBtn) {
     activeSpeakBtn.innerHTML = SPEAK_SVG;
     activeSpeakBtn.classList.remove('speaking');
@@ -1447,9 +1452,12 @@ function speakText(text, btn) {
     const voices = speechSynthesis.getVoices();
     if (!voices.length) return null;
     const prefix = lang.split('-')[0];
-    return voices.find(v => v.lang.startsWith(prefix))
-        || voices.find(v => /google|samantha|karen|daniel|moira/i.test(v.name))
+    // Prefer local (offline) voices first — online Google TTS voices require
+    // Google's servers to be reachable and fail silently when they aren't.
+    return voices.find(v => v.lang.startsWith(prefix) && v.localService)
+        || voices.find(v => v.lang.startsWith(prefix))
         || voices.find(v => v.lang.startsWith('en') && v.localService)
+        || voices.find(v => v.localService)
         || voices[0];
   };
 
