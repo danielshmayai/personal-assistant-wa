@@ -1619,8 +1619,10 @@ async function speakText(text, btn) {
     activeSpeakBtn = null;
   }
 
-  const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
-  if (!plain.trim()) return;
+  // Send the raw text — the backend /api/tts endpoint strips all
+  // markdown, URLs, wikilinks, tags, and non-speakable content.
+  const plain = text.trim();
+  if (!plain) return;
 
   const ac = new AbortController();
   ttsAbortController = ac;

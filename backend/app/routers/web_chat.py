@@ -33,6 +33,53 @@ _MAX_AUDIO_BYTES  = 25 * 1024 * 1024  # 25 MB
 # Lazy-loaded Whisper model (loaded on first STT request)
 _whisper = None
 
+
+def _clean_for_tts(text: str) -> str:
+    """Strip all non-speakable content so TTS reads only natural prose."""
+    # Remove fenced code blocks entirely
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    # Remove inline code
+    text = re.sub(r'`[^`\n]+`', '', text)
+    # Markdown links: keep label, drop URL
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    # Bare URLs (http/https)
+    text = re.sub(r'https?://\S+', '', text)
+    # Obsidian wikilinks [[Label|Alias]] or [[Label]] → display text
+    text = re.sub(r'\[\[(?:[^\]|]*\|)?([^\]]*)\]\]', r'\1', text)
+    # Remaining square-bracket content (e.g. [1], [source])
+    text = re.sub(r'\[[^\]]{0,60}\]', '', text)
+    # Hashtags / Obsidian tags  (#real-estate, #tag)
+    text = re.sub(r'(?<!\w)#\w[\w-]*', '', text)
+    # Markdown headers — keep the heading text itself
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Bold / italic markers
+    text = re.sub(r'\*{1,3}', '', text)
+    text = re.sub(r'_{1,3}', '', text)
+    # Strikethrough — delete entirely (it's crossed-out content)
+    text = re.sub(r'~~[^~]*~~', '', text)
+    # Blockquotes
+    text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
+    # Horizontal rules
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    # Table separators |---|
+    text = re.sub(r'^\|[-| :]+\|$', '', text, flags=re.MULTILINE)
+    # Table pipes → space
+    text = re.sub(r'\|', ' ', text)
+    # Bullet list markers at line start
+    text = re.sub(r'^[ \t]*[-•*]\s+', '', text, flags=re.MULTILINE)
+    # Numbered list markers
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    # HTML tags
+    text = re.sub(r'<[^>]{1,80}>', '', text)
+    # Parentheses containing only a URL or non-word content
+    text = re.sub(r'\(\s*https?://[^)]*\)', '', text)
+    # Lone special chars that add no speech value
+    text = re.sub(r'[`~^]', '', text)
+    # Normalize whitespace
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 def _get_whisper():
     global _whisper
     if _whisper is None:
@@ -279,7 +326,7 @@ def _rate_to_speaking_rate(rate: str) -> float:
 
 @router.get("/api/tts")
 async def text_to_speech(text: str = Query(...), _: str = Depends(_require_bearer)):
-    text = text.strip()
+    text = _clean_for_tts(text)
     if not text:
         raise HTTPException(status_code=400, detail="Empty text")
 
