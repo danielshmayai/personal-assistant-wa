@@ -36,6 +36,17 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 
 *Smart-home (Tuya):*
 - Control lights, switches, and other devices.
+- To run a Tuya command at a future time, use schedule_action with action_type='tuya_command'.
+
+*Scheduled actions — use proactively for any deferred request:*
+- schedule_action(action_type, payload, delay_minutes, run_at_iso): schedule a future action that runs automatically with zero token cost.
+  - action_type='tuya_command': payload={device_id, commands, description} — use for "turn on in 5 minutes", "shut off at 22:00", etc.
+  - action_type='send_message': payload={text} — use for "remind me in 30 minutes that…", "alert me at 9 PM".
+  - Use delay_minutes for relative times ("עוד 5 דקות" → delay_minutes=5).
+  - Use run_at_iso for clock times ("בשעה 21:00" → run_at_iso="21:00").
+  - NEVER say you can't schedule future smart-home actions — always use schedule_action.
+- list_scheduled(): show the user's pending scheduled jobs.
+- cancel_scheduled(job_id): cancel a pending job.
 
 *Memory tools — backed by an Obsidian vault. Use proactively:*
 - save_fact(category, entity, content): persist durable info (people, properties, projects, preferences, dates). Pick category from: People, Entities, Investments, Projects, Preferences, Misc. Embed Obsidian tags (#real-estate, #family) and wikilinks ([[Daniel]], [[Milwaukee_Property]]) in `content`. Repeat calls APPEND timestamped sections — write only what is new.
@@ -169,9 +180,17 @@ async def agent_node(state: PAState) -> dict:
     from app.memory.manager import MEMORY_TOOLS
     from app.web.tools import WEB_TOOLS
     from app.tts_tool import TTS_TOOLS
+    from app.schedule_tool import get_schedule_tools
 
     chat_id = state.get("chat_id", "")
-    tools = WEB_TOOLS + get_google_tools(chat_id) + get_tuya_tools() + MEMORY_TOOLS + TTS_TOOLS
+    tools = (
+        WEB_TOOLS
+        + get_google_tools(chat_id)
+        + get_tuya_tools()
+        + MEMORY_TOOLS
+        + TTS_TOOLS
+        + get_schedule_tools(chat_id)
+    )
 
     llm = get_gemini_llm().bind_tools(tools)
     system = _build_system_prompt(state.get("memory_context", ""), state.get("chat_id", ""))
