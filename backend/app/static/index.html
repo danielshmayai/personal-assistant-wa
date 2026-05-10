@@ -1341,6 +1341,8 @@ function syncTtsToggle() {
   if (btn) btn.classList.toggle('active', getAutoSpeak());
 }
 let activeSpeakBtn = null;
+let activeAudio = null;
+let ttsAbortController = null;
 const micBtn       = document.getElementById('mic-btn');
 const defaultPlaceholder = messageInput.placeholder;
 
@@ -1421,15 +1423,11 @@ async function handleRecordingStop() {
   }
 }
 
-// ── TTS via browser SpeechSynthesis ──────────────────────────────────────────
-function speakText(text, btn) {
-  if (!('speechSynthesis' in window)) return;
-
-  // Only cancel if something is currently playing. Unconditional cancel() + speak()
-  // in the same JS tick silently drops the new utterance on some Chrome builds
-  // (cancel is processed asynchronously by the browser's synthesis engine).
-  if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
-
+// ── TTS via backend edge-tts (/api/tts) ──────────────────────────────────────
+async function speakText(text, btn) {
+  // Abort any in-progress fetch and stop any playing audio
+  if (ttsAbortController) { ttsAbortController.abort(); ttsAbortController = null; }
+  if (activeAudio) { activeAudio.pause(); activeAudio.src = ''; activeAudio = null; }
   if (activeSpeakBtn) {
     activeSpeakBtn.innerHTML = SPEAK_SVG;
     activeSpeakBtn.classList.remove('speaking');
@@ -1439,54 +1437,59 @@ function speakText(text, btn) {
   const plain = text.replace(/```[\s\S]*?```/g, 'code block').replace(/[*_~`#>]/g, '');
   if (!plain.trim()) return;
 
-  // Detect language with explicit Unicode hex ranges (avoids source-encoding issues)
-  const isHe = /[֐-׿]/.test(plain);
-  const isAr = /[؀-ۿ]/.test(plain);
-  const lang = isHe ? 'he-IL' : isAr ? 'ar-SA' : 'en-US';
-
-  const utt = new SpeechSynthesisUtterance(plain);
-  utt.lang = lang;
-  utt.rate = 1.05;
-
-  const pickVoice = () => {
-    const voices = speechSynthesis.getVoices();
-    if (!voices.length) return null;
-    const prefix = lang.split('-')[0];
-    // Prefer local (offline) voices first — online Google TTS voices require
-    // Google's servers to be reachable and fail silently when they aren't.
-    return voices.find(v => v.lang.startsWith(prefix) && v.localService)
-        || voices.find(v => v.lang.startsWith(prefix))
-        || voices.find(v => v.lang.startsWith('en') && v.localService)
-        || voices.find(v => v.localService)
-        || voices[0];
-  };
-
-  const voice = pickVoice();
-  if (voice) utt.voice = voice;
+  const ac = new AbortController();
+  ttsAbortController = ac;
 
   if (btn) {
     btn.innerHTML = STOP_SVG;
     btn.classList.add('speaking');
     activeSpeakBtn = btn;
-    btn.onclick = () => { speechSynthesis.cancel(); };
+    btn.onclick = () => {
+      ac.abort();
+      if (activeAudio) { activeAudio.pause(); activeAudio.src = ''; activeAudio = null; }
+      btn.innerHTML = SPEAK_SVG;
+      btn.classList.remove('speaking');
+      btn.onclick = () => speakText(text, btn);
+      if (activeSpeakBtn === btn) activeSpeakBtn = null;
+    };
   }
-  utt.onend = utt.onerror = () => {
-    if (btn) { btn.innerHTML = SPEAK_SVG; btn.classList.remove('speaking'); btn.onclick = () => speakText(text, btn); }
-    if (activeSpeakBtn === btn) activeSpeakBtn = null;
+
+  const resetBtn = () => {
+    if (btn) {
+      btn.innerHTML = SPEAK_SVG;
+      btn.classList.remove('speaking');
+      btn.onclick = () => speakText(text, btn);
+      if (activeSpeakBtn === btn) activeSpeakBtn = null;
+    }
+    if (ttsAbortController === ac) ttsAbortController = null;
   };
 
-  // If voices aren't loaded yet, update the utterance when they arrive.
-  // The utterance is already queued — Chrome accepts a voice update before playback starts.
-  if (!voice) {
-    speechSynthesis.addEventListener('voiceschanged', () => {
-      const v = pickVoice();
-      if (v) utt.voice = v;
-    }, { once: true });
-  }
+  try {
+    const res = await fetch('/api/tts?' + new URLSearchParams({ text: plain }), {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: ac.signal,
+    });
+    if (!res.ok) throw new Error(`TTS ${res.status}`);
+    const blob = await res.blob();
+    if (ac.signal.aborted) return;
 
-  // MUST be called synchronously within the user-gesture handler.
-  // Any setTimeout/async delay here silently breaks TTS on Chrome Android.
-  speechSynthesis.speak(utt);
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    activeAudio = audio;
+
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+      if (activeAudio === audio) activeAudio = null;
+      resetBtn();
+    };
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+    await audio.play();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.warn('[TTS]', e);
+    if (activeAudio) activeAudio = null;
+    resetBtn();
+  }
 }
 
 // ── Mobile sidebar toggle ───────────────────────────────────────────────────

@@ -5,6 +5,7 @@ Endpoints:
   WS  /ws/chat              — streaming chat  (?token=&chat_id=)
   GET /api/conversations    — list web conversations
   POST /api/upload          — upload a file into media_cache
+  GET /api/tts              — text-to-speech via edge-tts (returns audio/mpeg)
 """
 
 import contextlib
@@ -12,11 +13,13 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import tempfile
 import uuid
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import TEST_TOKEN
@@ -248,3 +251,36 @@ async def speech_to_text(file: UploadFile, _: str = Depends(_require_bearer)):
     finally:
         with contextlib.suppress(OSError):
             os.unlink(tmp_path)
+
+
+# ── GET /api/tts ──────────────────────────────────────────────────────────────
+
+_TTS_VOICES = {
+    "he": "he-IL-HilaNeural",
+    "ar": "ar-SA-ZariyahNeural",
+    "en": "en-US-AriaNeural",
+}
+
+@router.get("/api/tts")
+async def text_to_speech(text: str = Query(...), _: str = Depends(_require_bearer)):
+    text = text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty text")
+
+    is_he = bool(re.search(r"[֐-׿]", text))
+    is_ar = bool(re.search(r"[؀-ۿ]", text))
+    voice = _TTS_VOICES["he" if is_he else "ar" if is_ar else "en"]
+
+    try:
+        import edge_tts
+        communicate = edge_tts.Communicate(text, voice)
+        chunks = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                chunks.append(chunk["data"])
+        audio_data = b"".join(chunks)
+        logger.info("TTS generated %d chars → %d bytes voice=%s", len(text), len(audio_data), voice)
+        return Response(content=audio_data, media_type="audio/mpeg")
+    except Exception as exc:
+        logger.exception("TTS failed")
+        raise HTTPException(status_code=500, detail=str(exc))
