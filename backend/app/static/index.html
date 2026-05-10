@@ -548,6 +548,124 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .lead-field span { color: var(--text3); margin-right: 3px; }
 .lead-activity { font-size: 11px; color: var(--text3); }
 
+/* ── Smart Home nav button ── */
+#smarthome-nav-btn {
+  display: flex; align-items: center; gap: 9px;
+  width: calc(100% - 16px); margin: 2px 8px;
+  background: none; border: 1px solid transparent; border-radius: 10px;
+  color: var(--text2); cursor: pointer; font-family: inherit; font-size: 13px;
+  font-weight: 500; padding: 8px 10px;
+  transition: background .15s, color .15s;
+  text-align: left;
+}
+#smarthome-nav-btn:hover { background: var(--bg3); color: var(--text); }
+#smarthome-nav-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(99,102,241,.18); }
+#smarthome-nav-btn svg { flex-shrink: 0; }
+
+/* ── Smart Home panel ── */
+#smarthome-panel {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); position: relative;
+}
+#smarthome-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px; height: 60px; flex-shrink: 0;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+}
+#smarthome-back-btn {
+  background: none; border: none; color: var(--text2); cursor: pointer;
+  padding: 6px 8px; border-radius: 8px; font-family: inherit; font-size: 13px;
+  display: flex; align-items: center; gap: 6px; transition: color .15s, background .15s;
+}
+#smarthome-back-btn:hover { color: var(--text); background: var(--bg3); }
+#smarthome-header h2 { font-family: "Outfit", sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
+#sh-refresh-btn {
+  margin-left: auto; background: none; border: none; color: var(--text3); cursor: pointer;
+  padding: 6px; border-radius: 8px; display: flex; align-items: center;
+  transition: color .15s, background .15s;
+}
+#sh-refresh-btn:hover { color: var(--accent); background: var(--accent-dim); }
+#smarthome-content { flex: 1; overflow-y: auto; padding: 20px; }
+
+/* Device grid */
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+/* Device card */
+.device-card {
+  background: var(--bg2); border: 1.5px solid var(--border2);
+  border-radius: var(--radius-sm); padding: 16px;
+  display: flex; flex-direction: column; gap: 14px;
+  transition: border-color .25s, box-shadow .15s;
+  box-shadow: var(--shadow-sm);
+}
+.device-card:hover { box-shadow: var(--shadow); }
+.device-card.offline { opacity: 0.52; }
+.device-card.flash-ok { border-color: var(--green); }
+
+.device-card-header { display: flex; align-items: center; gap: 10px; }
+.device-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--accent-dim); border: 1px solid rgba(99,102,241,.15);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  font-size: 19px; line-height: 1;
+}
+.device-name {
+  flex: 1; font-size: 13px; font-weight: 600; color: var(--text);
+  line-height: 1.3; overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.device-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.device-status-dot.online  { background: var(--green); box-shadow: 0 0 5px rgba(16,185,129,.45); }
+.device-status-dot.offline { background: var(--text3); }
+
+/* Toggle switch */
+.device-toggle-row { display: flex; align-items: center; justify-content: space-between; }
+.device-toggle-label { font-size: 12px; color: var(--text2); font-weight: 500; }
+.toggle-switch { position: relative; width: 46px; height: 25px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute; inset: 0; border-radius: 13px; cursor: pointer;
+  background: var(--border2); transition: background .2s;
+}
+.toggle-switch input:checked + .toggle-track { background: var(--accent); }
+.toggle-track::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 19px; height: 19px; border-radius: 50%;
+  background: #fff; transition: transform .2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.18);
+}
+.toggle-switch input:checked + .toggle-track::after { transform: translateX(21px); }
+.toggle-switch input:disabled + .toggle-track { cursor: not-allowed; opacity: 0.45; }
+
+/* Sliders */
+.device-slider-row { display: flex; flex-direction: column; gap: 5px; }
+.device-slider-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--text3); }
+.device-slider {
+  width: 100%; accent-color: var(--accent); cursor: pointer;
+  height: 4px; border-radius: 2px;
+}
+.device-slider:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* States */
+.sh-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; padding: 64px 20px;
+  color: var(--text3); text-align: center; font-size: 14px;
+}
+.sh-state-icon { font-size: 36px; opacity: .6; }
+.sh-error-state { color: var(--red); }
+#sh-retry-btn {
+  background: var(--accent-dim); border: 1px solid rgba(99,102,241,.25);
+  border-radius: 8px; color: var(--accent); cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  padding: 8px 20px; transition: background .15s;
+}
+#sh-retry-btn:hover { background: rgba(99,102,241,.18); }
+
 #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(3px); z-index: 40; }
 #menu-btn { display: none; background: none; border: none; color: var(--text2); cursor: pointer; padding: 6px; flex-shrink: 0; border-radius: 8px; transition: color .15s, background .15s; align-items: center; justify-content: center; width: 36px; height: 36px; }
 #menu-btn:hover { color: var(--text); background: var(--bg3); }
@@ -626,6 +744,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       </svg>
       Leads
     </button>
+    <button id="smarthome-nav-btn" title="Smart Home">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      Smart Home
+    </button>
   </aside>
   <div id="sidebar-overlay"></div>
 
@@ -652,6 +777,41 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       </div>
       <div class="leads-list-label">Watching</div>
       <div id="leads-list"><div class="leads-empty">No leads yet</div></div>
+    </div>
+  </div>
+
+  <!-- Smart Home panel (replaces chat-main when active) -->
+  <div id="smarthome-panel" class="hidden">
+    <header id="smarthome-header">
+      <button id="smarthome-back-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Back
+      </button>
+      <h2>Smart Home</h2>
+      <button id="sh-refresh-btn" title="Refresh devices">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+      </button>
+    </header>
+    <div id="smarthome-content">
+      <div id="sh-loading" class="sh-state">
+        <div class="sh-state-icon">🏠</div>
+        <span>Loading devices…</span>
+      </div>
+      <div id="sh-error" class="sh-state sh-error-state hidden">
+        <div class="sh-state-icon">⚠️</div>
+        <span id="sh-error-msg">Failed to load devices</span>
+        <button id="sh-retry-btn">Retry</button>
+      </div>
+      <div id="device-grid" class="device-grid hidden"></div>
+      <div id="sh-empty" class="sh-state hidden">
+        <div class="sh-state-icon">🔌</div>
+        <span>No devices found on this account.</span>
+      </div>
     </div>
   </div>
 
@@ -1555,6 +1715,9 @@ const leadsNavBtn = document.getElementById('leads-nav-btn');
 
 function openLeads() {
   chatMain.classList.add('hidden');
+  smarthomePanel.classList.add('hidden');
+  smarthomeNavBtn.classList.remove('active');
+  clearInterval(shRefreshTimer); shRefreshTimer = null;
   leadsPanel.classList.remove('hidden');
   leadsNavBtn.classList.add('active');
   if (window.innerWidth <= 640) closeSidebar();
@@ -1671,6 +1834,256 @@ document.getElementById('leads-list').addEventListener('click', async e => {
     if (!res.ok) { alert('Failed to remove lead'); return; }
     loadLeads();
   } catch { alert('Failed to remove lead'); }
+});
+
+// ── Smart Home ────────────────────────────────────────────────────────────────
+
+const smarthomePanel  = document.getElementById('smarthome-panel');
+const smarthomeNavBtn = document.getElementById('smarthome-nav-btn');
+
+let shDevices        = [];
+let shStatuses       = {};
+let shPendingControls = {};
+let shRefreshTimer   = null;
+
+const DEVICE_ICONS = {
+  dj: '💡', dc: '✨', tgq: '💡', gyd: '💡', fwd: '💡', dd: '💡',
+  kg: '🔌', cz: '🔌', pc: '🔌', dlq: '🔌',
+  kt: '❄️',
+  fs: '🌀',
+  cl: '🎚️',
+};
+const LIGHT_CATS = new Set(['dj', 'dc', 'tgq', 'gyd', 'fwd', 'dd', 'cl']);
+
+function shIcon(cat) { return DEVICE_ICONS[cat] || '🏠'; }
+function shIsLight(cat) { return LIGHT_CATS.has(cat); }
+
+function openSmartHome() {
+  chatMain.classList.add('hidden');
+  leadsPanel.classList.add('hidden');
+  leadsNavBtn.classList.remove('active');
+  smarthomePanel.classList.remove('hidden');
+  smarthomeNavBtn.classList.add('active');
+  if (window.innerWidth <= 640) closeSidebar();
+  loadSmartHomeDevices();
+  shRefreshTimer = setInterval(refreshSmartHomeStatuses, 30000);
+}
+
+function closeSmartHome() {
+  clearInterval(shRefreshTimer); shRefreshTimer = null;
+  smarthomePanel.classList.add('hidden');
+  chatMain.classList.remove('hidden');
+  smarthomeNavBtn.classList.remove('active');
+}
+
+smarthomeNavBtn.addEventListener('click', openSmartHome);
+document.getElementById('smarthome-back-btn').addEventListener('click', closeSmartHome);
+document.getElementById('sh-refresh-btn').addEventListener('click', () => loadSmartHomeDevices());
+document.getElementById('sh-retry-btn').addEventListener('click', () => loadSmartHomeDevices());
+
+async function shFetch(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function showShState(state) {
+  document.getElementById('sh-loading').classList.toggle('hidden', state !== 'loading');
+  document.getElementById('sh-error').classList.toggle('hidden', state !== 'error');
+  document.getElementById('device-grid').classList.toggle('hidden', state !== 'grid');
+  document.getElementById('sh-empty').classList.toggle('hidden', state !== 'empty');
+}
+
+async function loadSmartHomeDevices() {
+  showShState('loading');
+  try {
+    shDevices = await shFetch('/api/devices');
+    if (!shDevices.length) { showShState('empty'); return; }
+    const results = await Promise.allSettled(
+      shDevices.map(d =>
+        shFetch(`/api/devices/${encodeURIComponent(d.id)}/status`).then(s => ({ id: d.id, status: s }))
+      )
+    );
+    shStatuses = {};
+    results.forEach(r => { if (r.status === 'fulfilled') shStatuses[r.value.id] = r.value.status; });
+    showShState('grid');
+    renderDeviceGrid();
+  } catch (err) {
+    document.getElementById('sh-error-msg').textContent = `Failed to load devices: ${err.message}`;
+    showShState('error');
+  }
+}
+
+async function refreshSmartHomeStatuses() {
+  if (!shDevices.length) return;
+  const results = await Promise.allSettled(
+    shDevices.map(d =>
+      shFetch(`/api/devices/${encodeURIComponent(d.id)}/status`).then(s => ({ id: d.id, status: s }))
+    )
+  );
+  results.forEach(r => { if (r.status === 'fulfilled') shStatuses[r.value.id] = r.value.status; });
+  shDevices.forEach(d => { if (!shPendingControls[d.id]) updateCardControls(d.id); });
+}
+
+function renderDeviceGrid() {
+  const grid = document.getElementById('device-grid');
+  grid.innerHTML = '';
+  shDevices.forEach(d => grid.appendChild(buildDeviceCard(d)));
+}
+
+function buildDeviceCard(device) {
+  const { id, name, category, online } = device;
+  const st    = shStatuses[id] || {};
+  const isOn  = !!(st.switch_1 ?? st.switch_led ?? st.switch);
+  const light = shIsLight(category);
+  const hasBright = light && st.bright_value !== undefined;
+  const hasTemp   = light && st.temp_value   !== undefined;
+
+  const card = document.createElement('div');
+  card.className = `device-card ${online ? 'online' : 'offline'}`;
+  card.dataset.deviceId = id;
+
+  const brightPct = hasBright ? Math.round((st.bright_value / 1000) * 100) : 100;
+  card.innerHTML = `
+    <div class="device-card-header">
+      <div class="device-icon">${shIcon(category)}</div>
+      <div class="device-name">${escHtml(name)}</div>
+      <div class="device-status-dot ${online ? 'online' : 'offline'}" title="${online ? 'Online' : 'Offline'}"></div>
+    </div>
+    <div class="device-toggle-row">
+      <span class="device-toggle-label">${online ? (isOn ? 'On' : 'Off') : 'Offline'}</span>
+      <label class="toggle-switch">
+        <input type="checkbox" class="sh-toggle" data-id="${escHtml(id)}"
+          ${isOn ? 'checked' : ''} ${online ? '' : 'disabled'}>
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+    ${hasBright ? `
+    <div class="device-slider-row">
+      <div class="device-slider-label">
+        <span>Brightness</span>
+        <span class="sh-bright-val">${brightPct}%</span>
+      </div>
+      <input type="range" class="device-slider sh-brightness" data-id="${escHtml(id)}"
+        min="10" max="1000" value="${st.bright_value}" ${online && isOn ? '' : 'disabled'}>
+    </div>` : ''}
+    ${hasTemp ? `
+    <div class="device-slider-row">
+      <div class="device-slider-label"><span>Warm</span><span>Cool</span></div>
+      <input type="range" class="device-slider sh-colortemp" data-id="${escHtml(id)}"
+        min="0" max="1000" value="${st.temp_value}" ${online && isOn ? '' : 'disabled'}>
+    </div>` : ''}
+  `;
+  return card;
+}
+
+function updateCardControls(deviceId) {
+  const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+  if (!card) return;
+  const st   = shStatuses[deviceId] || {};
+  const isOn = !!(st.switch_1 ?? st.switch_led ?? st.switch);
+  const tog  = card.querySelector('.sh-toggle');
+  if (tog) tog.checked = isOn;
+  const lbl = card.querySelector('.device-toggle-label');
+  if (lbl) lbl.textContent = isOn ? 'On' : 'Off';
+  const bSlider = card.querySelector('.sh-brightness');
+  if (bSlider && st.bright_value !== undefined) {
+    bSlider.value = st.bright_value;
+    bSlider.disabled = !isOn;
+    const bVal = card.querySelector('.sh-bright-val');
+    if (bVal) bVal.textContent = Math.round((st.bright_value / 1000) * 100) + '%';
+  }
+  const tSlider = card.querySelector('.sh-colortemp');
+  if (tSlider && st.temp_value !== undefined) {
+    tSlider.value = st.temp_value;
+    tSlider.disabled = !isOn;
+  }
+}
+
+function flashCard(deviceId) {
+  const card = document.querySelector(`.device-card[data-device-id="${deviceId}"]`);
+  if (!card) return;
+  card.classList.add('flash-ok');
+  setTimeout(() => card.classList.remove('flash-ok'), 600);
+}
+
+// Toggle on/off via event delegation
+document.getElementById('device-grid').addEventListener('change', async e => {
+  if (!e.target.classList.contains('sh-toggle')) return;
+  const id     = e.target.dataset.id;
+  const newVal = e.target.checked;
+  const card   = e.target.closest('.device-card');
+
+  // Optimistic UI
+  const lbl = card && card.querySelector('.device-toggle-label');
+  if (lbl) lbl.textContent = newVal ? 'On' : 'Off';
+  const bSlider = card && card.querySelector('.sh-brightness');
+  const tSlider = card && card.querySelector('.sh-colortemp');
+  if (bSlider) bSlider.disabled = !newVal;
+  if (tSlider) tSlider.disabled = !newVal;
+
+  const st = shStatuses[id] || {};
+  const switchKey = 'switch_led' in st ? 'switch_led' : ('switch' in st ? 'switch' : 'switch_1');
+  shPendingControls[id] = true;
+  try {
+    await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
+      method: 'POST',
+      body: JSON.stringify({ commands: { [switchKey]: newVal } }),
+    });
+    shStatuses[id] = { ...st, [switchKey]: newVal };
+    flashCard(id);
+  } catch {
+    // Rollback
+    e.target.checked = !newVal;
+    if (lbl) lbl.textContent = !newVal ? 'On' : 'Off';
+    if (bSlider) bSlider.disabled = newVal;
+    if (tSlider) tSlider.disabled = newVal;
+  } finally {
+    delete shPendingControls[id];
+  }
+});
+
+// Sliders with 400ms debounce
+const shSliderDebounce = {};
+document.getElementById('device-grid').addEventListener('input', e => {
+  if (e.target.classList.contains('sh-brightness')) {
+    const id  = e.target.dataset.id;
+    const val = parseInt(e.target.value);
+    const card = e.target.closest('.device-card');
+    const disp = card && card.querySelector('.sh-bright-val');
+    if (disp) disp.textContent = Math.round((val / 1000) * 100) + '%';
+    clearTimeout(shSliderDebounce[id + '_b']);
+    shSliderDebounce[id + '_b'] = setTimeout(async () => {
+      shPendingControls[id] = true;
+      try {
+        await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
+          method: 'POST',
+          body: JSON.stringify({ commands: { bright_value: val } }),
+        });
+        shStatuses[id] = { ...(shStatuses[id] || {}), bright_value: val };
+      } catch { /* corrected on next refresh */ }
+      finally { delete shPendingControls[id]; }
+    }, 400);
+  }
+  if (e.target.classList.contains('sh-colortemp')) {
+    const id  = e.target.dataset.id;
+    const val = parseInt(e.target.value);
+    clearTimeout(shSliderDebounce[id + '_t']);
+    shSliderDebounce[id + '_t'] = setTimeout(async () => {
+      shPendingControls[id] = true;
+      try {
+        await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
+          method: 'POST',
+          body: JSON.stringify({ commands: { temp_value: val } }),
+        });
+        shStatuses[id] = { ...(shStatuses[id] || {}), temp_value: val };
+      } catch { /* corrected on next refresh */ }
+      finally { delete shPendingControls[id]; }
+    }, 400);
+  }
 });
 
 function showUpdateToast(registration) {

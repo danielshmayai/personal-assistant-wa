@@ -21,6 +21,7 @@ from app.memory.store import init_memory_tables, _get_conn
 from app.routers.google_auth import router as google_auth_router
 from app.routers.web_chat import router as web_chat_router
 from app.routers.leads import router as leads_router
+from app.routers.smart_home import router as smart_home_router
 from app.graph.checkpointer import setup_checkpointer
 
 from app.logging_config import setup_logging
@@ -188,6 +189,7 @@ app.include_router(waha_router)
 app.include_router(google_auth_router)
 app.include_router(web_chat_router)
 app.include_router(leads_router)
+app.include_router(smart_home_router)
 
 # Serve the web UI static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
