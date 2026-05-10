@@ -322,5 +322,32 @@ def _ddg_search(query: str) -> str:
         return f"Web search unavailable: {e}"
 
 
+import re as _re
+from urllib.parse import quote as _quote
+
+
+def _normalize_phone(raw: str) -> str:
+    digits = _re.sub(r"\D", "", raw)
+    if digits.startswith("00"):
+        digits = digits[2:]
+    return digits
+
+
+@tool
+def build_whatsapp_link(phone: str, message: str = "") -> str:
+    """Build a clickable wa.me deep link for a WhatsApp contact.
+    Returns a markdown link that opens WhatsApp (optionally with a pre-filled message).
+    phone: international number, e.g. '+972501234567' or '00972501234567'
+    message: optional pre-filled text for the chat"""
+    normalized = _normalize_phone(phone)
+    if not normalized:
+        return f"Could not parse phone number: {phone!r}"
+    url = f"https://wa.me/{normalized}"
+    if message.strip():
+        url += f"?text={_quote(message.strip())}"
+    label = phone if phone.startswith("+") else f"+{normalized}"
+    return f"[WhatsApp {label}]({url})"
+
+
 # Exported list for graph nodes
-WEB_TOOLS = [web_search, wikipedia_search, fetch_url, get_weather]
+WEB_TOOLS = [web_search, wikipedia_search, fetch_url, get_weather, build_whatsapp_link]

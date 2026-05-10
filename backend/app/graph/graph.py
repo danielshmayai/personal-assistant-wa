@@ -125,10 +125,24 @@ async def stream_graph(user_text: str, chat_id: str):
         if ename == "on_chat_model_stream" and node == "agent":
             chunk = event["data"].get("chunk")
             if chunk and chunk.content and not getattr(chunk, "tool_call_chunks", None):
-                text = extract_text(chunk.content)
-                if text:
-                    reply_parts.append(text)
-                    yield {"type": "token", "content": text}
+                raw = chunk.content
+                if isinstance(raw, list):
+                    for block in raw:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type", "")
+                        if btype == "thinking":
+                            thinking_text = block.get("thinking", "")
+                            if thinking_text:
+                                yield {"type": "thinking_token", "content": thinking_text}
+                        elif btype == "text":
+                            text = block.get("text", "")
+                            if text:
+                                reply_parts.append(text)
+                                yield {"type": "token", "content": text}
+                elif isinstance(raw, str) and raw:
+                    reply_parts.append(raw)
+                    yield {"type": "token", "content": raw}
 
         elif ename == "on_tool_start":
             yield {

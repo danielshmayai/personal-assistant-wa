@@ -426,11 +426,11 @@ def test_reflection_node_triggers_on_correction_signal():
 # 9. Web tools
 # ---------------------------------------------------------------------------
 
-EXPECTED_WEB_TOOL_NAMES = {"web_search", "wikipedia_search", "fetch_url", "get_weather"}
+EXPECTED_WEB_TOOL_NAMES = {"web_search", "wikipedia_search", "fetch_url", "get_weather", "build_whatsapp_link"}
 
 
 def test_web_tools_exist_with_correct_names():
-    """WEB_TOOLS must export exactly the 4 expected tool names."""
+    """WEB_TOOLS must export exactly the 5 expected tool names."""
     from app.web.tools import WEB_TOOLS
     actual = {t.name for t in WEB_TOOLS}
     assert actual == EXPECTED_WEB_TOOL_NAMES, (
