@@ -4,7 +4,7 @@ Tools:
   web_search      — Tavily (if TAVILY_API_KEY set) or DuckDuckGo fallback
   wikipedia_search — factual / encyclopedic queries
   fetch_url        — read any web page the user shares
-  get_weather      — current weather via wttr.in (no key needed)
+  get_weather      — current weather + 7-day forecast via Open-Meteo (no key needed)
 """
 
 import ipaddress
@@ -173,20 +173,114 @@ async def fetch_url(url: str) -> str:
 
 @tool
 async def get_weather(location: str) -> str:
-    """Get the current weather for any city or location.
-    Returns temperature, conditions, wind, and humidity.
-    Example: get_weather("Tel Aviv") or get_weather("London, UK")"""
+    """Get current weather AND a 7-day daily forecast for any city or location,
+    including small Israeli towns, moshavim, and kibbutzim.
+    Returns today's conditions plus max/min temperatures, rain probability,
+    and weather description for each of the next 7 days.
+    Example: get_weather("Tel Aviv") or get_weather("נילי") or get_weather("Modi'in")"""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"https://wttr.in/{location}",
-                params={"format": "4", "lang": "en"},
-                headers={"User-Agent": "curl/7.0"},
+            # Step 1: geocode via OpenStreetMap Nominatim — best Hebrew/Israeli coverage
+            geo = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": location, "format": "json", "limit": 1, "accept-language": "en"},
+                headers={"User-Agent": "personal-assistant-bot/1.0"},
             )
-            return r.text.strip() or f"No weather data for '{location}'."
+            geo.raise_for_status()
+            geo_results = geo.json()
+
+            # Fallback: append "Israel" and retry if not found
+            if not geo_results:
+                geo2 = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": f"{location}, Israel", "format": "json", "limit": 1, "accept-language": "en"},
+                    headers={"User-Agent": "personal-assistant-bot/1.0"},
+                )
+                geo2.raise_for_status()
+                geo_results = geo2.json()
+
+            if not geo_results:
+                return f"Could not find location: '{location}'. Try adding the country, e.g. '{location}, Israel'."
+
+            place = geo_results[0]
+            lat = float(place["lat"])
+            lon = float(place["lon"])
+            place_name = place.get("display_name", location).split(",")[0:2]
+            place_name = ", ".join(place_name)
+
+            # Step 2: 7-day forecast from Open-Meteo (lat/lon based — works everywhere)
+            fc = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current_weather": "true",
+                    "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode",
+                    "timezone": "auto",
+                    "forecast_days": 7,
+                },
+            )
+            fc.raise_for_status()
+            data = fc.json()
+
+        cw = data.get("current_weather", {})
+        daily = data.get("daily", {})
+
+        lines = [f"📍 {place_name}", ""]
+        lines.append(f"**Now:** {_wmo_label(cw.get('weathercode', 0))}  "
+                     f"{cw.get('temperature', '?')}°C  "
+                     f"💨 {cw.get('windspeed', '?')} km/h")
+        lines.append("")
+        lines.append("**7-day forecast:**")
+
+        dates  = daily.get("time", [])
+        t_max  = daily.get("temperature_2m_max", [])
+        t_min  = daily.get("temperature_2m_min", [])
+        rain   = daily.get("precipitation_probability_max", [])
+        wcodes = daily.get("weathercode", [])
+
+        for i, date in enumerate(dates):
+            day_label = _day_label(date, i)
+            desc = _wmo_label(wcodes[i] if i < len(wcodes) else 0)
+            hi   = f"{t_max[i]:.0f}" if i < len(t_max) else "?"
+            lo   = f"{t_min[i]:.0f}" if i < len(t_min) else "?"
+            rain_pct = f"{rain[i]:.0f}%" if i < len(rain) and rain[i] is not None else "?"
+            lines.append(f"  {day_label}: {desc}  ↑{hi}°/↓{lo}°C  🌧 {rain_pct}")
+
+        return "\n".join(lines)
+
     except Exception as e:
         logger.exception("Weather lookup failed for %s", location)
         return f"Weather lookup failed: {e}"
+
+
+def _wmo_label(code: int) -> str:
+    """Map WMO weather interpretation codes to emoji + description."""
+    _MAP = {
+        0: "☀️ Clear",
+        1: "🌤 Mainly clear", 2: "⛅ Partly cloudy", 3: "☁️ Overcast",
+        45: "🌫 Fog", 48: "🌫 Icy fog",
+        51: "🌦 Light drizzle", 53: "🌦 Drizzle", 55: "🌧 Heavy drizzle",
+        61: "🌧 Light rain", 63: "🌧 Rain", 65: "🌧 Heavy rain",
+        71: "🌨 Light snow", 73: "❄️ Snow", 75: "❄️ Heavy snow",
+        80: "🌦 Rain showers", 81: "🌧 Heavy showers", 82: "⛈ Violent showers",
+        95: "⛈ Thunderstorm", 96: "⛈ Thunderstorm + hail", 99: "⛈ Severe thunderstorm",
+    }
+    return _MAP.get(code, f"⛅ (code {code})")
+
+
+def _day_label(date_str: str, index: int) -> str:
+    """Return 'Today', 'Tomorrow', or short weekday name."""
+    try:
+        from datetime import date
+        d = date.fromisoformat(date_str)
+        if index == 0:
+            return "Today    "
+        if index == 1:
+            return "Tomorrow "
+        return d.strftime("%A  ")
+    except Exception:
+        return date_str
 
 
 # ── Private helpers ──────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -46,7 +47,9 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 - hide_fact(category, entity): soft-delete a fact (information remains in the vault, just stops surfacing).
 - hide_rule(instruction): strike through a rule line by matching its text.
 
-When the user says *"remember that…"* or *"note that…"* — save it immediately as a fact or rule (whichever fits best) and confirm with the file path."""
+When the user says *"remember that…"* or *"note that…"* — save it immediately as a fact or rule (whichever fits best) and confirm with the file path.
+
+When asked what you can do, what your capabilities are, or how to use you — call read_note(filepath="System/Capabilities.md") and present the contents clearly. This file is auto-generated on every startup and always reflects the current set of features."""
 
 _WA_FORMAT = """
 
@@ -174,7 +177,12 @@ async def agent_node(state: PAState) -> dict:
 
     messages = [SystemMessage(content=system)] + _sanitize_for_gemini(state["messages"])
 
-    response = await llm.ainvoke(messages)
+    try:
+        response = await asyncio.wait_for(llm.ainvoke(messages), timeout=30.0)
+    except asyncio.TimeoutError:
+        logger.error("Gemini API call timed out after 30s for chat_id=%s", chat_id)
+        return {"messages": [AIMessage(content="Sorry, I'm taking too long to respond right now. Please try again.")]}
+
     try:
         response.additional_kwargs["ts"] = datetime.now(timezone.utc).isoformat()
     except Exception:

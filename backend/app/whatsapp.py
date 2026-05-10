@@ -1,7 +1,9 @@
+import asyncio
 import logging
 from fastapi import APIRouter, Query, Request, Response
 import httpx
 from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID, MY_WHATSAPP_LID, WEBHOOK_SECRET
+from app.worker import enqueue
 
 logger = logging.getLogger("pa.whatsapp")
 router = APIRouter()
@@ -188,6 +190,8 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     - Group chat: IGNORE unless message starts with @danidin or !danidin.
     - DMs from others: IGNORE completely.
     """
+    # Secret is validated on every inbound call (not just at startup).
+    # Falls open only when WEBHOOK_SECRET env var is unset (dev mode); startup warning fires in that case.
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         logger.warning("Webhook rejected: invalid or missing secret (remote=%s)", request.client)
         return Response(status_code=403)
@@ -215,10 +219,12 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
 
     chat_id = _extract_chat_id(body)
 
+    message_id = payload.get("id", "")
+
     # Cache media bytes from the webhook payload NOW (before the agent runs).
     if media_ctx:
         from app.media_cache import store_from_payload
-        store_from_payload(payload.get("id", ""), payload)
+        store_from_payload(message_id, payload)
 
     # Build the full message for the agent: media tag (if any) + caption/text
     if media_ctx:
@@ -226,22 +232,29 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     else:
         full_text = text
 
-    # --- SELF-CHAT: respond to everything ---
+    # --- SELF-CHAT: enqueue for async processing ---
     if _is_self_chat(body):
         logger.info("Self-chat: %.80s...", full_text)
-        reply = await _process_message(full_text, chat_id)
-        await send_whatsapp_message(chat_id, reply)
+        enqueue(message_id, chat_id, full_text)
+        return Response(status_code=202)
+
+    # --- WATCHED LEADS: log silently, no reply ---
+    from app import leads as _leads
+    if _leads.is_watched(chat_id):
+        direction = "outbound" if payload.get("fromMe", False) else "inbound"
+        logger.info("Lead message: chat=%s dir=%s %.60s", chat_id, direction, full_text)
+        asyncio.create_task(_leads.log_and_extract(chat_id, direction, full_text))
         return Response(status_code=200)
 
-    # --- GROUPS and DMs: respond only when @danidin / !danidin prefix is used ---
+    # --- GROUPS and DMs: enqueue when @danidin / !danidin prefix is used ---
     text_lower = text.lower()
     for trigger in BOT_TRIGGERS:
         if text_lower.startswith(trigger):
             stripped = full_text[len(trigger):].strip()
             if stripped:
                 logger.info("Trigger '%s' in chat %s: %.80s...", trigger, chat_id, stripped)
-                reply = await _process_message(stripped, chat_id)
-                await send_whatsapp_message(chat_id, reply)
+                enqueue(message_id, chat_id, stripped)
+                return Response(status_code=202)
             return Response(status_code=200)
 
     # No trigger and not self-chat — ignore.
@@ -255,13 +268,32 @@ def _is_rtl(text: str) -> bool:
 
 async def _process_message(text: str, chat_id: str) -> str:
     """Run text through the LangGraph pipeline. Returns the reply string."""
-    # Import here to avoid circular imports at module load.
+    from app.context import request_id_var
     from app.graph.graph import run_graph
+    request_id = request_id_var.get()
     try:
         reply = await run_graph(text, chat_id)
     except Exception:
-        logger.exception("Graph execution failed")
+        logger.exception(
+            "Graph execution failed chat_id=%s request_id=%s",
+            chat_id,
+            request_id,
+            extra={"event": "graph_error", "chat_id": chat_id, "request_id": request_id},
+        )
         reply = "[Error] Something went wrong processing your message."
     # For RTL replies (Hebrew/Arabic), prepend RLM so the prefix anchors to the right.
     prefix = "\u200f[ *danidin* ]" if _is_rtl(reply) else "[ *danidin* ]"
-    return f"{prefix} {reply}"
+    full_reply = f"{prefix} {reply}"
+    logger.info(
+        "whatsapp: reply sent chat_id=%s request_id=%s len=%d",
+        chat_id,
+        request_id,
+        len(full_reply),
+        extra={
+            "event": "reply_sent",
+            "chat_id": chat_id,
+            "request_id": request_id,
+            "reply_len": len(full_reply),
+        },
+    )
+    return full_reply

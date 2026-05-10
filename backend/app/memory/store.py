@@ -17,6 +17,14 @@ def init_memory_tables():
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS vault_embeddings (
+                    filepath TEXT PRIMARY KEY,
+                    embedding vector(768) NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS memory_facts (
                     id SERIAL PRIMARY KEY,
@@ -53,6 +61,29 @@ def init_memory_tables():
                 )
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS rule_embeddings (
+                    rule_text TEXT PRIMARY KEY,
+                    embedding vector(768) NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS episodes (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    embedding vector(768),
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_log (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    transcript TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS web_conversations (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL DEFAULT 'New conversation',
@@ -60,9 +91,33 @@ def init_memory_tables():
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS watched_leads (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT UNIQUE NOT NULL,
+                    phone TEXT NOT NULL,
+                    label TEXT DEFAULT '',
+                    obsidian_note TEXT DEFAULT '',
+                    extracted_data JSONB DEFAULT '{}',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    last_activity TIMESTAMPTZ
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS lead_messages (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    ts TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS lead_messages_chat_id_idx ON lead_messages(chat_id)")
         conn.commit()
     finally:
         conn.close()
+    from app.job_queue import init_table as _init_job_queue
+    _init_job_queue()
 
 
 def save_google_token(chat_id: str, creds) -> None:
@@ -70,23 +125,51 @@ def save_google_token(chat_id: str, creds) -> None:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO google_tokens (chat_id, access_token, refresh_token, token_expiry, scopes)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (chat_id) DO UPDATE
-                SET access_token = EXCLUDED.access_token,
-                    refresh_token = EXCLUDED.refresh_token,
-                    token_expiry = EXCLUDED.token_expiry,
-                    scopes = EXCLUDED.scopes
-            """, (
-                chat_id,
-                encrypt(creds.token or ""),
-                encrypt(creds.refresh_token or ""),
-                creds.expiry,
-                ",".join(creds.scopes) if creds.scopes else "",
-            ))
+            if creds.refresh_token:
+                cur.execute("""
+                    INSERT INTO google_tokens (chat_id, access_token, refresh_token, token_expiry, scopes)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE
+                    SET access_token = EXCLUDED.access_token,
+                        refresh_token = EXCLUDED.refresh_token,
+                        token_expiry = EXCLUDED.token_expiry,
+                        scopes = EXCLUDED.scopes
+                """, (
+                    chat_id,
+                    encrypt(creds.token or ""),
+                    encrypt(creds.refresh_token),
+                    creds.expiry,
+                    ",".join(creds.scopes) if creds.scopes else "",
+                ))
+            else:
+                # refresh_token absent (normal on token-refresh responses) — preserve existing
+                cur.execute("""
+                    INSERT INTO google_tokens (chat_id, access_token, refresh_token, token_expiry, scopes)
+                    VALUES (%s, %s, '', %s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE
+                    SET access_token = EXCLUDED.access_token,
+                        token_expiry = EXCLUDED.token_expiry,
+                        scopes = EXCLUDED.scopes
+                """, (
+                    chat_id,
+                    encrypt(creds.token or ""),
+                    creds.expiry,
+                    ",".join(creds.scopes) if creds.scopes else "",
+                ))
         conn.commit()
         logger.info("Saved Google token for chat_id=%s", chat_id)
+    finally:
+        conn.close()
+
+
+def delete_google_token(chat_id: str) -> None:
+    """Remove a stored Google token (forces re-auth on next Google tool call)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM google_tokens WHERE chat_id = %s", (chat_id,))
+        conn.commit()
+        logger.info("Deleted Google token for chat_id=%s", chat_id)
     finally:
         conn.close()
 
@@ -221,20 +304,38 @@ def delete_rule(rule_id: int) -> bool:
 async def load_memory_context(query: str = "") -> str:
     """Build a text block of rules + query-relevant facts from the Obsidian vault.
 
-    Rules from `System/Rules.md` always load. Facts are keyword-matched against
-    `query` (typically the latest user message) so injection stays bounded —
-    important on a 4GB Gemma 4 deployment.
+    Tries semantic (pgvector) search first; falls back to keyword matching.
     """
     from app.memory import obsidian
+    from app.memory.embeddings import semantic_search
     loop = asyncio.get_running_loop()
     rules = await loop.run_in_executor(None, obsidian.read_rules)
-    facts = await loop.run_in_executor(None, obsidian.read_relevant_facts, query)
+
+    facts = ""
+    episodes: list[str] = []
+    if query:
+        try:
+            filepaths = await loop.run_in_executor(None, semantic_search, query)
+            non_system = [f for f in filepaths if not f.startswith("System/")]
+            if non_system:
+                facts = await loop.run_in_executor(None, obsidian.read_facts_by_paths, non_system)
+        except Exception:
+            pass
+        try:
+            from app.memory.episodes import get_relevant_episodes
+            episodes = await get_relevant_episodes(query)
+        except Exception:
+            pass
+    if not facts:
+        facts = await loop.run_in_executor(None, obsidian.read_relevant_facts, query)
 
     parts: list[str] = []
     if rules:
         parts.append("## Rules\n" + rules)
     if facts:
         parts.append("## Relevant Facts\n" + facts)
+    if episodes:
+        parts.append("## Past relevant conversations\n" + "\n".join(f"- {e}" for e in episodes))
     if not parts:
         return ""
     return "\n\n".join(parts)[:obsidian.MAX_INJECTED_BYTES]
@@ -258,17 +359,46 @@ def save_oauth_state(nonce: str, chat_id: str) -> None:
 
 
 def pop_oauth_state(nonce: str) -> str | None:
-    """Return and delete the chat_id for the given nonce. Returns None if not found or expired (>10 min)."""
+    """Return and delete the chat_id for the given nonce. Returns None if not found or expired (>1 hour).
+
+    Prefer peek_oauth_state + delete_oauth_state when you need to retry on failure.
+    """
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM oauth_pending_states WHERE nonce = %s AND created_at > NOW() - INTERVAL '10 minutes' RETURNING chat_id",
+                "DELETE FROM oauth_pending_states WHERE nonce = %s AND created_at > NOW() - INTERVAL '1 hour' RETURNING chat_id",
                 (nonce,),
             )
             row = cur.fetchone()
         conn.commit()
         return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def peek_oauth_state(nonce: str) -> str | None:
+    """Return the chat_id for a nonce without deleting it. Returns None if not found or expired (>1 hour)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT chat_id FROM oauth_pending_states WHERE nonce = %s AND created_at > NOW() - INTERVAL '1 hour'",
+                (nonce,),
+            )
+            row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def delete_oauth_state(nonce: str) -> None:
+    """Delete a nonce after successful token exchange."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM oauth_pending_states WHERE nonce = %s", (nonce,))
+        conn.commit()
     finally:
         conn.close()
 
@@ -316,6 +446,86 @@ def delete_web_conversation(chat_id: str) -> bool:
         if deleted:
             logger.info("Deleted conversation: %s", chat_id)
         return deleted
+    finally:
+        conn.close()
+
+
+def save_episode(chat_id: str, summary: str, vec_str: str | None = None) -> None:
+    """Store an LLM-generated conversation summary, optionally with its embedding."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            if vec_str:
+                cur.execute(
+                    "INSERT INTO episodes (chat_id, summary, embedding) VALUES (%s, %s, %s::vector)",
+                    (chat_id, summary, vec_str),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO episodes (chat_id, summary) VALUES (%s, %s)",
+                    (chat_id, summary),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def search_episodes(vec_str: str, limit: int = 3) -> list[str]:
+    """Return episode summaries ranked by cosine similarity to vec_str."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT summary FROM episodes
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (vec_str, limit),
+            )
+            return [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def log_conversation(chat_id: str, transcript: str) -> None:
+    """Persist a finished conversation transcript for self-review."""
+    if not transcript.strip():
+        return
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO conversation_log (chat_id, transcript) VALUES (%s, %s)",
+                (chat_id, transcript),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_recent_conversations(hours: int = 24) -> list[dict]:
+    """Return transcripts logged in the last N hours, newest first."""
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT chat_id, transcript, created_at
+                FROM conversation_log
+                WHERE created_at > %s
+                ORDER BY created_at DESC
+                LIMIT 50
+                """,
+                (cutoff,),
+            )
+            return [
+                {"chat_id": r[0], "transcript": r[1], "created_at": r[2].isoformat()}
+                for r in cur.fetchall()
+            ]
     finally:
         conn.close()
 

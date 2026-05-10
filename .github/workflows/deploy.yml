@@ -34,9 +34,12 @@ jobs:
         shell: powershell
         run: |
           cd D:\Claude\pa\backend
-          if (-not (Test-Path ".venv")) { python -m venv .venv }
-          .venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt -q
-          .venv\Scripts\pytest tests/test_sanity.py -v
+          if (-not (Test-Path ".venv\Scripts\python.exe")) {
+            Write-Host "venv missing - please recreate it manually as the shmay user."
+            exit 1
+          }
+          .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -q
+          .venv\Scripts\python.exe -m pytest tests/test_sanity.py -v
 
   deploy:
     name: Pull & Rebuild Backend
@@ -98,18 +101,23 @@ jobs:
         if: success()
         shell: powershell
         env:
-          WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
-          WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
-          MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
-          WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
           COMMIT_SHA: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
+          $apiKey  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_API_KEY=' })  -replace '^WAHA_API_KEY=',''
+          $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
+          $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
+          if (-not $session) { $session = "default" }
+          for ($i = 1; $i -le 12; $i++) {
+            $s = (Invoke-RestMethod -Uri "http://localhost:3000/api/sessions/$session" -Headers @{"X-Api-Key"=$apiKey} -ErrorAction SilentlyContinue).status
+            if ($s -eq "WORKING") { break }
+            Write-Host "WAHA session status: $s - waiting..."; Start-Sleep -Seconds 5
+          }
           $sha = $env:COMMIT_SHA.Substring(0, 7)
           $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
-          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $env:WAHA_SESSION } | ConvertTo-Json
+          $body = @{ chatId = $chatId; text = "[PA Deploy] SUCCESS`n${sha}: ${msg}"; session = $session } | ConvertTo-Json
           try {
-            Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
+            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$apiKey} -Body $body
           } catch {
             Write-Host "WhatsApp notification skipped: $_"
           }
@@ -118,19 +126,24 @@ jobs:
         if: failure()
         shell: powershell
         env:
-          WAHA_BASE_URL: ${{ secrets.WAHA_BASE_URL }}
-          WAHA_API_KEY: ${{ secrets.WAHA_API_KEY }}
-          MY_WHATSAPP_ID: ${{ secrets.MY_WHATSAPP_ID }}
-          WAHA_SESSION: ${{ secrets.WAHA_SESSION }}
           COMMIT_SHA: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           REPO: ${{ github.repository }}
         run: |
+          $apiKey  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_API_KEY=' })  -replace '^WAHA_API_KEY=',''
+          $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
+          $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
+          if (-not $session) { $session = "default" }
+          for ($i = 1; $i -le 12; $i++) {
+            $s = (Invoke-RestMethod -Uri "http://localhost:3000/api/sessions/$session" -Headers @{"X-Api-Key"=$apiKey} -ErrorAction SilentlyContinue).status
+            if ($s -eq "WORKING") { break }
+            Write-Host "WAHA session status: $s - waiting..."; Start-Sleep -Seconds 5
+          }
           $sha = $env:COMMIT_SHA.Substring(0, 7)
           $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
-          $body = @{ chatId = $env:MY_WHATSAPP_ID; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $env:WAHA_SESSION } | ConvertTo-Json
+          $body = @{ chatId = $chatId; text = "[PA Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $session } | ConvertTo-Json
           try {
-            Invoke-RestMethod -Uri "$env:WAHA_BASE_URL/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$env:WAHA_API_KEY} -Body $body
+            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$apiKey} -Body $body
           } catch {
             Write-Host "WhatsApp notification skipped: $_"
           }

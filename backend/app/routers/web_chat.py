@@ -42,6 +42,7 @@ def _get_whisper():
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
 def _verify_token(token: str) -> bool:
+    # Fails closed: rejects all connections when TEST_TOKEN is not configured.
     return bool(TEST_TOKEN) and token == TEST_TOKEN
 
 

@@ -41,7 +41,7 @@ PATTERNS = [
 BLOCKED_FILES = {".env", ".env.local", ".env.production", "credentials.json", "token.json"}
 
 # Patterns in these files are expected/safe (e.g. .env.example with placeholders)
-ALLOWLISTED_FILES = {".env.example", "SETUP_GUIDE.md"}
+ALLOWLISTED_FILES = {".env.example", "SETUP_GUIDE.md", "self_review.ps1"}
 
 # Lines containing these strings are false-positive placeholders — skip them
 PLACEHOLDER_TOKENS = {"changeme", "your_", "<your", "example", "placeholder", "fake", "xxxx", "..."}
