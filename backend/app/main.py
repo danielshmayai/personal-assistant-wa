@@ -162,7 +162,10 @@ async def lifespan(app: FastAPI):
     from app.worker import start_worker, stop_worker, recover_jobs
     start_worker()
     await recover_jobs()
+    from app.scheduled_jobs import start as start_scheduler, stop as stop_scheduler
+    await start_scheduler()
     yield
+    await stop_scheduler()
     await stop_worker()
 
 
