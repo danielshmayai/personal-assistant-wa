@@ -273,14 +273,16 @@ async def _process_message(text: str, chat_id: str) -> str:
     request_id = request_id_var.get()
     try:
         reply = await run_graph(text, chat_id)
-    except Exception:
+    except Exception as _exc:
+        import traceback as _tb
+        _trace = _tb.format_exc()
         logger.exception(
             "Graph execution failed chat_id=%s request_id=%s",
             chat_id,
             request_id,
             extra={"event": "graph_error", "chat_id": chat_id, "request_id": request_id},
         )
-        reply = "[Error] Something went wrong processing your message."
+        reply = f"[Error] {type(_exc).__name__}: {_exc}\n\n```\n{_trace[-1200:]}\n```"
     # For RTL replies (Hebrew/Arabic), prepend RLM so the prefix anchors to the right.
     prefix = "\u200f[ *danidin* ]" if _is_rtl(reply) else "[ *danidin* ]"
     full_reply = f"{prefix} {reply}"
