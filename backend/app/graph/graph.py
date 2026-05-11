@@ -43,7 +43,11 @@ def build_graph():
 
 
 async def inject_memory_node(state: PAState) -> dict:
-    context = await load_memory_context(state.get("user_input", ""))
+    try:
+        context = await load_memory_context(state.get("user_input", ""))
+    except Exception:
+        logger.exception("inject_memory_node failed — continuing without memory context")
+        context = ""
     return {"memory_context": context}
 
 
@@ -196,10 +200,16 @@ async def run_graph(text: str, chat_id: str) -> str:
     )
     t0 = time.monotonic()
 
-    result = await graph.ainvoke(
-        {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
-        config=config,
-    )
+    try:
+        result = await graph.ainvoke(
+            {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
+            config=config,
+        )
+    except Exception as exc:
+        import traceback as _tb
+        _trace = _tb.format_exc()
+        logger.error("graph.ainvoke FAILED chat_id=%s: %s\n%s", chat_id, exc, _trace)
+        return f"⚠️ *שגיאה פנימית*\n`{type(exc).__name__}: {exc}`\n\n```\n{_trace[-2000:]}\n```"
 
     duration_ms = round((time.monotonic() - t0) * 1000)
     raw = _last_ai_reply(result.get("messages", []))
