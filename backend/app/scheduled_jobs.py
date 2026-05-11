@@ -44,6 +44,67 @@ def init_table() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_run_at "
                 "ON scheduled_jobs (run_at) WHERE status = 'pending'"
             )
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS pending_notifications (
+                    id          SERIAL PRIMARY KEY,
+                    chat_id     TEXT NOT NULL,
+                    message     TEXT NOT NULL,
+                    created_at  TIMESTAMPTZ DEFAULT NOW(),
+                    delivered_at TIMESTAMPTZ
+                )
+            """)
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pending_notif_chat "
+                "ON pending_notifications (chat_id) WHERE delivered_at IS NULL"
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def store_notification(chat_id: str, message: str) -> None:
+    if not DATABASE_URL:
+        return
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO pending_notifications (chat_id, message) VALUES (%s, %s)",
+                (chat_id, message),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fetch_pending_notifications(chat_id: str) -> list[str]:
+    if not DATABASE_URL:
+        return []
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT message FROM pending_notifications "
+                "WHERE chat_id = %s AND delivered_at IS NULL ORDER BY created_at",
+                (chat_id,),
+            )
+            rows = cur.fetchall()
+        return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def mark_notifications_delivered(chat_id: str) -> None:
+    if not DATABASE_URL:
+        return
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE pending_notifications SET delivered_at = NOW() "
+                "WHERE chat_id = %s AND delivered_at IS NULL",
+                (chat_id,),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -194,6 +255,11 @@ async def _run_job(job: dict) -> str:
 
 async def _notify(chat_id: str, text: str) -> None:
     from app.broadcast import NotificationManager
+
+    # For web sessions: always persist first so reconnects get the notification
+    if chat_id.startswith("web"):
+        await asyncio.to_thread(store_notification, chat_id, text)
+
     wa_ids = [] if chat_id.startswith("web") else [chat_id]
     web_id = chat_id if chat_id.startswith("web") else None
     await NotificationManager.broadcast(
