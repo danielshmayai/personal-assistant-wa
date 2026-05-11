@@ -1051,12 +1051,26 @@ function handleServerMsg(msg) {
     case 'done':
       finalizeAiMsg(msg.full_reply);
       break;
-    case 'notification':
-      // Scheduled action result arrives here — render as an assistant bubble
-      appendToken(msg.message || '');
-      finalizeAiMsg(msg.message || '');
+    case 'notification': {
+      // Self-contained render — no dependency on currentAiEl streaming state
+      const _nr = document.createElement('div');
+      _nr.className = 'msg-row msg-row-assistant';
+      const _na = document.createElement('div');
+      _na.className = 'msg-avatar';
+      _na.innerHTML = AI_AVATAR_SVG;
+      _nr.appendChild(_na);
+      const _nb = document.createElement('div');
+      _nb.className = 'message message-assistant';
+      const _nt = document.createElement('div');
+      _nt.className = 'ai-text-body';
+      _nt.innerHTML = marked.parse(msg.message || '');
+      _nb.appendChild(_nt);
+      _nr.appendChild(_nb);
+      messagesEl.appendChild(_nr);
+      scrollBottom();
       enableInput();
       break;
+    }
     case 'error':
       finalizeAiMsg('');
       addSystemMsg('⚠️ ' + (msg.message || 'Error'));
