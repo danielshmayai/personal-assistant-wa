@@ -101,8 +101,7 @@ def mark_notifications_delivered(chat_id: str) -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE pending_notifications SET delivered_at = NOW() "
-                "WHERE chat_id = %s AND delivered_at IS NULL",
+                "DELETE FROM pending_notifications WHERE chat_id = %s AND delivered_at IS NULL",
                 (chat_id,),
             )
         conn.commit()
