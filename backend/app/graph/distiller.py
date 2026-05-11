@@ -174,22 +174,10 @@ def _sanitize_for_gemini(messages: list, n: int = 20) -> list:
 async def agent_node(state: PAState) -> dict:
     """Single Gemini node: decides which tool to call (if any) and generates the reply."""
     import traceback
-    from app.google.tools import get_google_tools
-    from app.tuya.tools import get_tuya_tools
-    from app.memory.manager import MEMORY_TOOLS
-    from app.web.tools import WEB_TOOLS
-    from app.tts_tool import TTS_TOOLS
-    from app.schedule_tool import get_schedule_tools
+    from app.graph.tools_registry import get_all_tools
 
     chat_id = state.get("chat_id", "")
-    tools = (
-        WEB_TOOLS
-        + get_google_tools(chat_id)
-        + get_tuya_tools()
-        + MEMORY_TOOLS
-        + TTS_TOOLS
-        + get_schedule_tools(chat_id)
-    )
+    tools = get_all_tools(chat_id)
 
     tool_names = [t.name for t in tools]
     logger.info("agent_node: binding %d tools: %s", len(tool_names), tool_names)

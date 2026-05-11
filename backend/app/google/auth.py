@@ -88,6 +88,8 @@ def handle_callback(code: str, state: str) -> None:
     save_google_token(_token_key(chat_id), creds)
     delete_oauth_state(state)  # only delete after token is safely stored
     logger.info("Google token saved for key=%s (chat_id=%s)", _token_key(chat_id), chat_id)
+    from app.graph.tools_registry import clear_tools_cache
+    clear_tools_cache(chat_id)
 
 
 def get_credentials(chat_id: str) -> Credentials | None:

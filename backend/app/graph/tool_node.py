@@ -2,8 +2,11 @@ import asyncio
 import logging
 from langchain_core.messages import ToolMessage
 from app.graph.state import PAState
+from app.config import TOOL_CONCURRENCY
 
 logger = logging.getLogger("pa.tool_executor")
+
+_sem = asyncio.Semaphore(TOOL_CONCURRENCY)
 
 
 async def _run_tool_call(call: dict, tool_map: dict, chat_id: str) -> ToolMessage:
@@ -14,7 +17,8 @@ async def _run_tool_call(call: dict, tool_map: dict, chat_id: str) -> ToolMessag
     if not tool:
         return ToolMessage(content=f"Unknown tool: {name}", tool_call_id=call["id"])
     try:
-        content = str(await tool.ainvoke(args))
+        async with _sem:
+            content = str(await tool.ainvoke(args))
         logger.info("Tool %s executed for chat_id=%s", name, chat_id)
     except Exception as e:
         logger.exception("Tool %s failed", name)
@@ -24,22 +28,10 @@ async def _run_tool_call(call: dict, tool_map: dict, chat_id: str) -> ToolMessag
 
 async def tool_executor_node(state: PAState) -> dict:
     """Execute all tool calls in the last AIMessage concurrently and return ToolMessages."""
-    from app.google.tools import get_google_tools
-    from app.tuya.tools import get_tuya_tools
-    from app.memory.manager import MEMORY_TOOLS
-    from app.web.tools import WEB_TOOLS
-    from app.tts_tool import TTS_TOOLS
-    from app.schedule_tool import get_schedule_tools
+    from app.graph.tools_registry import get_all_tools
 
     chat_id = state.get("chat_id", "")
-    tools = (
-        WEB_TOOLS
-        + get_google_tools(chat_id)
-        + get_tuya_tools()
-        + MEMORY_TOOLS
-        + TTS_TOOLS
-        + get_schedule_tools(chat_id)
-    )
+    tools = get_all_tools(chat_id)
     tool_map = {t.name: t for t in tools}
 
     last_msg = state["messages"][-1]

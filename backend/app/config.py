@@ -1,5 +1,7 @@
 import os
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # "development" | "production"
+
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b-it-qat")
 WAHA_BASE_URL = os.getenv("WAHA_BASE_URL", "http://waha:3000")
@@ -76,3 +78,7 @@ LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "pa-assistant")
 
 # Set LOG_FORMAT=text to get human-readable logs instead of JSON lines.
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
+
+# Max concurrent tool executions across asyncio.gather() in tool_node.
+# Prevents flooding external APIs (Google, Tuya, web) under high recursion.
+TOOL_CONCURRENCY = int(os.getenv("TOOL_CONCURRENCY", "10"))

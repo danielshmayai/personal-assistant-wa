@@ -75,9 +75,16 @@ docker compose exec backend pytest backend/tests/ -v
 `test_worker.py` — queue serialisation tests
 `test_live.py` — end-to-end graph tests (requires `.env` with real keys)
 
+## Architecture reference
+
+See `ARCHITECTURE.md` in the repo root for full system documentation:
+module map, data flows, tool inventory, DB schema, and known constraints.
+Run `/update-architecture` after structural changes to keep it current.
+
 ## Agents & commands
 
 - Use `/repo-assess` before large refactors.
+- Use `/update-architecture` after adding tools, routes, services, or schema changes.
 - Use `/harden-assistant` when touching auth, CORS, or WEBHOOK_SECRET handling.
 - Use `/review-auth` before merging any Google OAuth or token-storage changes.
 - Use `/trace-and-debug` when diagnosing LangGraph or LangSmith trace issues.

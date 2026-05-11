@@ -15,6 +15,7 @@ from app.config import (
     OLLAMA_BASE_URL, WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION,
     WEBHOOK_SECRET, TEST_TOKEN, ALLOWED_ORIGIN,
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+    GEMINI_API_KEY, DATABASE_URL, MY_WHATSAPP_ID,
 )
 from app.whatsapp import router as waha_router
 from app.memory.store import init_memory_tables, _get_conn
@@ -112,15 +113,25 @@ def _setup_langsmith() -> None:
     )
 
 
+def _check_secret(name: str, value: str, reason: str, missing: list[str]) -> None:
+    if not value:
+        logger.warning("SECURITY: %s is not set — %s", name, reason)
+        missing.append(name)
+
+
 def _log_security_warnings() -> None:
-    """Emit startup warnings for insecure configuration."""
-    from app.config import DB_ENCRYPTION_KEY
-    if not WEBHOOK_SECRET:
-        logger.warning("SECURITY: WEBHOOK_SECRET is not set — webhook endpoint is unauthenticated")
+    """Emit startup warnings for insecure configuration; hard-fail in production."""
+    from app.config import DB_ENCRYPTION_KEY, ENVIRONMENT
+    missing_critical: list[str] = []
+
+    _check_secret("WEBHOOK_SECRET", WEBHOOK_SECRET, "webhook endpoint is unauthenticated", missing_critical)
+    _check_secret("DB_ENCRYPTION_KEY", DB_ENCRYPTION_KEY, "Google tokens stored in plaintext", missing_critical)
+    _check_secret("GEMINI_API_KEY", GEMINI_API_KEY, "LLM calls will fail", missing_critical)
+    _check_secret("DATABASE_URL", DATABASE_URL, "no database connection", missing_critical)
+    _check_secret("MY_WHATSAPP_ID", MY_WHATSAPP_ID, "WhatsApp message routing broken", missing_critical)
+
     if not TEST_TOKEN:
-        logger.warning("SECURITY: TEST_TOKEN is not set — WebSocket and API endpoints reject all connections")
-    if not DB_ENCRYPTION_KEY:
-        logger.warning("SECURITY: DB_ENCRYPTION_KEY is not set — Google tokens stored in plaintext")
+        logger.warning("SECURITY: TEST_TOKEN is not set — admin/test endpoints open to anyone")
     if not WAHA_API_KEY:
         logger.warning("SECURITY: WAHA_API_KEY is not set — WAHA dashboard has no API authentication")
     if not ALLOWED_ORIGIN:
@@ -137,6 +148,12 @@ def _log_security_warnings() -> None:
         logger.warning(
             "CONFIG: GOOGLE_CLIENT_SECRET is not set — Google OAuth token exchange will fail. "
             "Set GOOGLE_CLIENT_SECRET in .env (from Google Cloud Console → OAuth 2.0 Clients)."
+        )
+
+    if ENVIRONMENT == "production" and missing_critical:
+        raise RuntimeError(
+            f"Refusing to start in production — missing required secrets: "
+            f"{', '.join(missing_critical)}"
         )
 
 
