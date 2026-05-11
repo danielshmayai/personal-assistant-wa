@@ -146,6 +146,18 @@ async def websocket_chat(websocket: WebSocket, token: str = "", chat_id: str = "
         logger.exception("Failed to send history for chat_id=%s", chat_id)
         history = []
 
+    # Deliver any notifications that fired while the WebSocket was closed
+    try:
+        from app.scheduled_jobs import fetch_pending_notifications, mark_notifications_delivered
+        pending = await loop.run_in_executor(None, fetch_pending_notifications, chat_id)
+        for msg in pending:
+            await websocket.send_text(json.dumps({"type": "notification", "message": msg}))
+        if pending:
+            await loop.run_in_executor(None, mark_notifications_delivered, chat_id)
+            logger.info("Delivered %d pending notifications to chat_id=%s", len(pending), chat_id)
+    except Exception:
+        logger.exception("Failed to deliver pending notifications for chat_id=%s", chat_id)
+
     # Only set title from first-ever message (if conversation has no history yet)
     title_pending = len(history) == 0
 
