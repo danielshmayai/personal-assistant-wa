@@ -1053,7 +1053,7 @@ function handleServerMsg(msg) {
       break;
     case 'notification':
       // Scheduled action result arrives here — render as an assistant bubble
-      appendAiMsg();
+      appendToken(msg.message || '');
       finalizeAiMsg(msg.message || '');
       enableInput();
       break;
