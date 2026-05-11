@@ -77,7 +77,7 @@ def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
     tz = ZoneInfo(USER_TIMEZONE)
     now = datetime.now(tz=tz).strftime(f"%A, %d %B %Y, %H:%M ({USER_TIMEZONE})")
     addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
-    prompt = (_SYSTEM_BASE + addendum).format(datetime=now)
+    prompt = (_SYSTEM_BASE + addendum).replace("{datetime}", now)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
     return prompt
