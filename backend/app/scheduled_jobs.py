@@ -255,14 +255,34 @@ async def _run_job(job: dict) -> str:
 async def _notify(chat_id: str, text: str) -> None:
     from app.broadcast import NotificationManager
 
-    # For web sessions: always persist first so reconnects get the notification
+    active = NotificationManager.active_web_sessions()
+    matched = chat_id in active
+    logger.info(
+        "_notify: chat_id=%r active_ws=%s matched=%s",
+        chat_id, active, matched,
+    )
+
+    db_stored = False
     if chat_id.startswith("web"):
-        await asyncio.to_thread(store_notification, chat_id, text)
+        try:
+            await asyncio.to_thread(store_notification, chat_id, text)
+            db_stored = True
+        except Exception as exc:
+            logger.error("_notify: store_notification failed: %s", exc)
+
+    debug_suffix = (
+        f"\n\n---\n🔧 *Debug scheduler:*\n"
+        f"• job chat_id: `{chat_id}`\n"
+        f"• active WebSocket sessions: `{active}`\n"
+        f"• chat_id matched: {'✅' if matched else '❌'}\n"
+        f"• stored in DB: {'✅' if db_stored else '❌ (see logs)'}"
+    )
+    full_text = text + debug_suffix
 
     wa_ids = [] if chat_id.startswith("web") else [chat_id]
     web_id = chat_id if chat_id.startswith("web") else None
     await NotificationManager.broadcast(
-        message=text,
+        message=full_text,
         whatsapp_chat_ids=wa_ids or None,
         web_chat_id=web_id,
     )
