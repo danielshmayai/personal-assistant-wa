@@ -210,8 +210,17 @@ async def websocket_chat(websocket: WebSocket, token: str = "", chat_id: str = "
                 except Exception:
                     pass
             except Exception as exc:
+                import traceback as _tb
+                _trace = _tb.format_exc()
                 logger.exception("stream_graph failed for chat_id=%s", chat_id)
-                await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+                await websocket.send_text(json.dumps({
+                    "type": "token",
+                    "content": (
+                        f"⚠️ **{type(exc).__name__}**: `{exc}`\n\n"
+                        f"```\n{_trace[-2000:]}\n```"
+                    ),
+                }))
+                await websocket.send_text(json.dumps({"type": "done", "full_reply": str(exc)}))
 
     except WebSocketDisconnect:
         logger.info("Web chat disconnected: chat_id=%s", chat_id)

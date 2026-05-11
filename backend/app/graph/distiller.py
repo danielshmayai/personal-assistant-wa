@@ -77,7 +77,7 @@ def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
     tz = ZoneInfo(USER_TIMEZONE)
     now = datetime.now(tz=tz).strftime(f"%A, %d %B %Y, %H:%M ({USER_TIMEZONE})")
     addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
-    prompt = (_SYSTEM_BASE + addendum).format(datetime=now)
+    prompt = (_SYSTEM_BASE + addendum).replace("{datetime}", now)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
     return prompt
@@ -208,13 +208,23 @@ async def agent_node(state: PAState) -> dict:
 
     system = _build_system_prompt(state.get("memory_context", ""), state.get("chat_id", ""))
 
-    messages = [SystemMessage(content=system)] + _sanitize_for_gemini(state["messages"])
+    sanitized = _sanitize_for_gemini(state["messages"])
+    logger.info("agent_node: sending %d messages to Gemini", len(sanitized))
+    messages = [SystemMessage(content=system)] + sanitized
 
     try:
         response = await asyncio.wait_for(llm.ainvoke(messages), timeout=30.0)
     except asyncio.TimeoutError:
         logger.error("Gemini API call timed out after 30s for chat_id=%s", chat_id)
-        return {"messages": [AIMessage(content="Sorry, I'm taking too long to respond right now. Please try again.")]}
+        return {"messages": [AIMessage(content="⚠️ Gemini timeout (>30s). Please try again.")]}
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error("Gemini ainvoke FAILED: %s\n%s", e, tb)
+        error_msg = (
+            f"⚠️ Gemini קריאה נכשלה: `{type(e).__name__}: {e}`\n\n"
+            f"```\n{tb[-2000:]}\n```"
+        )
+        return {"messages": [AIMessage(content=error_msg)]}
 
     try:
         response.additional_kwargs["ts"] = datetime.now(timezone.utc).isoformat()
