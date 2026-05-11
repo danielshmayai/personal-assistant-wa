@@ -1051,6 +1051,12 @@ function handleServerMsg(msg) {
     case 'done':
       finalizeAiMsg(msg.full_reply);
       break;
+    case 'notification':
+      // Scheduled action result arrives here — render as an assistant bubble
+      appendAiMsg();
+      finalizeAiMsg(msg.message || '');
+      enableInput();
+      break;
     case 'error':
       finalizeAiMsg('');
       addSystemMsg('⚠️ ' + (msg.message || 'Error'));

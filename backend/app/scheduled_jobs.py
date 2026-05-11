@@ -169,7 +169,7 @@ async def _run_job(job: dict) -> str:
     payload = job["payload"]
 
     if atype == "tuya_command":
-        from app.tuya.tools import TUYA_PREFER_LOCAL
+        from app.config import TUYA_PREFER_LOCAL
         from app.tuya.tools import _send_command_local, _send_command_cloud
         device_id = payload["device_id"]
         commands = payload["commands"]
@@ -182,7 +182,9 @@ async def _run_job(job: dict) -> str:
         if result is None:
             result = await asyncio.to_thread(_send_command_cloud, device_id, commands)
         desc = payload.get("description", "פקודת בית חכם")
-        return f"✅ ביצעתי: {desc}"
+        success = (result or {}).get("success", True)
+        status = "✅" if success else "⚠️"
+        return f"{status} פעולה מתוזמנת בוצעה: {desc}"
 
     if atype == "send_message":
         return payload.get("text", "תזכורת!")
