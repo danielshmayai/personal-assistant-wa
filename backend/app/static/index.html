@@ -149,11 +149,18 @@ body {
 #login-error { color: var(--red); font-size: 13px; text-align: center; margin-top: 4px; }
 
 /* ── App ── */
-#app { display: flex; flex-direction: column; height: 100dvh; }
+#app { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 .page-area { flex: 1; overflow: hidden; position: relative; min-height: 0; }
-.page { position: absolute; inset: 0; overflow-y: auto; display: none; }
-.page.active { display: block; }
-#page-chat.active { display: grid; grid-template-columns: 260px 1fr; overflow: hidden; }
+.page {
+  position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(.4,0,.2,1);
+  pointer-events: none;
+  will-change: transform;
+}
+.page.page-left { transform: translateX(-25%); }
+.page.active { transform: translateX(0); pointer-events: auto; }
+#page-chat { display: grid; grid-template-columns: 260px 1fr; overflow: hidden; }
 
 /* ── Sidebar ── */
 #sidebar {
@@ -699,17 +706,17 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 #menu-btn { display: none; background: none; border: none; color: var(--text2); cursor: pointer; padding: 6px; flex-shrink: 0; border-radius: 8px; transition: color .15s, background .15s; align-items: center; justify-content: center; width: 36px; height: 36px; }
 #menu-btn:hover { color: var(--text); background: var(--bg3); }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   #top-nav { display: none; }
   #bottom-nav { display: flex; }
-  #page-chat.active { grid-template-columns: 1fr; }
+  #page-chat { grid-template-columns: 1fr; }
   .category-grid { grid-template-columns: repeat(2, 1fr); }
-  .page-content { padding: 16px 14px 80px; }
+  .page-content { padding: 16px 12px 90px; }
   #sidebar { position: fixed; top: 0; left: -284px; width: 284px; height: 100dvh; z-index: 50; transition: left .25s cubic-bezier(.4,0,.2,1); box-shadow: 8px 0 40px rgba(0,0,0,.15); }
   #sidebar.open { left: 0; }
   #sidebar-overlay.visible { display: block; }
   #menu-btn { display: flex; }
-  .message { max-width: 88%; }
+  .message { max-width: 92%; }
   #chat-header { padding: 0 12px; height: 54px; }
   #messages { padding: 14px 12px 8px; }
   #input-area { padding: 8px 10px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
@@ -718,6 +725,42 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   #scroll-btn { bottom: 78px; right: 12px; }
   .msg-avatar { width: 26px; height: 26px; }
   .tool-badge { margin-left: 34px; }
+
+  /* Larger tap targets */
+  .bnav-tab { min-height: 56px; font-size: 11px; padding: 10px 4px; }
+  .bnav-tab .bnav-icon { font-size: 22px; }
+  .quick-btn { min-height: 48px; font-size: 14px; padding: 10px 16px; }
+  .card-action-btn { min-height: 42px; padding: 9px 16px; font-size: 13px; }
+  .add-btn { min-height: 48px; padding: 11px 20px; font-size: 14px; }
+  .job-cancel-btn { min-height: 40px; padding: 8px 14px; font-size: 13px; }
+  .filter-pill { padding: 8px 16px; font-size: 13px; min-height: 38px; }
+  .modal-save-btn, .modal-cancel-btn { padding: 12px 24px; font-size: 15px; }
+  .back-btn { min-height: 40px; font-size: 14px; padding: 8px 12px; }
+
+  /* Readable font sizes */
+  .category-tile { padding: 18px 14px; }
+  .category-tile-icon { font-size: 28px; }
+  .category-tile-name { font-size: 14px; }
+  .category-tile-count { font-size: 12px; }
+  .entity-name { font-size: 15px; }
+  .entity-preview { font-size: 13px; }
+  .rule-text { font-size: 14px; line-height: 1.6; }
+  .activity-summary { font-size: 14px; }
+  .card-title { font-size: 15px; }
+  .card-detail { font-size: 14px; }
+  .page-header h2 { font-size: 22px; }
+  #today-date { font-size: 17px; }
+  #today-weather { font-size: 15px; }
+  #today-summary { font-size: 13px; }
+  .job-desc { font-size: 14px; }
+  .job-countdown { font-size: 13px; }
+
+  /* Prevent horizontal overflow */
+  .page-content { max-width: 100%; box-sizing: border-box; }
+  #today-strip { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .quick-actions { gap: 10px; }
+  .filter-bar { gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+  .filter-bar::-webkit-scrollbar { display: none; }
 }
 
 /* ── Top nav ── */
@@ -1413,7 +1456,12 @@ function showApp() {
   loginScreen.classList.add('hidden');
   appEl.classList.remove('hidden');
   loadConversations();
+  // Disable transition for initial page placement so there's no slide-in flash
+  document.querySelectorAll('.page').forEach(p => p.style.transition = 'none');
   switchPage('home');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.querySelectorAll('.page').forEach(p => p.style.transition = '');
+  }));
 }
 
 function setStatus(state) {
@@ -2790,11 +2838,18 @@ function showUpdateToast(registration) {
 }
 
 // ── Page switching ──────────────────────────────────────────────────────────
+const PAGE_ORDER = ['home', 'chat', 'tasks', 'activity', 'memory'];
 let currentPage = 'chat';
 
 function switchPage(page) {
   currentPage = page;
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const nextIdx = PAGE_ORDER.indexOf(page);
+  document.querySelectorAll('.page').forEach(p => {
+    const pid = p.id.replace('page-', '');
+    const idx = PAGE_ORDER.indexOf(pid);
+    p.classList.remove('active', 'page-left');
+    if (idx < nextIdx) p.classList.add('page-left');
+  });
   const el = document.getElementById('page-' + page);
   if (el) el.classList.add('active');
   document.querySelectorAll('.nav-tab, .bnav-tab').forEach(t => {
@@ -2805,6 +2860,24 @@ function switchPage(page) {
   if (page === 'activity') loadActivityPage();
   if (page === 'memory')   loadMemoryPage();
 }
+
+// ── Swipe navigation ─────────────────────────────────────────────────────────
+(function() {
+  let tx = 0, ty = 0;
+  const THRESH = 60;
+  document.getElementById('app').addEventListener('touchstart', e => {
+    tx = e.touches[0].clientX;
+    ty = e.touches[0].clientY;
+  }, { passive: true });
+  document.getElementById('app').addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    const dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) < THRESH || Math.abs(dy) > Math.abs(dx) * 0.7) return;
+    const idx = PAGE_ORDER.indexOf(currentPage);
+    if (dx < 0 && idx < PAGE_ORDER.length - 1) switchPage(PAGE_ORDER[idx + 1]);
+    if (dx > 0 && idx > 0) switchPage(PAGE_ORDER[idx - 1]);
+  }, { passive: true });
+})();
 
 // ── API helper ──────────────────────────────────────────────────────────────
 async function apiGet(path) {
