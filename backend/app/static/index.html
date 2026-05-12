@@ -761,9 +761,12 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   /* Prevent horizontal overflow */
   .page-content { max-width: 100%; box-sizing: border-box; }
   #today-strip { flex-direction: column; align-items: flex-start; gap: 6px; }
+  #today-meta { align-items: flex-start; }
   .quick-actions { gap: 10px; }
   .filter-bar { gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
   .filter-bar::-webkit-scrollbar { display: none; }
+  .auto-grid { grid-template-columns: 1fr; }
+  .auto-create-row { flex-direction: column; align-items: stretch; }
 }
 
 /* ── Top nav ── */
@@ -830,11 +833,46 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 #today-strip {
   background: linear-gradient(135deg, var(--user-1), var(--user-2));
   border-radius: var(--radius); padding: 16px 20px; color: #fff;
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;
 }
-#today-date { font-size: 15px; font-weight: 600; }
-#today-weather { font-size: 14px; opacity: .9; }
-#today-summary { font-size: 12px; opacity: .82; width: 100%; }
+#today-date { font-size: 15px; font-weight: 600; flex-shrink: 0; }
+#today-meta { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+#today-weather { font-size: 14px; opacity: .95; white-space: nowrap; }
+#today-summary { font-size: 12px; opacity: .80; white-space: nowrap; }
+
+/* ── Quick add task ── */
+.quick-add-task-row {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 16px;
+}
+.quick-task-input {
+  flex: 1; padding: 10px 14px; border: 1px solid var(--border2);
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 14px;
+  background: var(--bg2); color: var(--text); outline: none;
+  transition: border-color .15s;
+}
+.quick-task-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* ── Automations page ── */
+.auto-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.auto-tile {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  padding: 16px 14px; display: flex; flex-direction: column; gap: 6px;
+  cursor: pointer; transition: box-shadow .15s, border-color .15s;
+}
+.auto-tile:hover { box-shadow: var(--shadow); border-color: rgba(99,102,241,.3); }
+.auto-tile-icon { font-size: 24px; }
+.auto-tile-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.auto-tile-desc { font-size: 12px; color: var(--text3); line-height: 1.4; flex: 1; }
+.auto-activate-btn {
+  margin-top: 4px; background: var(--accent-dim); border: none;
+  border-radius: 6px; color: var(--accent); cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px;
+  transition: background .15s;
+}
+.auto-activate-btn:hover { background: var(--accent); color: #fff; }
+.auto-activate-btn.done { background: #d1fae5; color: #059669; }
+.auto-create-row { display: flex; gap: 8px; align-items: center; }
+.auto-create-hint { font-size: 12px; color: var(--text3); margin-top: 6px; }
 
 /* ── Proactive cards ── */
 .proactive-card {
@@ -867,13 +905,14 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 /* ── Countdown / jobs ── */
 .job-item {
   background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 11px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  padding: 12px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
 }
-.job-icon { font-size: 18px; flex-shrink: 0; }
+.job-icon { font-size: 20px; flex-shrink: 0; }
 .job-body { flex: 1; min-width: 0; }
-.job-desc { font-size: 13px; font-weight: 600; color: var(--text); }
-.job-run-at { font-size: 11px; color: var(--text3); margin-top: 2px; }
-.job-countdown { font-size: 12px; font-weight: 700; color: var(--accent); min-width: 62px; text-align: right; font-variant-numeric: tabular-nums; }
+.job-desc { font-size: 14px; font-weight: 600; color: var(--text); word-break: break-word; }
+.job-run-at { font-size: 11px; color: var(--text3); margin-top: 3px; }
+.job-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.job-countdown { font-size: 13px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .job-cancel-btn {
   background: none; border: 1px solid var(--border2); border-radius: 6px;
   color: var(--text3); cursor: pointer; font-family: inherit; font-size: 12px;
@@ -1063,6 +1102,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <button class="nav-tab" data-page="tasks" onclick="switchPage('tasks')">✓ Tasks</button>
       <button class="nav-tab" data-page="activity" onclick="switchPage('activity')">⚡ Activity</button>
       <button class="nav-tab" data-page="memory" onclick="switchPage('memory')">🧠 Memory</button>
+      <button class="nav-tab" data-page="automations" onclick="switchPage('automations')">⚙️ Automations</button>
     </div>
     <button id="hard-refresh-btn" title="Clear cache &amp; reload" onclick="hardRefresh()">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -1080,8 +1120,10 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <div class="page-content">
         <div id="today-strip">
           <span id="today-date"></span>
-          <span id="today-weather"></span>
-          <span id="today-summary"></span>
+          <div id="today-meta">
+            <span id="today-weather">…</span>
+            <span id="today-summary"></span>
+          </div>
         </div>
         <div class="section-block">
           <div class="section-title">Proactive</div>
@@ -1099,6 +1141,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <button class="quick-btn" onclick="openAddFactModal()">📝 Add note</button>
             <button class="quick-btn" onclick="switchPage('tasks')">✓ View tasks</button>
             <button class="quick-btn" onclick="switchPage('chat');setTimeout(openSmartHome,300)">🏠 Smart Home</button>
+            <button class="quick-btn" onclick="switchPage('automations')">⚙️ Automations</button>
           </div>
         </div>
       </div>
@@ -1283,6 +1326,10 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   <div id="page-tasks" class="page">
     <div class="page-content">
       <div class="page-header"><h2>Tasks</h2></div>
+      <div class="quick-add-task-row">
+        <input id="quick-task-input" class="quick-task-input" placeholder="Add a task… (opens chat)" onkeydown="if(event.key==='Enter')submitQuickTask()">
+        <button class="add-btn" onclick="submitQuickTask()">+ Add</button>
+      </div>
       <div class="section-block">
         <div class="section-title">Scheduled actions</div>
         <div id="tasks-jobs-list"><div class="empty-state">No scheduled actions</div></div>
@@ -1346,6 +1393,48 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <div class="quick-add-row">
         <button class="add-btn" onclick="openAddFactModal()">+ Add fact</button>
         <button class="add-btn" onclick="openAddRuleModal()">+ Add rule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Automations page -->
+  <div id="page-automations" class="page">
+    <div class="page-content">
+      <div class="page-header"><h2>Automations</h2></div>
+      <div class="section-block">
+        <div class="section-title">Quick templates</div>
+        <div class="auto-grid" id="auto-templates-grid">
+          <div class="auto-tile" onclick="activateTemplate('morning')">
+            <div class="auto-tile-icon">🌅</div>
+            <div class="auto-tile-name">Morning briefing</div>
+            <div class="auto-tile-desc">Daily at 7:30 — schedule a good-morning message</div>
+            <button class="auto-activate-btn" id="tpl-morning">Activate</button>
+          </div>
+          <div class="auto-tile" onclick="activateTemplate('night')">
+            <div class="auto-tile-icon">🌙</div>
+            <div class="auto-tile-name">Nightly wrap-up</div>
+            <div class="auto-tile-desc">Daily at 22:00 — reminder to review your day</div>
+            <button class="auto-activate-btn" id="tpl-night">Activate</button>
+          </div>
+          <div class="auto-tile" onclick="activateTemplate('tasks')">
+            <div class="auto-tile-icon">✅</div>
+            <div class="auto-tile-name">Task reminder</div>
+            <div class="auto-tile-desc">Daily at 9:00 — nudge to check pending tasks</div>
+            <button class="auto-activate-btn" id="tpl-tasks">Activate</button>
+          </div>
+        </div>
+      </div>
+      <div class="section-block">
+        <div class="section-title">Active automations</div>
+        <div id="auto-active-list"><div class="empty-state">No active automations yet.</div></div>
+      </div>
+      <div class="section-block">
+        <div class="section-title">Create a custom automation</div>
+        <div class="auto-create-row">
+          <input id="auto-create-input" class="quick-task-input" placeholder="e.g. Turn off the AC every night at 23:00">
+          <button class="add-btn" onclick="createAutomationViaChat()">Create via chat →</button>
+        </div>
+        <div class="auto-create-hint">Danidin will set it up and confirm in chat.</div>
       </div>
     </div>
   </div>
@@ -2893,7 +2982,8 @@ function switchPage(page, instant) {
   if (page === 'home')     loadHomePage();
   if (page === 'tasks')    loadTasksPage();
   if (page === 'activity') loadActivityPage();
-  if (page === 'memory')   loadMemoryPage();
+  if (page === 'memory')      loadMemoryPage();
+  if (page === 'automations') loadAutomationsPage();
 }
 
 // ── Swipe navigation ─────────────────────────────────────────────────────────
@@ -2970,11 +3060,23 @@ async function loadHomePage() {
   }, 1000);
 }
 
-function _updateTodayStrip() {
+async function _updateTodayStrip() {
   const now = new Date();
   document.getElementById('today-date').textContent = now.toLocaleDateString(undefined, {
     weekday: 'long', day: 'numeric', month: 'long',
   });
+  try {
+    const data = await apiGet(`/api/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    const weatherEl = document.getElementById('today-weather');
+    const summaryEl = document.getElementById('today-summary');
+    if (data.weather) weatherEl.textContent = data.weather;
+    else weatherEl.textContent = '';
+    const parts = [];
+    if (data.jobs_count > 0) parts.push(`${data.jobs_count} scheduled`);
+    summaryEl.textContent = parts.join(' · ');
+  } catch(e) {
+    document.getElementById('today-weather').textContent = '';
+  }
 }
 
 async function _loadHomeCards() {
@@ -3026,21 +3128,38 @@ async function _loadHomeJobs() {
   } catch (e) { section.style.display = 'none'; }
 }
 
+function _parsePayload(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') { try { return JSON.parse(raw); } catch(e) {} }
+  return raw;
+}
+
+function _jobLabel(job) {
+  const p = _parsePayload(job.payload);
+  const raw = p.description || p.text || p.message || p.content || '';
+  if (raw) return raw;
+  if (job.action_type === 'tuya_command') return 'Smart home command';
+  if (job.action_type === 'send_message') return 'Reminder';
+  return job.action_type || 'Scheduled task';
+}
+
 function _appendJobItem(container, job, context) {
   const div = document.createElement('div');
   div.className = 'job-item';
   div.dataset.jobId = job.id;
   div.dataset.runAt = job.run_at;
   const icon = job.action_type === 'tuya_command' ? '💡' : '🔔';
-  const desc = job.payload?.description || job.payload?.text || job.action_type;
+  const desc = _jobLabel(job);
   div.innerHTML = `
     <span class="job-icon">${icon}</span>
     <div class="job-body">
-      <div class="job-desc">${_esc(String(desc).slice(0, 80))}</div>
+      <div class="job-desc">${_esc(String(desc).slice(0, 100))}</div>
       <div class="job-run-at">${new Date(job.run_at).toLocaleString()}</div>
     </div>
-    <span class="job-countdown" data-run-at="${job.run_at}">${countdownStr(job.run_at)}</span>
-    <button class="job-cancel-btn" onclick="cancelJob(${job.id},'${context}')">Cancel</button>`;
+    <div class="job-right">
+      <span class="job-countdown" data-run-at="${job.run_at}">${countdownStr(job.run_at)}</span>
+      <button class="job-cancel-btn" onclick="cancelJob(${job.id},'${context}')">Cancel</button>
+    </div>`;
   container.appendChild(div);
 }
 
@@ -3103,7 +3222,7 @@ async function loadTasksPage() {
     doneList.innerHTML = '';
     for (const job of done.slice(0, 20)) {
       const icon = job.status === 'done' ? '✅' : job.status === 'failed' ? '❌' : '🚫';
-      const desc = job.payload?.description || job.payload?.text || job.action_type;
+      const desc = _jobLabel(job);
       const div = document.createElement('div');
       div.className = 'job-item';
       div.style.opacity = '0.65';
@@ -3128,6 +3247,68 @@ function toggleDoneSection() {
   const open = list.style.display !== 'none';
   list.style.display = open ? 'none' : 'block';
   btn.textContent = (open ? '▶' : '▼') + ' Done today';
+}
+
+function submitQuickTask() {
+  const inp = document.getElementById('quick-task-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  switchPage('chat');
+  setTimeout(() => {
+    const msgInput = document.getElementById('message-input');
+    if (msgInput) {
+      msgInput.value = `תזכור שאני צריך: ${text}`;
+      msgInput.focus();
+    }
+  }, 200);
+}
+
+// ── Automations page ─────────────────────────────────────────────────────────
+
+const _AUTO_TEMPLATES = {
+  morning: { text: 'הגדר תזכורת יומית בשעה 07:30 עם ברכת בוקר וסיכום יומי: לוח שנה, מייל ומזג אוויר.', label: 'Morning briefing' },
+  night:   { text: 'הגדר תזכורת יומית בשעה 22:00 עם סיכום ערב: מה עשיתי היום וכל מה שנשאר.', label: 'Nightly wrap-up' },
+  tasks:   { text: 'הגדר תזכורת יומית בשעה 09:00 להזכיר לי לבדוק את המשימות הפתוחות שלי.', label: 'Task reminder' },
+};
+
+async function loadAutomationsPage() {
+  const list = document.getElementById('auto-active-list');
+  try {
+    const { jobs } = await apiGet(`/api/jobs?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    if (!jobs.length) {
+      list.innerHTML = '<div class="empty-state">No active automations yet.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const job of jobs) _appendJobItem(list, job, 'automations');
+  } catch(e) {
+    list.innerHTML = '<div class="empty-state">Could not load automations.</div>';
+  }
+}
+
+function activateTemplate(id) {
+  const tpl = _AUTO_TEMPLATES[id];
+  if (!tpl) return;
+  const btn = document.getElementById('tpl-' + id);
+  if (btn) { btn.textContent = '✓ Sent to chat'; btn.classList.add('done'); }
+  switchPage('chat');
+  setTimeout(() => {
+    const inp = document.getElementById('message-input');
+    if (inp) { inp.value = tpl.text; inp.focus(); }
+  }, 200);
+}
+
+function createAutomationViaChat() {
+  const inp = document.getElementById('auto-create-input');
+  const text = inp.value.trim();
+  if (!text) { inp.focus(); return; }
+  inp.value = '';
+  switchPage('chat');
+  setTimeout(() => {
+    const msgInput = document.getElementById('message-input');
+    if (msgInput) { msgInput.value = `צור אוטומציה: ${text}`; msgInput.focus(); }
+  }, 200);
 }
 
 // ── Activity page ────────────────────────────────────────────────────────────
