@@ -3147,7 +3147,6 @@ function _appendJobItem(container, job, context) {
   const div = document.createElement('div');
   div.className = 'job-item';
   div.dataset.jobId = job.id;
-  div.dataset.runAt = job.run_at;
   const icon = job.action_type === 'tuya_command' ? '💡' : '🔔';
   const desc = _jobLabel(job);
   div.innerHTML = `
