@@ -789,6 +789,16 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .nav-tab:hover { background: var(--bg3); color: var(--text); }
 .nav-tab.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
 
+#hard-refresh-btn {
+  margin-left: auto; flex-shrink: 0;
+  background: none; border: 1px solid var(--border2); border-radius: 8px;
+  color: var(--text3); cursor: pointer; padding: 6px 8px;
+  display: flex; align-items: center; transition: color .15s, background .15s, transform .4s;
+}
+#hard-refresh-btn:hover { color: var(--accent); background: var(--accent-dim); border-color: rgba(99,102,241,.3); }
+#hard-refresh-btn.spinning svg { animation: spin360 0.7s linear; }
+@keyframes spin360 { to { transform: rotate(360deg); } }
+
 /* ── Bottom nav (mobile) ── */
 #bottom-nav {
   height: 56px; background: var(--bg2); border-top: 1px solid var(--border);
@@ -1054,7 +1064,12 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <button class="nav-tab" data-page="activity" onclick="switchPage('activity')">⚡ Activity</button>
       <button class="nav-tab" data-page="memory" onclick="switchPage('memory')">🧠 Memory</button>
     </div>
-  </nav>
+    <button id="hard-refresh-btn" title="Clear cache &amp; reload" onclick="hardRefresh()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+    </button>
 
   <!-- Page area -->
   <div class="page-area">
@@ -1341,6 +1356,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     <button class="bnav-tab" data-page="tasks" onclick="switchPage('tasks')"><span class="bnav-icon">✓</span>Tasks</button>
     <button class="bnav-tab" data-page="activity" onclick="switchPage('activity')"><span class="bnav-icon">⚡</span>Activity</button>
     <button class="bnav-tab" data-page="memory" onclick="switchPage('memory')"><span class="bnav-icon">🧠</span>Memory</button>
+    <button class="bnav-tab" onclick="hardRefresh()" title="Clear cache &amp; reload"><span class="bnav-icon">🔄</span>Update</button>
   </nav>
 
 </div><!-- end #app -->
@@ -2835,6 +2851,25 @@ function showUpdateToast(registration) {
     // Tell the waiting SW to skip waiting — triggers controllerchange → reload.
     if (registration.waiting) registration.waiting.postMessage('SKIP_WAITING');
   });
+}
+
+// ── Hard refresh (clear SW + caches + reload) ───────────────────────────────
+async function hardRefresh() {
+  const btn = document.getElementById('hard-refresh-btn');
+  if (btn) btn.classList.add('spinning');
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } finally {
+    // Force bypass-cache reload
+    window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
+  }
 }
 
 // ── Page switching ──────────────────────────────────────────────────────────
