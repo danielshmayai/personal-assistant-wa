@@ -57,6 +57,9 @@ DB_ENCRYPTION_KEY = os.getenv("DB_ENCRYPTION_KEY", "")
 # Timezone used for calendar events — defaults to Israel Standard Time
 USER_TIMEZONE = os.getenv("USER_TIMEZONE", "Asia/Jerusalem")
 
+# Default city for weather in the Today Strip
+USER_CITY = os.getenv("USER_CITY", "Tel Aviv")
+
 # Tuya smart-home
 TUYA_ACCESS_ID = os.getenv("TUYA_ACCESS_ID", "")
 TUYA_ACCESS_KEY = os.getenv("TUYA_ACCESS_KEY", "")
