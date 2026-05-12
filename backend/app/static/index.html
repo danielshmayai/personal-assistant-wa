@@ -867,13 +867,14 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 /* ── Countdown / jobs ── */
 .job-item {
   background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 11px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  padding: 12px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
 }
-.job-icon { font-size: 18px; flex-shrink: 0; }
+.job-icon { font-size: 20px; flex-shrink: 0; }
 .job-body { flex: 1; min-width: 0; }
-.job-desc { font-size: 13px; font-weight: 600; color: var(--text); }
-.job-run-at { font-size: 11px; color: var(--text3); margin-top: 2px; }
-.job-countdown { font-size: 12px; font-weight: 700; color: var(--accent); min-width: 62px; text-align: right; font-variant-numeric: tabular-nums; }
+.job-desc { font-size: 14px; font-weight: 600; color: var(--text); word-break: break-word; }
+.job-run-at { font-size: 11px; color: var(--text3); margin-top: 3px; }
+.job-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.job-countdown { font-size: 13px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .job-cancel-btn {
   background: none; border: 1px solid var(--border2); border-radius: 6px;
   color: var(--text3); cursor: pointer; font-family: inherit; font-size: 12px;
@@ -3026,21 +3027,38 @@ async function _loadHomeJobs() {
   } catch (e) { section.style.display = 'none'; }
 }
 
+function _parsePayload(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') { try { return JSON.parse(raw); } catch(e) {} }
+  return raw;
+}
+
+function _jobLabel(job) {
+  const p = _parsePayload(job.payload);
+  const raw = p.description || p.text || p.message || p.content || '';
+  if (raw) return raw;
+  if (job.action_type === 'tuya_command') return 'Smart home command';
+  if (job.action_type === 'send_message') return 'Reminder';
+  return job.action_type || 'Scheduled task';
+}
+
 function _appendJobItem(container, job, context) {
   const div = document.createElement('div');
   div.className = 'job-item';
   div.dataset.jobId = job.id;
   div.dataset.runAt = job.run_at;
   const icon = job.action_type === 'tuya_command' ? '💡' : '🔔';
-  const desc = job.payload?.description || job.payload?.text || job.action_type;
+  const desc = _jobLabel(job);
   div.innerHTML = `
     <span class="job-icon">${icon}</span>
     <div class="job-body">
-      <div class="job-desc">${_esc(String(desc).slice(0, 80))}</div>
+      <div class="job-desc">${_esc(String(desc).slice(0, 100))}</div>
       <div class="job-run-at">${new Date(job.run_at).toLocaleString()}</div>
     </div>
-    <span class="job-countdown" data-run-at="${job.run_at}">${countdownStr(job.run_at)}</span>
-    <button class="job-cancel-btn" onclick="cancelJob(${job.id},'${context}')">Cancel</button>`;
+    <div class="job-right">
+      <span class="job-countdown" data-run-at="${job.run_at}">${countdownStr(job.run_at)}</span>
+      <button class="job-cancel-btn" onclick="cancelJob(${job.id},'${context}')">Cancel</button>
+    </div>`;
   container.appendChild(div);
 }
 
@@ -3103,7 +3121,7 @@ async function loadTasksPage() {
     doneList.innerHTML = '';
     for (const job of done.slice(0, 20)) {
       const icon = job.status === 'done' ? '✅' : job.status === 'failed' ? '❌' : '🚫';
-      const desc = job.payload?.description || job.payload?.text || job.action_type;
+      const desc = _jobLabel(job);
       const div = document.createElement('div');
       div.className = 'job-item';
       div.style.opacity = '0.65';
