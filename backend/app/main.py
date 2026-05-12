@@ -23,6 +23,8 @@ from app.routers.google_auth import router as google_auth_router
 from app.routers.web_chat import router as web_chat_router
 from app.routers.leads import router as leads_router
 from app.routers.smart_home import router as smart_home_router
+from app.routers.dashboard import router as dashboard_router
+from app.routers.memory_api import router as memory_api_router
 from app.graph.checkpointer import setup_checkpointer
 
 from app.logging_config import setup_logging
@@ -167,6 +169,11 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to initialise memory tables — aborting startup")
         raise
     try:
+        from app.scheduled_jobs import init_table as init_jobs_table
+        init_jobs_table()
+    except Exception:
+        logger.exception("Failed to initialise scheduled_jobs tables")
+    try:
         await setup_checkpointer()
     except Exception:
         logger.exception("Failed to initialise postgres checkpointer — aborting startup")
@@ -210,6 +217,8 @@ app.include_router(google_auth_router)
 app.include_router(web_chat_router)
 app.include_router(leads_router)
 app.include_router(smart_home_router)
+app.include_router(dashboard_router)
+app.include_router(memory_api_router)
 
 # Serve the web UI static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

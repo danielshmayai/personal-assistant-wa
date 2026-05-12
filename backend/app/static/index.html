@@ -149,7 +149,11 @@ body {
 #login-error { color: var(--red); font-size: 13px; text-align: center; margin-top: 4px; }
 
 /* ── App ── */
-#app { display: grid; grid-template-columns: 260px 1fr; height: 100dvh; }
+#app { display: flex; flex-direction: column; height: 100dvh; }
+.page-area { flex: 1; overflow: hidden; position: relative; min-height: 0; }
+.page { position: absolute; inset: 0; overflow-y: auto; display: none; }
+.page.active { display: block; }
+#page-chat.active { display: grid; grid-template-columns: 260px 1fr; overflow: hidden; }
 
 /* ── Sidebar ── */
 #sidebar {
@@ -696,7 +700,11 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 #menu-btn:hover { color: var(--text); background: var(--bg3); }
 
 @media (max-width: 640px) {
-  #app { grid-template-columns: 1fr; }
+  #top-nav { display: none; }
+  #bottom-nav { display: flex; }
+  #page-chat.active { grid-template-columns: 1fr; }
+  .category-grid { grid-template-columns: repeat(2, 1fr); }
+  .page-content { padding: 16px 14px 80px; }
   #sidebar { position: fixed; top: 0; left: -284px; width: 284px; height: 100dvh; z-index: 50; transition: left .25s cubic-bezier(.4,0,.2,1); box-shadow: 8px 0 40px rgba(0,0,0,.15); }
   #sidebar.open { left: 0; }
   #sidebar-overlay.visible { display: block; }
@@ -711,6 +719,247 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   .msg-avatar { width: 26px; height: 26px; }
   .tool-badge { margin-left: 34px; }
 }
+
+/* ── Top nav ── */
+#top-nav {
+  height: 48px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 16px; gap: 0; flex-shrink: 0; z-index: 10;
+}
+.nav-brand { display: flex; align-items: center; gap: 8px; margin-right: 20px; flex-shrink: 0; }
+.nav-brand .brand-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--user-1), var(--user-2));
+  display: flex; align-items: center; justify-content: center;
+}
+.nav-brand .brand-icon svg { color: #fff; }
+.nav-brand .brand-name { font-family: "Outfit", sans-serif; font-size: 14px; font-weight: 700; color: var(--text); }
+.nav-tabs { display: flex; align-items: center; gap: 2px; flex: 1; }
+.nav-tab {
+  background: none; border: none; border-radius: 8px; color: var(--text2); cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 500; padding: 6px 14px;
+  transition: background .15s, color .15s; white-space: nowrap;
+}
+.nav-tab:hover { background: var(--bg3); color: var(--text); }
+.nav-tab.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+
+/* ── Bottom nav (mobile) ── */
+#bottom-nav {
+  height: 56px; background: var(--bg2); border-top: 1px solid var(--border);
+  display: none; align-items: center; justify-content: space-around;
+  flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.bnav-tab {
+  flex: 1; background: none; border: none; color: var(--text3); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-family: inherit; font-size: 10px; font-weight: 500; padding: 8px 4px; transition: color .15s;
+}
+.bnav-tab.active { color: var(--accent); }
+.bnav-tab .bnav-icon { font-size: 18px; line-height: 1; }
+
+/* ── Page content ── */
+.page-content {
+  max-width: 720px; margin: 0 auto; padding: 24px 20px 80px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.page-header h2 { font-family: "Outfit", sans-serif; font-size: 20px; font-weight: 700; color: var(--text); }
+.section-title {
+  font-size: 11px; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px;
+}
+.section-block { display: flex; flex-direction: column; }
+
+/* ── Today strip ── */
+#today-strip {
+  background: linear-gradient(135deg, var(--user-1), var(--user-2));
+  border-radius: var(--radius); padding: 16px 20px; color: #fff;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+#today-date { font-size: 15px; font-weight: 600; }
+#today-weather { font-size: 14px; opacity: .9; }
+#today-summary { font-size: 12px; opacity: .82; width: 100%; }
+
+/* ── Proactive cards ── */
+.proactive-card {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+  box-shadow: var(--shadow-sm); transition: box-shadow .15s; margin-bottom: 8px;
+}
+.proactive-card:hover { box-shadow: var(--shadow); }
+.proactive-card.trigger { border-left: 3px solid #EF4444; }
+.proactive-card.notice  { border-left: 3px solid #F59E0B; }
+.proactive-card.memory  { border-left: 3px solid var(--accent); }
+.card-header { display: flex; align-items: flex-start; gap: 10px; }
+.card-icon { font-size: 18px; flex-shrink: 0; line-height: 1.3; }
+.card-title { flex: 1; font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.card-time { font-size: 11px; color: var(--text3); flex-shrink: 0; padding-top: 2px; }
+.card-detail { font-size: 13px; color: var(--text2); line-height: 1.5; }
+.card-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.card-action-btn {
+  background: var(--accent-dim); border: 1px solid rgba(99,102,241,.25); border-radius: 7px;
+  color: var(--accent); cursor: pointer; font-family: inherit; font-size: 12px;
+  font-weight: 600; padding: 5px 12px; transition: background .15s;
+}
+.card-action-btn:hover { background: rgba(99,102,241,.2); }
+.card-dismiss-btn {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 16px; padding: 2px 6px; border-radius: 5px; transition: color .15s; margin-left: auto;
+}
+.card-dismiss-btn:hover { color: var(--text2); }
+
+/* ── Countdown / jobs ── */
+.job-item {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 11px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+}
+.job-icon { font-size: 18px; flex-shrink: 0; }
+.job-body { flex: 1; min-width: 0; }
+.job-desc { font-size: 13px; font-weight: 600; color: var(--text); }
+.job-run-at { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.job-countdown { font-size: 12px; font-weight: 700; color: var(--accent); min-width: 62px; text-align: right; font-variant-numeric: tabular-nums; }
+.job-cancel-btn {
+  background: none; border: 1px solid var(--border2); border-radius: 6px;
+  color: var(--text3); cursor: pointer; font-family: inherit; font-size: 12px;
+  font-weight: 500; padding: 4px 10px; transition: color .15s, border-color .15s;
+}
+.job-cancel-btn:hover { color: var(--red); border-color: var(--red); }
+
+/* ── Quick actions ── */
+.quick-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.quick-btn {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  color: var(--text2); cursor: pointer; font-family: inherit; font-size: 13px;
+  font-weight: 500; padding: 9px 16px; transition: background .15s, color .15s, border-color .15s;
+  display: flex; align-items: center; gap: 6px;
+}
+.quick-btn:hover { background: var(--accent-dim); color: var(--accent); border-color: rgba(99,102,241,.25); }
+
+/* ── Empty states ── */
+.empty-state { color: var(--text3); font-size: 14px; text-align: center; padding: 28px 20px; font-style: italic; }
+
+/* ── Filter pills ── */
+.filter-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+.filter-pill {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 20px;
+  color: var(--text2); cursor: pointer; font-family: inherit; font-size: 12px;
+  font-weight: 500; padding: 4px 12px; transition: background .15s, color .15s;
+}
+.filter-pill.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(99,102,241,.25); font-weight: 600; }
+
+/* ── Activity feed ── */
+.activity-entry {
+  display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer;
+}
+.activity-entry:last-child { border-bottom: none; }
+.activity-icon {
+  width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.activity-body { flex: 1; min-width: 0; }
+.activity-summary { font-size: 13px; color: var(--text); line-height: 1.4; font-weight: 500; }
+.activity-time { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.activity-detail {
+  display: none; margin-top: 8px; background: var(--bg3); border-radius: 8px;
+  padding: 10px 12px; font-size: 12px; color: var(--text2); white-space: pre-wrap; word-break: break-word;
+}
+.activity-entry.expanded .activity-detail { display: block; }
+
+/* ── Memory page ── */
+.category-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.category-tile {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  padding: 16px 14px; cursor: pointer; transition: background .15s, box-shadow .15s;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.category-tile:hover { background: var(--accent-dim); border-color: rgba(99,102,241,.25); box-shadow: var(--shadow-sm); }
+.category-tile-icon { font-size: 22px; }
+.category-tile-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.category-tile-count { font-size: 11px; color: var(--text3); }
+.entity-item {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 14px; cursor: pointer; transition: background .15s; margin-bottom: 8px;
+}
+.entity-item:hover { background: var(--bg3); }
+.entity-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.entity-preview { font-size: 12px; color: var(--text2); margin-top: 3px; line-height: 1.4; }
+.entity-time { font-size: 10.5px; color: var(--text3); margin-top: 2px; }
+.rule-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.rule-item:last-child { border-bottom: none; }
+.rule-text { flex: 1; font-size: 13px; color: var(--text); line-height: 1.5; }
+.rule-date { font-size: 11px; color: var(--text3); flex-shrink: 0; padding-top: 2px; }
+.rule-hide-btn {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 13px; padding: 2px 5px; border-radius: 4px; flex-shrink: 0; transition: color .15s;
+}
+.rule-hide-btn:hover { color: var(--red); }
+.memory-search-wrap { flex: 1; }
+.memory-search-wrap input {
+  width: 100%; background: var(--bg3); border: 1.5px solid var(--border2);
+  border-radius: var(--radius-sm); color: var(--text); font-family: inherit;
+  font-size: 14px; padding: 9px 14px; outline: none; transition: border-color .15s;
+}
+.memory-search-wrap input:focus { border-color: var(--accent); }
+.search-result-item { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 8px; }
+.search-result-path { font-size: 11px; color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+.search-result-snippet { font-size: 13px; color: var(--text2); line-height: 1.5; white-space: pre-wrap; }
+.back-btn {
+  background: none; border: none; color: var(--accent); cursor: pointer; font-family: inherit;
+  font-size: 13px; font-weight: 600; padding: 4px 8px; border-radius: 6px; transition: background .15s;
+  display: flex; align-items: center; gap: 5px;
+}
+.back-btn:hover { background: var(--accent-dim); }
+.quick-add-row { display: flex; gap: 8px; }
+.add-btn {
+  background: var(--accent-dim); border: 1px solid rgba(99,102,241,.25); border-radius: var(--radius-sm);
+  color: var(--accent); cursor: pointer; font-family: inherit; font-size: 13px;
+  font-weight: 600; padding: 9px 18px; transition: background .15s;
+}
+.add-btn:hover { background: rgba(99,102,241,.2); }
+.entity-full-content {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 16px; font-size: 13px; color: var(--text); line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+}
+
+/* ── Modals ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35);
+  backdrop-filter: blur(3px); z-index: 200; align-items: center; justify-content: center; padding: 16px;
+}
+.modal-overlay.open { display: flex; }
+.modal-card {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius);
+  padding: 28px 28px 24px; width: 100%; max-width: 420px;
+  display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow);
+}
+.modal-card h3 { font-family: "Outfit", sans-serif; font-size: 18px; font-weight: 700; color: var(--text); }
+.modal-field { display: flex; flex-direction: column; gap: 5px; }
+.modal-field label { font-size: 12px; font-weight: 600; color: var(--text2); }
+.modal-input, .modal-textarea, .modal-select {
+  background: var(--bg3); border: 1.5px solid var(--border2); border-radius: var(--radius-sm);
+  color: var(--text); font-family: inherit; font-size: 14px; padding: 9px 12px;
+  outline: none; transition: border-color .15s; width: 100%;
+}
+.modal-input:focus, .modal-textarea:focus { border-color: var(--accent); }
+.modal-textarea { resize: vertical; min-height: 80px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.modal-cancel-btn {
+  background: none; border: 1px solid var(--border2); border-radius: 8px;
+  color: var(--text2); cursor: pointer; font-family: inherit; font-size: 14px;
+  font-weight: 500; padding: 9px 20px; transition: background .15s;
+}
+.modal-cancel-btn:hover { background: var(--bg3); }
+.modal-save-btn {
+  background: linear-gradient(135deg, var(--user-1), var(--user-2));
+  border: none; border-radius: 8px; color: #fff; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 600; padding: 9px 24px;
+}
+.collapsible-toggle {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 600; padding: 4px 0;
+  text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: 5px;
+}
+.collapsible-toggle:hover { color: var(--text2); }
 </style>
 </head>
 <body>
@@ -740,7 +989,60 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 
 <!-- App -->
 <div id="app" class="hidden">
-  <aside id="sidebar">
+
+  <!-- Top nav (desktop) -->
+  <nav id="top-nav">
+    <div class="nav-brand">
+      <div class="brand-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a4 4 0 0 1 4 4v1h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3h1V6a4 4 0 0 1 4-4z"/>
+        </svg>
+      </div>
+      <span class="brand-name">danidin</span>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab" data-page="home" onclick="switchPage('home')">🏠 Home</button>
+      <button class="nav-tab active" data-page="chat" onclick="switchPage('chat')">💬 Chat</button>
+      <button class="nav-tab" data-page="tasks" onclick="switchPage('tasks')">✓ Tasks</button>
+      <button class="nav-tab" data-page="activity" onclick="switchPage('activity')">⚡ Activity</button>
+      <button class="nav-tab" data-page="memory" onclick="switchPage('memory')">🧠 Memory</button>
+    </div>
+  </nav>
+
+  <!-- Page area -->
+  <div class="page-area">
+
+    <!-- Home page -->
+    <div id="page-home" class="page">
+      <div class="page-content">
+        <div id="today-strip">
+          <span id="today-date"></span>
+          <span id="today-weather"></span>
+          <span id="today-summary"></span>
+        </div>
+        <div class="section-block">
+          <div class="section-title">Proactive</div>
+          <div id="cards-feed"><div class="empty-state">Danidin is watching — nothing needs your attention right now.</div></div>
+        </div>
+        <div id="jobs-section" class="section-block" style="display:none">
+          <div class="section-title">Scheduled</div>
+          <div id="home-jobs-list"></div>
+        </div>
+        <div class="section-block">
+          <div class="section-title">Quick actions</div>
+          <div class="quick-actions">
+            <button class="quick-btn" onclick="switchPage('chat')">💬 New chat</button>
+            <button class="quick-btn" onclick="openReminderModal()">⏰ Remind me</button>
+            <button class="quick-btn" onclick="openAddFactModal()">📝 Add note</button>
+            <button class="quick-btn" onclick="switchPage('tasks')">✓ View tasks</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat page (existing sidebar + panels) -->
+    <div id="page-chat" class="page active">
+      <aside id="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-brand">
         <div class="brand-icon">
@@ -911,6 +1213,134 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       </form>
     </div>
   </main>
+  </div><!-- end #page-chat -->
+
+  <!-- Tasks page -->
+  <div id="page-tasks" class="page">
+    <div class="page-content">
+      <div class="page-header"><h2>Tasks</h2></div>
+      <div class="section-block">
+        <div class="section-title">Scheduled actions</div>
+        <div id="tasks-jobs-list"><div class="empty-state">No scheduled actions</div></div>
+      </div>
+      <div class="section-block">
+        <button class="collapsible-toggle" onclick="toggleDoneSection()">▶ Done today</button>
+        <div id="tasks-done-list" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity page -->
+  <div id="page-activity" class="page">
+    <div class="page-content">
+      <div class="page-header"><h2>Activity</h2></div>
+      <div class="filter-bar" id="activity-filters">
+        <button class="filter-pill active" data-type="" onclick="setActivityFilter(this,'')">All</button>
+        <button class="filter-pill" data-type="email" onclick="setActivityFilter(this,'email')">📧 Email</button>
+        <button class="filter-pill" data-type="calendar" onclick="setActivityFilter(this,'calendar')">📅 Calendar</button>
+        <button class="filter-pill" data-type="memory" onclick="setActivityFilter(this,'memory')">💾 Memory</button>
+        <button class="filter-pill" data-type="job" onclick="setActivityFilter(this,'job')">⏰ Scheduled</button>
+      </div>
+      <div id="activity-feed"><div class="empty-state">Nothing happened yet today.</div></div>
+    </div>
+  </div>
+
+  <!-- Memory page -->
+  <div id="page-memory" class="page">
+    <div class="page-content">
+      <div class="page-header">
+        <h2 id="memory-page-title">Memory</h2>
+        <div class="memory-search-wrap">
+          <input id="memory-search-input" placeholder="Search memory…" oninput="onMemorySearch(this.value)">
+        </div>
+      </div>
+      <div id="memory-search-results" style="display:none"></div>
+      <div id="memory-categories-view">
+        <div class="section-title">Categories</div>
+        <div id="category-grid" class="category-grid"><div class="empty-state">Loading…</div></div>
+      </div>
+      <div id="memory-entity-list" style="display:none">
+        <div class="page-header" style="margin-bottom:12px">
+          <button class="back-btn" onclick="showMemoryCategories()">← Back</button>
+          <h3 id="entity-list-title" style="font-size:16px;font-weight:700"></h3>
+        </div>
+        <div id="entity-list-content"></div>
+      </div>
+      <div id="memory-entity-detail" style="display:none">
+        <div class="page-header" style="margin-bottom:12px">
+          <button class="back-btn" onclick="showEntityList()">← Back</button>
+          <h3 id="entity-detail-name" style="font-size:16px;font-weight:700"></h3>
+        </div>
+        <div id="entity-detail-content" class="entity-full-content"></div>
+      </div>
+      <div id="memory-rules-section" class="section-block">
+        <div class="section-title">Rules</div>
+        <div id="rules-list"><div class="empty-state">No rules saved yet.</div></div>
+      </div>
+      <div class="quick-add-row">
+        <button class="add-btn" onclick="openAddFactModal()">+ Add fact</button>
+        <button class="add-btn" onclick="openAddRuleModal()">+ Add rule</button>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- end .page-area -->
+
+  <!-- Bottom nav (mobile) -->
+  <nav id="bottom-nav">
+    <button class="bnav-tab" data-page="home" onclick="switchPage('home')"><span class="bnav-icon">🏠</span>Home</button>
+    <button class="bnav-tab active" data-page="chat" onclick="switchPage('chat')"><span class="bnav-icon">💬</span>Chat</button>
+    <button class="bnav-tab" data-page="tasks" onclick="switchPage('tasks')"><span class="bnav-icon">✓</span>Tasks</button>
+    <button class="bnav-tab" data-page="activity" onclick="switchPage('activity')"><span class="bnav-icon">⚡</span>Activity</button>
+    <button class="bnav-tab" data-page="memory" onclick="switchPage('memory')"><span class="bnav-icon">🧠</span>Memory</button>
+  </nav>
+
+</div><!-- end #app -->
+
+<!-- Modals -->
+<div id="modal-fact" class="modal-overlay" onclick="if(event.target===this)closeModal('modal-fact')">
+  <div class="modal-card">
+    <h3>Add fact</h3>
+    <div class="modal-field">
+      <label>Category</label>
+      <select id="fact-category" class="modal-select">
+        <option>People</option><option>Entities</option><option>Investments</option>
+        <option>Projects</option><option>Preferences</option><option>Misc</option>
+      </select>
+    </div>
+    <div class="modal-field"><label>Entity / name</label><input id="fact-entity" class="modal-input" placeholder="e.g. Daniel"></div>
+    <div class="modal-field"><label>Content</label><textarea id="fact-content" class="modal-textarea" placeholder="Facts to remember…"></textarea></div>
+    <div class="modal-actions">
+      <button class="modal-cancel-btn" onclick="closeModal('modal-fact')">Cancel</button>
+      <button class="modal-save-btn" onclick="submitFact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-rule" class="modal-overlay" onclick="if(event.target===this)closeModal('modal-rule')">
+  <div class="modal-card">
+    <h3>Add rule</h3>
+    <div class="modal-field">
+      <label>Instruction (one imperative sentence)</label>
+      <input id="rule-text" class="modal-input" placeholder="e.g. Always reply in Hebrew.">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel-btn" onclick="closeModal('modal-rule')">Cancel</button>
+      <button class="modal-save-btn" onclick="submitRule()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-reminder" class="modal-overlay" onclick="if(event.target===this)closeModal('modal-reminder')">
+  <div class="modal-card">
+    <h3>Set reminder</h3>
+    <div class="modal-field"><label>What to remind you</label><input id="reminder-text" class="modal-input" placeholder="e.g. Call the bank"></div>
+    <div class="modal-field"><label>In how many minutes</label><input id="reminder-delay" class="modal-input" type="number" min="1" value="30"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel-btn" onclick="closeModal('modal-reminder')">Cancel</button>
+      <button class="modal-save-btn" onclick="submitReminder()">Schedule</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -983,6 +1413,7 @@ function showApp() {
   loginScreen.classList.add('hidden');
   appEl.classList.remove('hidden');
   loadConversations();
+  switchPage('home');
 }
 
 function setStatus(state) {
@@ -2356,6 +2787,494 @@ function showUpdateToast(registration) {
     // Tell the waiting SW to skip waiting — triggers controllerchange → reload.
     if (registration.waiting) registration.waiting.postMessage('SKIP_WAITING');
   });
+}
+
+// ── Page switching ──────────────────────────────────────────────────────────
+let currentPage = 'chat';
+
+function switchPage(page) {
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const el = document.getElementById('page-' + page);
+  if (el) el.classList.add('active');
+  document.querySelectorAll('.nav-tab, .bnav-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.page === page);
+  });
+  if (page === 'home')     loadHomePage();
+  if (page === 'tasks')    loadTasksPage();
+  if (page === 'activity') loadActivityPage();
+  if (page === 'memory')   loadMemoryPage();
+}
+
+// ── API helper ──────────────────────────────────────────────────────────────
+async function apiGet(path) {
+  const r = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(path, {
+    method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiDelete(path) {
+  const r = await fetch(path, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// ── Relative time helper ────────────────────────────────────────────────────
+function relTimeFromNow(iso) {
+  const diff = new Date(iso) - Date.now();
+  const abs = Math.abs(diff);
+  if (abs < 60000) return diff > 0 ? 'in <1 min' : 'just now';
+  const mins = Math.round(abs / 60000);
+  if (mins < 60) return diff > 0 ? `in ${mins} min` : `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return diff > 0 ? `in ${hrs}h` : `${hrs}h ago`;
+  return diff > 0 ? `in ${Math.round(hrs/24)}d` : `${Math.round(hrs/24)}d ago`;
+}
+
+function countdownStr(isoRunAt) {
+  const diff = new Date(isoRunAt) - Date.now();
+  if (diff <= 0) return 'now';
+  const totalSec = Math.floor(diff / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+// ── Home page ────────────────────────────────────────────────────────────────
+let _homeRefreshTimer = null;
+
+async function loadHomePage() {
+  clearInterval(_homeRefreshTimer);
+  _updateTodayStrip();
+  await Promise.all([_loadHomeCards(), _loadHomeJobs()]);
+  _homeRefreshTimer = setInterval(() => {
+    _tickJobCountdowns('home-jobs-list');
+  }, 1000);
+}
+
+function _updateTodayStrip() {
+  const now = new Date();
+  document.getElementById('today-date').textContent = now.toLocaleDateString(undefined, {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+}
+
+async function _loadHomeCards() {
+  const feed = document.getElementById('cards-feed');
+  try {
+    const { cards } = await apiGet(`/api/proactive-cards?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    if (!cards.length) {
+      feed.innerHTML = '<div class="empty-state">Danidin is watching — nothing needs your attention right now.</div>';
+      return;
+    }
+    feed.innerHTML = '';
+    const dismissed = JSON.parse(localStorage.getItem('pa_dismissed_cards') || '{}');
+    const typeIcon = { trigger: '🔴', notice: '🟡', memory: '🔵' };
+    for (const card of cards) {
+      const key = `${card.card_type}_${card.id}`;
+      if (dismissed[key] && Date.now() - dismissed[key] < 86400000) continue;
+      const div = document.createElement('div');
+      div.className = `proactive-card ${card.card_type}`;
+      div.innerHTML = `
+        <div class="card-header">
+          <span class="card-icon">${typeIcon[card.card_type] || '●'}</span>
+          <span class="card-title">${_esc(card.title)}</span>
+          ${card.expires_at ? `<span class="card-time">${relTimeFromNow(card.expires_at)}</span>` : ''}
+        </div>
+        ${card.detail ? `<div class="card-detail">${_esc(card.detail)}</div>` : ''}
+        <div class="card-actions">
+          ${card.action_label ? `<button class="card-action-btn" onclick="cardAction(${card.id},${JSON.stringify(card.action_chat || '')})">${_esc(card.action_label)}</button>` : ''}
+          <button class="card-dismiss-btn" onclick="dismissCard(${card.id},'${key}')" title="Dismiss">×</button>
+        </div>`;
+      feed.appendChild(div);
+    }
+    if (!feed.children.length) {
+      feed.innerHTML = '<div class="empty-state">Danidin is watching — nothing needs your attention right now.</div>';
+    }
+  } catch (e) {
+    feed.innerHTML = `<div class="empty-state">Could not load cards: ${e.message}</div>`;
+  }
+}
+
+async function _loadHomeJobs() {
+  const section = document.getElementById('jobs-section');
+  const list = document.getElementById('home-jobs-list');
+  try {
+    const { jobs } = await apiGet(`/api/jobs?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    if (!jobs.length) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    list.innerHTML = '';
+    for (const job of jobs) _appendJobItem(list, job, 'home');
+  } catch (e) { section.style.display = 'none'; }
+}
+
+function _appendJobItem(container, job, context) {
+  const div = document.createElement('div');
+  div.className = 'job-item';
+  div.dataset.jobId = job.id;
+  div.dataset.runAt = job.run_at;
+  const icon = job.action_type === 'tuya_command' ? '💡' : '🔔';
+  const desc = job.payload?.description || job.payload?.text || job.action_type;
+  div.innerHTML = `
+    <span class="job-icon">${icon}</span>
+    <div class="job-body">
+      <div class="job-desc">${_esc(String(desc).slice(0, 80))}</div>
+      <div class="job-run-at">${new Date(job.run_at).toLocaleString()}</div>
+    </div>
+    <span class="job-countdown" data-run-at="${job.run_at}">${countdownStr(job.run_at)}</span>
+    <button class="job-cancel-btn" onclick="cancelJob(${job.id},'${context}')">Cancel</button>`;
+  container.appendChild(div);
+}
+
+function _tickJobCountdowns(listId) {
+  document.querySelectorAll(`#${listId} [data-run-at]`).forEach(el => {
+    el.textContent = countdownStr(el.dataset.runAt);
+  });
+}
+
+async function cancelJob(jobId, context) {
+  if (!confirm('Cancel this scheduled action?')) return;
+  try {
+    await apiDelete(`/api/jobs/${jobId}?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    if (context === 'home') loadHomePage();
+    else loadTasksPage();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+function cardAction(cardId, chatText) {
+  if (chatText) {
+    switchPage('chat');
+    setTimeout(() => {
+      const inp = document.getElementById('message-input');
+      if (inp) { inp.value = chatText; inp.focus(); }
+    }, 100);
+  }
+}
+
+function dismissCard(cardId, key) {
+  const dismissed = JSON.parse(localStorage.getItem('pa_dismissed_cards') || '{}');
+  dismissed[key] = Date.now();
+  localStorage.setItem('pa_dismissed_cards', JSON.stringify(dismissed));
+  apiDelete(`/api/proactive-cards/${cardId}?chat_id=${encodeURIComponent(currentChatId || 'web')}`).catch(() => {});
+  loadHomePage();
+}
+
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Tasks page ───────────────────────────────────────────────────────────────
+let _tasksRefreshTimer = null;
+
+async function loadTasksPage() {
+  clearInterval(_tasksRefreshTimer);
+  try {
+    const { jobs } = await apiGet(`/api/jobs?chat_id=${encodeURIComponent(currentChatId || 'web')}&include_done=true`);
+    const pending = jobs.filter(j => j.status === 'pending');
+    const done = jobs.filter(j => j.status !== 'pending');
+
+    const pendingList = document.getElementById('tasks-jobs-list');
+    pendingList.innerHTML = '';
+    if (pending.length) {
+      for (const job of pending) _appendJobItem(pendingList, job, 'tasks');
+    } else {
+      pendingList.innerHTML = '<div class="empty-state">No scheduled actions</div>';
+    }
+
+    const doneList = document.getElementById('tasks-done-list');
+    doneList.innerHTML = '';
+    for (const job of done.slice(0, 20)) {
+      const icon = job.status === 'done' ? '✅' : job.status === 'failed' ? '❌' : '🚫';
+      const desc = job.payload?.description || job.payload?.text || job.action_type;
+      const div = document.createElement('div');
+      div.className = 'job-item';
+      div.style.opacity = '0.65';
+      div.innerHTML = `<span class="job-icon">${icon}</span>
+        <div class="job-body">
+          <div class="job-desc">${_esc(String(desc).slice(0, 80))}</div>
+          <div class="job-run-at">${new Date(job.run_at).toLocaleString()} — ${job.status}</div>
+        </div>`;
+      doneList.appendChild(div);
+    }
+    if (!done.length) doneList.innerHTML = '<div class="empty-state">Nothing done yet today.</div>';
+
+    _tasksRefreshTimer = setInterval(() => _tickJobCountdowns('tasks-jobs-list'), 1000);
+  } catch (e) {
+    document.getElementById('tasks-jobs-list').innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+function toggleDoneSection() {
+  const list = document.getElementById('tasks-done-list');
+  const btn = document.querySelector('.collapsible-toggle');
+  const open = list.style.display !== 'none';
+  list.style.display = open ? 'none' : 'block';
+  btn.textContent = (open ? '▶' : '▼') + ' Done today';
+}
+
+// ── Activity page ────────────────────────────────────────────────────────────
+let _activityFilter = '';
+
+async function loadActivityPage(forceFilter) {
+  if (forceFilter !== undefined) _activityFilter = forceFilter;
+  const feed = document.getElementById('activity-feed');
+  feed.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const params = new URLSearchParams({ chat_id: currentChatId || 'web', limit: '60' });
+    if (_activityFilter) params.set('event_type', _activityFilter);
+    const { entries } = await apiGet(`/api/activity?${params}`);
+    if (!entries.length) {
+      feed.innerHTML = '<div class="empty-state">Nothing to show yet.</div>';
+      return;
+    }
+    feed.innerHTML = '';
+    const typeIcon = {
+      job: '⏰', memory: '💾', email: '📧', calendar: '📅',
+      device: '🏠', notification: '🔔', search: '🔍',
+    };
+    for (const entry of entries) {
+      const div = document.createElement('div');
+      div.className = 'activity-entry';
+      div.innerHTML = `
+        <div class="activity-icon">${typeIcon[entry.event_type] || '●'}</div>
+        <div class="activity-body">
+          <div class="activity-summary">${_esc(entry.summary)}</div>
+          <div class="activity-time">${relTimeFromNow(entry.created_at)}</div>
+          ${entry.detail ? `<div class="activity-detail">${_esc(JSON.stringify(entry.detail, null, 2))}</div>` : ''}
+        </div>`;
+      div.addEventListener('click', () => div.classList.toggle('expanded'));
+      feed.appendChild(div);
+    }
+  } catch (e) {
+    feed.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+function setActivityFilter(btn, type) {
+  document.querySelectorAll('#activity-filters .filter-pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  loadActivityPage(type);
+}
+
+// ── Memory page ──────────────────────────────────────────────────────────────
+let _memoryCategory = null;
+let _searchDebounce = null;
+
+const CAT_ICON = {
+  People: '👤', Entities: '🏢', Investments: '💰',
+  Projects: '🗂', Preferences: '⭐', Misc: '📌',
+};
+
+async function loadMemoryPage() {
+  showMemoryCategories();
+  loadMemoryRules();
+}
+
+function showMemoryCategories() {
+  _memoryCategory = null;
+  document.getElementById('memory-entity-list').style.display = 'none';
+  document.getElementById('memory-entity-detail').style.display = 'none';
+  document.getElementById('memory-categories-view').style.display = '';
+  document.getElementById('memory-page-title').textContent = 'Memory';
+  _loadCategories();
+}
+
+async function _loadCategories() {
+  const grid = document.getElementById('category-grid');
+  grid.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const { categories } = await apiGet('/api/memory/categories');
+    grid.innerHTML = '';
+    for (const cat of categories) {
+      const div = document.createElement('div');
+      div.className = 'category-tile';
+      div.innerHTML = `<span class="category-tile-icon">${CAT_ICON[cat.name] || '📁'}</span>
+        <span class="category-tile-name">${_esc(cat.name)}</span>
+        <span class="category-tile-count">${cat.count} entries</span>`;
+      div.addEventListener('click', () => openCategory(cat.name));
+      grid.appendChild(div);
+    }
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state">Could not load: ${e.message}</div>`;
+  }
+}
+
+async function openCategory(catName) {
+  _memoryCategory = catName;
+  document.getElementById('memory-categories-view').style.display = 'none';
+  document.getElementById('memory-entity-detail').style.display = 'none';
+  const listSection = document.getElementById('memory-entity-list');
+  listSection.style.display = '';
+  document.getElementById('entity-list-title').textContent = `${CAT_ICON[catName] || ''} ${catName}`;
+  const content = document.getElementById('entity-list-content');
+  content.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const { entities } = await apiGet(`/api/memory/category/${encodeURIComponent(catName)}`);
+    content.innerHTML = '';
+    if (!entities.length) {
+      content.innerHTML = '<div class="empty-state">Nothing saved in this category yet.</div>';
+      return;
+    }
+    for (const ent of entities) {
+      const div = document.createElement('div');
+      div.className = 'entity-item';
+      div.innerHTML = `<div class="entity-name">${_esc(ent.entity)}</div>
+        ${ent.preview ? `<div class="entity-preview">${_esc(ent.preview)}</div>` : ''}`;
+      div.addEventListener('click', () => openEntity(catName, ent.entity));
+      content.appendChild(div);
+    }
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+function showEntityList() {
+  if (_memoryCategory) openCategory(_memoryCategory);
+  else showMemoryCategories();
+}
+
+async function openEntity(catName, entityName) {
+  document.getElementById('memory-entity-list').style.display = 'none';
+  const detailSection = document.getElementById('memory-entity-detail');
+  detailSection.style.display = '';
+  document.getElementById('entity-detail-name').textContent = entityName;
+  const content = document.getElementById('entity-detail-content');
+  content.textContent = 'Loading…';
+  try {
+    const data = await apiGet(`/api/memory/entity?category=${encodeURIComponent(catName)}&entity=${encodeURIComponent(entityName)}`);
+    content.textContent = data.content || '(empty)';
+  } catch (e) {
+    content.textContent = `Error: ${e.message}`;
+  }
+}
+
+async function loadMemoryRules() {
+  const list = document.getElementById('rules-list');
+  try {
+    const { rules } = await apiGet('/api/memory/rules');
+    if (!rules.length) { list.innerHTML = '<div class="empty-state">No rules saved yet.</div>'; return; }
+    list.innerHTML = '';
+    for (const rule of rules) {
+      const div = document.createElement('div');
+      div.className = 'rule-item';
+      div.innerHTML = `<span class="rule-text">${_esc(rule.text)}</span>
+        ${rule.added ? `<span class="rule-date">${rule.added}</span>` : ''}
+        <button class="rule-hide-btn" title="Hide rule" onclick="hideRule(${JSON.stringify(rule.text)}, this)">×</button>`;
+      list.appendChild(div);
+    }
+  } catch (e) { list.innerHTML = `<div class="empty-state">Could not load rules.</div>`; }
+}
+
+async function hideRule(ruleText, btn) {
+  if (!confirm('Hide this rule?')) return;
+  try {
+    await apiPost('/api/memory/rule/hide', { instruction: ruleText });
+    btn.closest('.rule-item').remove();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+function onMemorySearch(q) {
+  clearTimeout(_searchDebounce);
+  const resultsEl = document.getElementById('memory-search-results');
+  const catsView = document.getElementById('memory-categories-view');
+  if (!q.trim()) {
+    resultsEl.style.display = 'none';
+    catsView.style.display = '';
+    return;
+  }
+  catsView.style.display = 'none';
+  resultsEl.style.display = '';
+  resultsEl.innerHTML = '<div class="empty-state">Searching…</div>';
+  _searchDebounce = setTimeout(async () => {
+    try {
+      const data = await apiGet(`/api/memory/search?q=${encodeURIComponent(q)}`);
+      const raw = data.result || '';
+      if (!raw || raw.startsWith('No vault') || raw.startsWith('Provide')) {
+        resultsEl.innerHTML = '<div class="empty-state">No results found.</div>';
+        return;
+      }
+      const blocks = raw.split('\n### ').map((b, i) => i === 0 ? b : '### ' + b);
+      resultsEl.innerHTML = '';
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        const lines = block.split('\n');
+        const pathLine = lines[0].replace(/^###\s*/, '');
+        const snippet = lines.slice(1).join('\n').trim();
+        const div = document.createElement('div');
+        div.className = 'search-result-item';
+        div.innerHTML = `<div class="search-result-path">${_esc(pathLine)}</div>
+          <div class="search-result-snippet">${_esc(snippet.slice(0, 400))}</div>`;
+        resultsEl.appendChild(div);
+      }
+    } catch (e) { resultsEl.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`; }
+  }, 400);
+}
+
+// ── Modals ──────────────────────────────────────────────────────────────────
+function openAddFactModal() {
+  document.getElementById('fact-entity').value = '';
+  document.getElementById('fact-content').value = '';
+  openModal('modal-fact');
+}
+function openAddRuleModal() {
+  document.getElementById('rule-text').value = '';
+  openModal('modal-rule');
+}
+function openReminderModal() {
+  document.getElementById('reminder-text').value = '';
+  document.getElementById('reminder-delay').value = '30';
+  openModal('modal-reminder');
+}
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function submitFact() {
+  const cat = document.getElementById('fact-category').value;
+  const entity = document.getElementById('fact-entity').value.trim();
+  const content = document.getElementById('fact-content').value.trim();
+  if (!entity || !content) { alert('Please fill in all fields.'); return; }
+  try {
+    await apiPost('/api/memory/fact', { category: cat, entity, content });
+    closeModal('modal-fact');
+    if (currentPage === 'memory') loadMemoryPage();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function submitRule() {
+  const instruction = document.getElementById('rule-text').value.trim();
+  if (!instruction) { alert('Please enter an instruction.'); return; }
+  try {
+    await apiPost('/api/memory/rule', { instruction });
+    closeModal('modal-rule');
+    if (currentPage === 'memory') loadMemoryPage();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function submitReminder() {
+  const text = document.getElementById('reminder-text').value.trim();
+  const delay = parseInt(document.getElementById('reminder-delay').value, 10);
+  if (!text || !delay) { alert('Please fill in all fields.'); return; }
+  try {
+    const chatId = currentChatId || 'web';
+    const runAt = new Date(Date.now() + delay * 60000).toISOString();
+    // Send via chat so the agent schedules it properly
+    switchPage('chat');
+    setTimeout(() => {
+      const inp = document.getElementById('message-input');
+      if (inp) { inp.value = `תזכיר לי בעוד ${delay} דקות: ${text}`; inp.focus(); }
+    }, 200);
+    closeModal('modal-reminder');
+  } catch (e) { alert('Failed: ' + e.message); }
 }
 </script>
 </body>
