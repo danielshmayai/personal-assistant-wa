@@ -8,6 +8,41 @@ logger = logging.getLogger("pa.tool_executor")
 
 _sem = asyncio.Semaphore(TOOL_CONCURRENCY)
 
+# Map tool name prefixes → activity event_type shown in the Activity feed
+_TOOL_EVENT_TYPE: dict[str, str] = {
+    "calendar":        "calendar",
+    "search_emails":   "email",
+    "get_email":       "email",
+    "draft_email":     "email",
+    "send_email":      "email",
+    "list_emails":     "email",
+    "save_fact":       "memory",
+    "update_rule":     "memory",
+    "retrieve_context":"memory",
+    "hide_fact":       "memory",
+    "hide_rule":       "memory",
+    "schedule_tuya":   "device",
+    "send_tuya":       "device",
+    "get_tuya":        "device",
+    "list_tuya":       "device",
+    "schedule_remind": "job",
+    "web_search":      "search",
+    "browse_web":      "search",
+}
+
+def _event_type_for(tool_name: str) -> str:
+    for prefix, etype in _TOOL_EVENT_TYPE.items():
+        if tool_name.startswith(prefix):
+            return etype
+    return "tool"
+
+
+def _short_args(args: dict) -> str:
+    """Return a one-line human-readable summary of the tool arguments."""
+    skip = {"token", "api_key", "secret"}
+    parts = [f"{k}={str(v)[:60]}" for k, v in args.items() if k not in skip]
+    return ", ".join(parts[:3])
+
 
 async def _run_tool_call(call: dict, tool_map: dict, chat_id: str) -> ToolMessage:
     """Execute a single tool call, returning a ToolMessage even on error."""
@@ -20,10 +55,35 @@ async def _run_tool_call(call: dict, tool_map: dict, chat_id: str) -> ToolMessag
         async with _sem:
             content = str(await tool.ainvoke(args))
         logger.info("Tool %s executed for chat_id=%s", name, chat_id)
+        _log(chat_id, name, args, content, error=None)
     except Exception as e:
         logger.exception("Tool %s failed", name)
         content = f"Tool {name} failed: {e}"
+        _log(chat_id, name, args, "", error=str(e))
     return ToolMessage(content=content, tool_call_id=call["id"])
+
+
+def _log(chat_id: str, tool_name: str, args: dict, result: str, error: str | None) -> None:
+    """Fire-and-forget activity log entry (runs in a thread to avoid blocking)."""
+    if not chat_id:
+        return
+    from app.scheduled_jobs import log_activity
+    event_type = _event_type_for(tool_name)
+    if error:
+        summary = f"❌ {tool_name} failed: {error[:120]}"
+    else:
+        arg_str = _short_args(args)
+        summary = f"{tool_name}({arg_str})" if arg_str else tool_name
+    detail = {"tool": tool_name, "args": {k: v for k, v in args.items() if k not in ("token","api_key","secret")}}
+    if error:
+        detail["error"] = error
+    else:
+        detail["result_preview"] = result[:300]
+    try:
+        import threading
+        threading.Thread(target=log_activity, args=(chat_id, event_type, summary, detail), daemon=True).start()
+    except Exception:
+        pass
 
 
 async def tool_executor_node(state: PAState) -> dict:
