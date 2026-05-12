@@ -779,7 +779,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 }
 .nav-brand .brand-icon svg { color: #fff; }
 .nav-brand .brand-name { font-family: "Outfit", sans-serif; font-size: 14px; font-weight: 700; color: var(--text); }
-.nav-tabs { display: flex; align-items: center; gap: 2px; flex: 1; }
+.nav-tabs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.nav-tabs::-webkit-scrollbar { display: none; }
 .nav-tab {
   background: none; border: none; border-radius: 8px; color: var(--text2); cursor: pointer;
   font-family: inherit; font-size: 13px; font-weight: 500; padding: 6px 14px;
@@ -789,7 +790,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .nav-tab.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
 
 #hard-refresh-btn {
-  margin-left: auto; flex-shrink: 0;
+  flex-shrink: 0; margin-left: 8px;
   background: none; border: 1px solid var(--border2); border-radius: 8px;
   color: var(--text3); cursor: pointer; padding: 6px 8px;
   display: flex; align-items: center; transition: color .15s, background .15s, transform .4s;
