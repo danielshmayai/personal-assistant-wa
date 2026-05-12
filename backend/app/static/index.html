@@ -152,21 +152,19 @@ body {
 #app { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 .page-area { flex: 1; overflow: hidden; position: relative; min-height: 0; }
 .page {
-  position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
-  transform: translateX(100%);
-  transition: transform 0.28s cubic-bezier(.4,0,.2,1), visibility 0s linear 0.28s;
-  pointer-events: none;
-  visibility: hidden;
-  will-change: transform;
+  position: absolute; inset: 0;
+  overflow-y: auto; overflow-x: hidden;
+  display: none;
 }
-.page.page-left { transform: translateX(-100%); }
-.page.active {
-  transform: translateX(0);
-  pointer-events: auto;
-  visibility: visible;
-  transition: transform 0.28s cubic-bezier(.4,0,.2,1), visibility 0s linear 0s;
+.page.active { display: block; animation: page-enter 0.22s ease-out both; }
+.page.active.no-anim { animation: none; }
+#page-chat.active { display: grid; grid-template-columns: 260px 1fr; overflow: hidden; animation: page-enter 0.22s ease-out both; }
+#page-chat.active.no-anim { animation: none; }
+
+@keyframes page-enter {
+  from { opacity: 0.6; transform: translateX(16px); }
+  to   { opacity: 1;   transform: translateX(0); }
 }
-#page-chat.active { display: grid; grid-template-columns: 260px 1fr; overflow: hidden; }
 
 /* ── Sidebar ── */
 #sidebar {
@@ -1462,12 +1460,7 @@ function showApp() {
   loginScreen.classList.add('hidden');
   appEl.classList.remove('hidden');
   loadConversations();
-  // Disable transition for initial page placement so there's no slide-in flash
-  document.querySelectorAll('.page').forEach(p => p.style.transition = 'none');
-  switchPage('home');
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    document.querySelectorAll('.page').forEach(p => p.style.transition = '');
-  }));
+  switchPage('home', true);
 }
 
 function setStatus(state) {
@@ -2847,17 +2840,14 @@ function showUpdateToast(registration) {
 const PAGE_ORDER = ['home', 'chat', 'tasks', 'activity', 'memory'];
 let currentPage = 'chat';
 
-function switchPage(page) {
+function switchPage(page, instant) {
   currentPage = page;
-  const nextIdx = PAGE_ORDER.indexOf(page);
-  document.querySelectorAll('.page').forEach(p => {
-    const pid = p.id.replace('page-', '');
-    const idx = PAGE_ORDER.indexOf(pid);
-    p.classList.remove('active', 'page-left');
-    if (idx < nextIdx) p.classList.add('page-left');
-  });
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active', 'no-anim'));
   const el = document.getElementById('page-' + page);
-  if (el) el.classList.add('active');
+  if (el) {
+    el.classList.add('active');
+    if (instant) el.classList.add('no-anim');
+  }
   document.querySelectorAll('.nav-tab, .bnav-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.page === page);
   });
