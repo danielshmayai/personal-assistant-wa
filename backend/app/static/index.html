@@ -173,6 +173,8 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
 }
 .sidebar-header { padding: 16px 14px 14px; border-bottom: 1px solid var(--border); }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
@@ -566,7 +568,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 /* ── Smart Home nav button ── */
 #smarthome-nav-btn {
   display: flex; align-items: center; gap: 9px;
-  width: calc(100% - 16px); margin: 2px 8px;
+  width: calc(100% - 16px); margin: 2px 8px 8px;
   background: none; border: 1px solid transparent; border-radius: 10px;
   color: var(--text2); cursor: pointer; font-family: inherit; font-size: 13px;
   font-weight: 500; padding: 8px 10px;
@@ -716,7 +718,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   #page-chat.active { grid-template-columns: 1fr; }
   .category-grid { grid-template-columns: repeat(2, 1fr); }
   .page-content { padding: 16px 12px 90px; }
-  #sidebar { position: fixed; top: 0; left: -284px; width: 284px; height: 100dvh; z-index: 50; transition: left .25s cubic-bezier(.4,0,.2,1); box-shadow: 8px 0 40px rgba(0,0,0,.15); }
+  #sidebar { position: fixed; top: 0; left: -284px; width: 284px; height: 100dvh; z-index: 50; transition: left .25s cubic-bezier(.4,0,.2,1); box-shadow: 8px 0 40px rgba(0,0,0,.15); padding-bottom: max(16px, env(safe-area-inset-bottom, 16px)); box-sizing: border-box; }
   #sidebar.open { left: 0; }
   #sidebar-overlay.visible { display: block; }
   #menu-btn { display: flex; }
