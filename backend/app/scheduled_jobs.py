@@ -57,6 +57,37 @@ def init_table() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_pending_notif_chat "
                 "ON pending_notifications (chat_id) WHERE delivered_at IS NULL"
             )
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    id          SERIAL PRIMARY KEY,
+                    chat_id     TEXT NOT NULL,
+                    event_type  TEXT NOT NULL,
+                    summary     TEXT NOT NULL,
+                    detail      JSONB,
+                    created_at  TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_activity_log_chat "
+                "ON activity_log (chat_id, created_at DESC)"
+            )
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS proactive_cards (
+                    id           SERIAL PRIMARY KEY,
+                    chat_id      TEXT NOT NULL,
+                    card_type    TEXT NOT NULL,
+                    title        TEXT NOT NULL,
+                    detail       TEXT,
+                    action_label TEXT,
+                    action_chat  TEXT,
+                    expires_at   TIMESTAMPTZ,
+                    created_at   TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_proactive_cards_chat "
+                "ON proactive_cards (chat_id, created_at DESC)"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -222,6 +253,153 @@ def cancel_job(job_id: int, chat_id: str) -> bool:
         conn.close()
 
 
+# ── Activity log ─────────────────────────────────────────────────────────────
+
+def log_activity(chat_id: str, event_type: str, summary: str, detail: dict | None = None) -> None:
+    if not DATABASE_URL:
+        return
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO activity_log (chat_id, event_type, summary, detail) VALUES (%s, %s, %s, %s::jsonb)",
+                (chat_id, event_type, summary, json.dumps(detail) if detail else None),
+            )
+        conn.commit()
+    except Exception:
+        logger.exception("log_activity failed")
+    finally:
+        conn.close()
+
+
+def get_activity(chat_id: str, limit: int = 50, event_type: str | None = None) -> list[dict]:
+    if not DATABASE_URL:
+        return []
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            if event_type:
+                cur.execute(
+                    "SELECT id, event_type, summary, detail, created_at FROM activity_log "
+                    "WHERE chat_id = %s AND event_type = %s ORDER BY created_at DESC LIMIT %s",
+                    (chat_id, event_type, limit),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, event_type, summary, detail, created_at FROM activity_log "
+                    "WHERE chat_id = %s ORDER BY created_at DESC LIMIT %s",
+                    (chat_id, limit),
+                )
+            rows = cur.fetchall()
+        return [
+            {"id": r[0], "event_type": r[1], "summary": r[2], "detail": r[3], "created_at": r[4].isoformat()}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+# ── Proactive cards ───────────────────────────────────────────────────────────
+
+def upsert_card(chat_id: str, card_type: str, title: str, detail: str = "",
+                action_label: str = "", action_chat: str = "",
+                expires_at: datetime | None = None) -> int:
+    if not DATABASE_URL:
+        return -1
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO proactive_cards
+                   (chat_id, card_type, title, detail, action_label, action_chat, expires_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (chat_id, card_type, title, detail, action_label, action_chat, expires_at),
+            )
+            card_id = cur.fetchone()[0]
+        conn.commit()
+        return card_id
+    finally:
+        conn.close()
+
+
+def get_active_cards(chat_id: str) -> list[dict]:
+    if not DATABASE_URL:
+        return []
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, card_type, title, detail, action_label, action_chat, expires_at, created_at
+                   FROM proactive_cards
+                   WHERE chat_id = %s AND (expires_at IS NULL OR expires_at > NOW())
+                   ORDER BY card_type, created_at DESC""",
+                (chat_id,),
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "id": r[0], "card_type": r[1], "title": r[2], "detail": r[3],
+                "action_label": r[4], "action_chat": r[5],
+                "expires_at": r[6].isoformat() if r[6] else None,
+                "created_at": r[7].isoformat(),
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def delete_card(card_id: int, chat_id: str) -> bool:
+    if not DATABASE_URL:
+        return False
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM proactive_cards WHERE id = %s AND chat_id = %s",
+                (card_id, chat_id),
+            )
+            affected = cur.rowcount
+        conn.commit()
+        return affected > 0
+    finally:
+        conn.close()
+
+
+def list_all_jobs(chat_id: str, include_done: bool = False) -> list[dict]:
+    """Return all jobs for a chat_id, optionally including done/failed/cancelled."""
+    if not DATABASE_URL:
+        return []
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            if include_done:
+                cur.execute(
+                    """SELECT id, action_type, payload, run_at, status, executed_at
+                       FROM scheduled_jobs WHERE chat_id = %s
+                       ORDER BY run_at DESC LIMIT 100""",
+                    (chat_id,),
+                )
+            else:
+                cur.execute(
+                    """SELECT id, action_type, payload, run_at, status, executed_at
+                       FROM scheduled_jobs WHERE chat_id = %s AND status = 'pending'
+                       ORDER BY run_at ASC""",
+                    (chat_id,),
+                )
+            rows = cur.fetchall()
+        return [
+            {
+                "id": r[0], "action_type": r[1], "payload": r[2],
+                "run_at": r[3].isoformat(), "status": r[4],
+                "executed_at": r[5].isoformat() if r[5] else None,
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 # ── Execution ─────────────────────────────────────────────────────────────────
 
 async def _run_job(job: dict) -> str:
@@ -298,10 +476,18 @@ async def _execute_due_jobs() -> None:
             msg = await _run_job(job)
             await asyncio.to_thread(mark_job_done, jid)
             logger.info("Job %d done: %s", jid, msg)
+            await asyncio.to_thread(
+                log_activity, job["chat_id"], "job",
+                msg, {"job_id": jid, "action_type": job["action_type"]}
+            )
             await _notify(job["chat_id"], msg)
         except Exception as exc:
             logger.exception("Job %d failed", jid)
             await asyncio.to_thread(mark_job_failed, jid, str(exc))
+            await asyncio.to_thread(
+                log_activity, job["chat_id"], "job",
+                f"❌ Job {jid} failed: {exc}", {"job_id": jid, "error": str(exc)}
+            )
             await _notify(job["chat_id"], f"❌ הפעולה המתוזמנת נכשלה: {exc}")
 
 
