@@ -10,24 +10,46 @@ _sem = asyncio.Semaphore(TOOL_CONCURRENCY)
 
 # Map tool name prefixes → activity event_type shown in the Activity feed
 _TOOL_EVENT_TYPE: dict[str, str] = {
-    "calendar":        "calendar",
-    "search_emails":   "email",
-    "get_email":       "email",
-    "draft_email":     "email",
-    "send_email":      "email",
-    "list_emails":     "email",
-    "save_fact":       "memory",
-    "update_rule":     "memory",
-    "retrieve_context":"memory",
-    "hide_fact":       "memory",
-    "hide_rule":       "memory",
-    "schedule_tuya":   "device",
-    "send_tuya":       "device",
-    "get_tuya":        "device",
-    "list_tuya":       "device",
-    "schedule_remind": "job",
-    "web_search":      "search",
-    "browse_web":      "search",
+    # Calendar
+    "calendar":         "calendar",
+    # Email / Gmail
+    "gmail":            "email",
+    "google_connect":   "email",
+    "search_emails":    "email",
+    "get_email":        "email",
+    "draft_email":      "email",
+    "send_email":       "email",
+    "list_emails":      "email",
+    # Google Drive
+    "drive_":           "drive",
+    # Memory / vault
+    "save_fact":        "memory",
+    "update_rule":      "memory",
+    "retrieve_context": "memory",
+    "hide_fact":        "memory",
+    "hide_rule":        "memory",
+    "search_vault":     "memory",
+    "list_memory":      "memory",
+    "append_to_note":   "memory",
+    "read_note":        "memory",
+    "grep_note":        "memory",
+    # Smart home / Tuya
+    "schedule_tuya":    "device",
+    "send_tuya":        "device",
+    "get_tuya":         "device",
+    "list_tuya":        "device",
+    "get_device":       "device",
+    "control_device":   "device",
+    # Scheduled jobs
+    "schedule_remind":  "job",
+    "list_scheduled":   "job",
+    "cancel_scheduled": "job",
+    # Web / search
+    "web_search":       "search",
+    "wikipedia":        "search",
+    "fetch_url":        "search",
+    "get_weather":      "search",
+    "browse_web":       "search",
 }
 
 def _event_type_for(tool_name: str) -> str:
