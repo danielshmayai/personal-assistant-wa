@@ -156,14 +156,13 @@ body {
   overflow-y: auto; overflow-x: hidden;
   display: none;
 }
-.page.active { display: block; animation: page-enter 0.22s ease-out both; }
+.page.active { display: block; animation: page-enter 0.2s ease-out both; }
 .page.active.no-anim { animation: none; }
-#page-chat.active { display: grid; grid-template-columns: 260px 1fr; overflow: hidden; animation: page-enter 0.22s ease-out both; }
-#page-chat.active.no-anim { animation: none; }
+#page-chat.active { display: grid; grid-template-columns: 260px 1fr; overflow: hidden; animation: none; }
 
 @keyframes page-enter {
-  from { opacity: 0.6; transform: translateX(16px); }
-  to   { opacity: 1;   transform: translateX(0); }
+  from { transform: translateX(14px); }
+  to   { transform: translateX(0); }
 }
 
 /* ── Sidebar ── */
@@ -1104,7 +1103,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     </div>
 
     <!-- Chat page (existing sidebar + panels) -->
-    <div id="page-chat" class="page active">
+    <div id="page-chat" class="page">
       <aside id="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-brand">
@@ -1351,8 +1350,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 
   <!-- Bottom nav (mobile) -->
   <nav id="bottom-nav">
-    <button class="bnav-tab" data-page="home" onclick="switchPage('home')"><span class="bnav-icon">🏠</span>Home</button>
-    <button class="bnav-tab active" data-page="chat" onclick="switchPage('chat')"><span class="bnav-icon">💬</span>Chat</button>
+    <button class="bnav-tab active" data-page="home" onclick="switchPage('home')"><span class="bnav-icon">🏠</span>Home</button>
+    <button class="bnav-tab" data-page="chat" onclick="switchPage('chat')"><span class="bnav-icon">💬</span>Chat</button>
     <button class="bnav-tab" data-page="tasks" onclick="switchPage('tasks')"><span class="bnav-icon">✓</span>Tasks</button>
     <button class="bnav-tab" data-page="activity" onclick="switchPage('activity')"><span class="bnav-icon">⚡</span>Activity</button>
     <button class="bnav-tab" data-page="memory" onclick="switchPage('memory')"><span class="bnav-icon">🧠</span>Memory</button>
