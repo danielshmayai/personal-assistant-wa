@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Personal Assistant</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#ffffff">
@@ -399,7 +399,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 #input-form:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 #upload-label { cursor: pointer; color: var(--text3); padding: 6px; display: flex; align-items: center; border-radius: 8px; transition: color .15s, background .15s; flex-shrink: 0; align-self: flex-end; margin-bottom: 1px; }
 #upload-label:hover { color: var(--accent); background: var(--accent-dim); }
-#message-input { background: transparent; border: none; color: var(--text); flex: 1; font-family: inherit; font-size: 15px; line-height: 1.5; max-height: 160px; outline: none; padding: 6px 4px; resize: none; }
+#message-input { background: transparent; border: none; color: var(--text); flex: 1; font-family: inherit; font-size: 15px; line-height: 1.5; min-height: 26px; max-height: 160px; outline: none; padding: 6px 4px; resize: none; overflow-y: auto; }
 #message-input:disabled { opacity: .4; }
 #message-input::placeholder { color: var(--text3); }
 #mic-btn { background: none; border: none; border-radius: 10px; color: var(--text3); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; transition: color .15s, background .15s; align-self: flex-end; }
@@ -722,8 +722,11 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   .message { max-width: 92%; }
   #chat-header { padding: 0 12px; height: 54px; }
   #messages { padding: 14px 12px 8px; }
-  #input-area { padding: 8px 10px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
-  #message-input, .login-card input[type=password] { font-size: 16px; }
+  #input-area { padding: 10px 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  #input-form { padding: 6px 6px 6px 12px; }
+  #message-input, .login-card input[type=password] { font-size: 16px; min-height: 28px; }
+  #send-btn { width: 44px; height: 44px; }
+  #mic-btn { width: 40px; height: 40px; }
   .login-card { padding: 32px 24px 28px; }
   #scroll-btn { bottom: 78px; right: 12px; }
   .msg-avatar { width: 26px; height: 26px; }
@@ -3002,6 +3005,25 @@ function switchPage(page, instant) {
     if (dx < 0 && idx < PAGE_ORDER.length - 1) switchPage(PAGE_ORDER[idx + 1]);
     if (dx > 0 && idx > 0) switchPage(PAGE_ORDER[idx - 1]);
   }, { passive: true });
+})();
+
+// ── Visual viewport: keep input above virtual keyboard / Google Voice panel ──
+// Fallback for Chrome < 108 that doesn't honour interactive-widget=resizes-content
+(function() {
+  if (!window.visualViewport) return;
+  const app = document.getElementById('app');
+  let rafId;
+  function syncViewport() {
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      const vv = window.visualViewport;
+      // vv.offsetTop > 0 when the browser chrome scrolled the visual viewport
+      const visibleH = vv.height + vv.offsetTop;
+      app.style.height = visibleH + 'px';
+    });
+  }
+  window.visualViewport.addEventListener('resize', syncViewport, { passive: true });
+  window.visualViewport.addEventListener('scroll', syncViewport, { passive: true });
 })();
 
 // ── API helper ──────────────────────────────────────────────────────────────
