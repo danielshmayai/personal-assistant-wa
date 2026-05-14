@@ -3,17 +3,19 @@ Google My Maps tool — create and update editable maps on the user's Google acc
 
 Flow:
   1. Geocode each place name via Nominatim (no API key needed)
-  2. Build KML document with Placemarks
-  3. Upload to Google Drive as application/vnd.google-apps.map → editable My Maps
-  4. Save map metadata to vault (Maps/{title}.md) for future edits
-  5. Return the editable My Maps link
+  2. If Nominatim fails, fall back to web search to find the address, then retry Nominatim
+  3. Build KML document with Placemarks
+  4. Upload to Google Drive as application/vnd.google-apps.map → editable My Maps
+  5. Save map metadata to vault (Maps/{title}.md) for future edits
+  6. Return the editable My Maps link
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
-from typing import Any
+import re
 
 import httpx
 from langchain_core.tools import tool
@@ -25,28 +27,81 @@ _UA = "personal-assistant-danidin/1.0"
 
 # ── Geocoding ─────────────────────────────────────────────────────────────────
 
-async def _geocode(place: str, city: str, country: str) -> dict | None:
-    """Geocode a place name using Nominatim. Returns dict(name, lat, lon, display) or None."""
-    queries = [f"{place}, {city}, {country}", f"{place}, {city}", f"{place}, {country}"]
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        for q in queries:
-            try:
-                r = await client.get(
-                    "https://nominatim.openstreetmap.org/search",
-                    params={"q": q, "format": "json", "limit": 1, "accept-language": "he,en"},
-                    headers={"User-Agent": _UA},
-                )
-                results = r.json()
-                if results:
-                    return {
-                        "name": place,
-                        "lat": float(results[0]["lat"]),
-                        "lon": float(results[0]["lon"]),
-                        "display": results[0].get("display_name", place).split(",")[0].strip(),
-                    }
-            except Exception:
-                pass
+async def _nominatim_query(q: str, place_name: str, client: httpx.AsyncClient) -> dict | None:
+    """Single Nominatim lookup. Returns geocoded dict or None."""
+    try:
+        r = await client.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": q, "format": "json", "limit": 1, "accept-language": "he,en"},
+            headers={"User-Agent": _UA},
+        )
+        results = r.json()
+        if results:
+            return {
+                "name": place_name,
+                "lat": float(results[0]["lat"]),
+                "lon": float(results[0]["lon"]),
+                "display": results[0].get("display_name", place_name).split(",")[0].strip(),
+            }
+    except Exception:
+        pass
     return None
+
+
+def _extract_address_candidates(search_text: str, city: str, country: str) -> list[str]:
+    """Extract address-like candidates from a web search result string."""
+    candidates = []
+    for line in search_text.splitlines():
+        line = line.strip()
+        if not line or len(line) < 5:
+            continue
+        # Lines that mention the city or country are likely address-bearing
+        if city.lower() in line.lower() or country.lower() in line.lower():
+            # Truncate to a reasonable length for geocoding
+            candidates.append(line[:200])
+        # Lines with number + word pattern typical of street addresses
+        elif re.search(r'\d+\s+\w', line):
+            candidates.append(line[:200])
+        if len(candidates) >= 5:
+            break
+    return candidates
+
+
+async def _geocode_with_fallback(place: str, city: str, country: str) -> tuple[dict | None, str]:
+    """Geocode a place via Nominatim, falling back to web search if not found.
+
+    Returns (result_dict | None, status) where status is one of:
+      'nominatim' — found directly
+      'web'       — found after web search fallback
+      'not_found' — could not locate even after web search
+    """
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        # Pass 1: try Nominatim with progressively looser queries
+        for q in [f"{place}, {city}, {country}", f"{place}, {city}", f"{place}, {country}", place]:
+            result = await _nominatim_query(q, place, client)
+            if result:
+                return result, "nominatim"
+
+    # Pass 2: web search fallback
+    try:
+        from app.web.tools import web_search as _web_search
+        query = f"{place} {city} {country} address location"
+        search_text = await asyncio.to_thread(_web_search, query)
+
+        candidates = _extract_address_candidates(search_text, city, country)
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            for candidate in candidates:
+                # Try the candidate alone, then with city/country appended
+                for q in [f"{candidate}, {city}, {country}", f"{candidate}, {city}", candidate]:
+                    result = await _nominatim_query(q, place, client)
+                    if result:
+                        logger.info("geocode fallback via web search succeeded for '%s'", place)
+                        return result, "web"
+    except Exception:
+        logger.exception("geocode web search fallback failed for '%s'", place)
+
+    return None, "not_found"
 
 
 # ── KML builder ───────────────────────────────────────────────────────────────
@@ -168,18 +223,26 @@ def get_maps_tools(chat_id: str) -> list:
         if creds.scopes and not any("drive" in s for s in creds.scopes):
             return "הרשאת Drive חסרה. אנא קרא ל-google_connect כדי להוסיף אותה."
 
-        # Geocode all places
+        # Geocode all places (with web search fallback)
         geocoded: list[dict] = []
-        not_found: list[str] = []
+        via_web: list[str] = []
+        needs_clarification: list[str] = []
         for p in places:
-            result = await _geocode(p, city, country)
+            result, status = await _geocode_with_fallback(p, city, country)
             if result:
                 geocoded.append(result)
+                if status == "web":
+                    via_web.append(p)
             else:
-                not_found.append(p)
+                needs_clarification.append(p)
 
         if not geocoded:
-            return f"❌ לא הצלחתי למצוא מיקומים עבור: {', '.join(places)}"
+            clarify_hint = (
+                f"\n\nאנא ספק פרטים נוספים עבור: {', '.join(needs_clarification)}"
+                " (למשל: שם רחוב, שכונה, או מזהה מדויק יותר)."
+                if needs_clarification else ""
+            )
+            return f"❌ לא הצלחתי למצוא מיקומים עבור: {', '.join(places)}{clarify_hint}"
 
         kml = _build_kml(title, geocoded)
 
@@ -208,9 +271,16 @@ def get_maps_tools(chat_id: str) -> list:
             f"📍 {len(geocoded)} מקומות סומנו:",
         ] + [f"  • {p['name']}" for p in geocoded]
 
-        if not_found:
-            lines += ["", f"⚠️ לא נמצאו: {', '.join(not_found)}"]
-        lines += ["", "💡 ניתן להוסיף מקומות נוספים ישירות ב-My Maps או לבקש ממני להוסיף."]
+        if via_web:
+            lines += ["", f"🔍 מיקום נמצא דרך חיפוש ברשת: {', '.join(via_web)}"]
+        if needs_clarification:
+            lines += [
+                "",
+                f"❓ לא הצלחתי לאתר את המקומות הבאים גם אחרי חיפוש ברשת: {', '.join(needs_clarification)}",
+                "אנא ספק פרטים מדויקים יותר (שם רחוב, שכונה, או תיאור מפורט) כדי שאוכל להוסיף אותם למפה.",
+            ]
+        else:
+            lines += ["", "💡 ניתן להוסיף מקומות נוספים ישירות ב-My Maps או לבקש ממני להוסיף."]
         return "\n".join(lines)
 
     @tool
@@ -242,16 +312,24 @@ def get_maps_tools(chat_id: str) -> list:
         existing: list[dict] = meta.get("places", [])
 
         new_geocoded: list[dict] = []
-        not_found: list[str] = []
+        via_web: list[str] = []
+        needs_clarification: list[str] = []
         for p in new_places:
-            result = await _geocode(p, use_city, use_country)
+            result, status = await _geocode_with_fallback(p, use_city, use_country)
             if result:
                 new_geocoded.append(result)
+                if status == "web":
+                    via_web.append(p)
             else:
-                not_found.append(p)
+                needs_clarification.append(p)
 
         if not new_geocoded:
-            return f"❌ לא הצלחתי למצוא מיקומים עבור: {', '.join(new_places)}"
+            clarify_hint = (
+                f"\n\nאנא ספק פרטים נוספים עבור: {', '.join(needs_clarification)}"
+                " (למשל: שם רחוב, שכונה, או מזהה מדויק יותר)."
+                if needs_clarification else ""
+            )
+            return f"❌ לא הצלחתי למצוא מיקומים עבור: {', '.join(new_places)}{clarify_hint}"
 
         all_places = existing + new_geocoded
         kml = _build_kml(meta["title"], all_places)
@@ -279,8 +357,14 @@ def get_maps_tools(chat_id: str) -> list:
             f"➕ נוספו {len(new_geocoded)} מקומות:",
         ] + [f"  • {p['name']}" for p in new_geocoded]
 
-        if not_found:
-            lines += ["", f"⚠️ לא נמצאו: {', '.join(not_found)}"]
+        if via_web:
+            lines += ["", f"🔍 מיקום נמצא דרך חיפוש ברשת: {', '.join(via_web)}"]
+        if needs_clarification:
+            lines += [
+                "",
+                f"❓ לא הצלחתי לאתר: {', '.join(needs_clarification)} — גם אחרי חיפוש ברשת.",
+                "אנא ספק פרטים מדויקים יותר (שם רחוב, שכונה, או תיאור מפורט).",
+            ]
         lines += ["", f"📍 סה\"כ {len(all_places)} מקומות במפה"]
         return "\n".join(lines)
 
