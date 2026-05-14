@@ -3,6 +3,7 @@ from app.google.gmail import read_emails, send_email
 from app.google.calendar import list_events, create_event
 from app.google.auth import get_auth_url, get_credentials
 from app.google.drive_tools import get_drive_tools
+from app.google.maps_tool import get_maps_tools
 
 
 def get_google_tools(chat_id: str) -> list:
@@ -54,4 +55,5 @@ def get_google_tools(chat_id: str) -> list:
         gmail_send,
         calendar_list,
         calendar_create,
-    ] + get_drive_tools(chat_id)
+    ] + get_drive_tools(chat_id) + get_maps_tools(chat_id)
+
