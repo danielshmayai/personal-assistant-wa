@@ -126,11 +126,13 @@ EXPECTED_GOOGLE_TOOL_NAMES = {
     "drive_save_photo",
     "drive_save_document",
     "drive_list_files",
+    "create_google_map",
+    "add_places_to_map",
 }
 
 
 def test_get_google_tools_returns_eight_tools():
-    """get_google_tools must return exactly 8 tool objects (5 existing + 3 Drive)."""
+    """get_google_tools must return exactly 10 tool objects (5 existing + 3 Drive + 2 Maps)."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
@@ -142,11 +144,11 @@ def test_get_google_tools_returns_eight_tools():
         from app.google.tools import get_google_tools
         tools = get_google_tools("test-chat-id")
 
-    assert len(tools) == 8, f"Expected 8 tools, got {len(tools)}: {[t.name for t in tools]}"
+    assert len(tools) == 10, f"Expected 10 tools, got {len(tools)}: {[t.name for t in tools]}"
 
 
 def test_get_google_tools_has_correct_names():
-    """Each of the 8 tools must carry the exact expected name."""
+    """Each of the 10 tools must carry the exact expected name."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
