@@ -456,111 +456,24 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.14); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.24); }
 
-/* ── Leads nav button ── */
 .sidebar-divider { height: 1px; background: var(--border); margin: 8px 12px; }
-#leads-nav-btn {
-  display: flex; align-items: center; gap: 9px;
-  width: calc(100% - 16px); margin: 2px 8px;
-  background: none; border: 1px solid transparent;
-  border-radius: var(--radius-sm); color: var(--text2);
-  cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 500;
-  padding: 8px 10px; transition: background .12s, color .12s, border-color .12s;
-  text-align: left;
-}
-#leads-nav-btn:hover { background: var(--bg3); color: var(--text); }
-#leads-nav-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(99,102,241,.18); }
-#leads-nav-btn svg { flex-shrink: 0; }
 
-/* ── Leads panel ── */
-#leads-panel {
-  display: flex; flex-direction: column; overflow: hidden;
-  background: var(--bg); position: relative;
-}
-#leads-header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 0 20px; height: 60px; flex-shrink: 0;
-  background: var(--bg2); border-bottom: 1px solid var(--border);
-}
-#leads-back-btn {
-  background: none; border: none; color: var(--text2); cursor: pointer;
-  padding: 6px 8px; border-radius: 8px; font-family: inherit; font-size: 13px;
-  display: flex; align-items: center; gap: 6px; transition: color .15s, background .15s;
-}
-#leads-back-btn:hover { color: var(--text); background: var(--bg3); }
-#leads-header h2 { font-family: "Outfit", sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
-#leads-content { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-
-.leads-add-card {
-  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px 18px;
-}
-.leads-add-card h3 { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
-.leads-form-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.leads-form-row input {
-  flex: 1; min-width: 140px;
-  background: var(--bg3); border: 1px solid var(--border2);
-  border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px;
-  padding: 8px 12px; outline: none; transition: border-color .15s;
-}
-.leads-form-row input:focus { border-color: var(--accent); }
-.leads-form-row input::placeholder { color: var(--text3); }
-#leads-add-btn {
-  background: linear-gradient(135deg, var(--user-1), var(--user-2));
-  border: none; border-radius: 8px; color: #fff;
-  cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600;
-  padding: 8px 18px; white-space: nowrap; transition: opacity .15s;
-  flex-shrink: 0;
-}
-#leads-add-btn:hover { opacity: .88; }
-#leads-add-btn:disabled { opacity: .5; cursor: not-allowed; }
-
-.leads-list-label {
-  font-size: 10px; font-weight: 600; color: var(--text3);
-  text-transform: uppercase; letter-spacing: .09em;
-}
-#leads-list { display: flex; flex-direction: column; gap: 10px; }
-.leads-empty { color: var(--text3); font-size: 13px; font-style: italic; padding: 12px 0; }
-
-.lead-card {
+/* ── Calendar events on Home ── */
+#calendar-section { }
+.cal-event-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 10px;
   background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 10px;
-  transition: border-color .15s;
+  margin-bottom: 6px;
 }
-.lead-card:hover { border-color: var(--border2); }
-.lead-card-top { display: flex; align-items: flex-start; gap: 12px; }
-.lead-avatar {
-  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
-  background: var(--accent-dim); border: 1px solid rgba(99,102,241,.2);
-  display: flex; align-items: center; justify-content: center; color: var(--accent);
+.cal-event-row:last-child { margin-bottom: 0; }
+.cal-event-time {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  min-width: 44px; flex-shrink: 0;
 }
-.lead-info { flex: 1; min-width: 0; }
-.lead-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
-.lead-phone { font-size: 12px; color: var(--text2); margin-top: 1px; }
-.lead-label { font-size: 11.5px; color: var(--text3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lead-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.lead-del-btn {
-  background: none; border: none; color: var(--text3); cursor: pointer;
-  padding: 5px; border-radius: 6px; display: flex; align-items: center;
-  transition: color .15s, background .15s;
-}
-.lead-del-btn:hover { color: var(--red); background: rgba(239,68,68,.08); }
-.interest-badge {
-  font-size: 10.5px; font-weight: 600; padding: 3px 8px;
-  border-radius: 20px; text-transform: capitalize; white-space: nowrap;
-}
-.interest-hot  { background: rgba(239,68,68,.1);  color: #DC2626; }
-.interest-warm { background: rgba(245,158,11,.1); color: #D97706; }
-.interest-cold { background: rgba(107,114,128,.1); color: #6B7280; }
-
-.lead-fields { display: flex; flex-wrap: wrap; gap: 6px; }
-.lead-field {
-  font-size: 11.5px; color: var(--text2);
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: 6px; padding: 3px 8px;
-}
-.lead-field span { color: var(--text3); margin-right: 3px; }
-.lead-activity { font-size: 11px; color: var(--text3); }
+.cal-event-title { font-size: 13px; color: var(--text); flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-empty { color: var(--text3); font-size: 13px; font-style: italic; padding: 4px 0; }
 
 /* ── Smart Home nav button ── */
 #smarthome-nav-btn {
@@ -1128,6 +1041,10 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <span id="today-summary"></span>
           </div>
         </div>
+        <div id="calendar-section" class="section-block" style="display:none">
+          <div class="section-title">📅 Today's Events</div>
+          <div id="cal-events-list"></div>
+        </div>
         <div class="section-block">
           <div class="section-title">Proactive</div>
           <div id="cards-feed"><div class="empty-state">Danidin is watching — nothing needs your attention right now.</div></div>
@@ -1139,7 +1056,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         <div class="section-block">
           <div class="section-title">Quick actions</div>
           <div class="quick-actions">
-            <button class="quick-btn" onclick="switchPage('chat')">💬 New chat</button>
+            <button class="quick-btn" onclick="startNewChat()">💬 New chat</button>
             <button class="quick-btn" onclick="openReminderModal()">⏰ Remind me</button>
             <button class="quick-btn" onclick="openAddFactModal()">📝 Add note</button>
             <button class="quick-btn" onclick="switchPage('tasks')">✓ View tasks</button>
@@ -1169,15 +1086,6 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         New chat
       </button>
     </div>
-    <button id="leads-nav-btn" title="Leads">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-        <circle cx="9" cy="7" r="4"/>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-      </svg>
-      Leads
-    </button>
     <button id="smarthome-nav-btn" title="Smart Home">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -1190,32 +1098,6 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     <div id="conv-list"><div class="conv-empty">Loading…</div></div>
   </aside>
   <div id="sidebar-overlay"></div>
-
-  <!-- Leads panel (replaces chat-main when active) -->
-  <div id="leads-panel" class="hidden">
-    <header id="leads-header">
-      <button id="leads-back-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-        Back
-      </button>
-      <h2>Leads</h2>
-    </header>
-    <div id="leads-content">
-      <div class="leads-add-card">
-        <h3>Add Lead</h3>
-        <div class="leads-form-row">
-          <input id="lead-phone" type="tel" placeholder="+972501234567" autocomplete="off">
-          <input id="lead-label" type="text" placeholder="Label (e.g. TLV apt floor 3)">
-          <input id="lead-note" type="text" placeholder="Obsidian note path (optional)">
-          <button id="leads-add-btn">Add</button>
-        </div>
-      </div>
-      <div class="leads-list-label">Watching</div>
-      <div id="leads-list"><div class="leads-empty">No leads yet</div></div>
-    </div>
-  </div>
 
   <!-- Smart Home panel (replaces chat-main when active) -->
   <div id="smarthome-panel" class="hidden">
@@ -2098,14 +1980,17 @@ function switchConversation(id) {
   if (window.innerWidth <= 640) closeSidebar();
 }
 
-document.getElementById('new-chat-btn').addEventListener('click', () => {
+function startNewChat() {
   currentChatId = 'web_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : Date.now().toString(36));
   localStorage.setItem('pa_chat_id', currentChatId);
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (ws) { ws.onclose = null; ws.close(); ws = null; }
   connectWebSocket();
+  switchPage('chat');
   if (window.innerWidth <= 640) closeSidebar();
-});
+}
+
+document.getElementById('new-chat-btn').addEventListener('click', startNewChat);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function scrollBottom() {
@@ -2346,134 +2231,6 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// ── Leads ────────────────────────────────────────────────────────────────────
-const leadsPanel  = document.getElementById('leads-panel');
-const chatMain    = document.getElementById('chat-main');
-const leadsNavBtn = document.getElementById('leads-nav-btn');
-
-function openLeads() {
-  chatMain.classList.add('hidden');
-  smarthomePanel.classList.add('hidden');
-  smarthomeNavBtn.classList.remove('active');
-  clearInterval(shRefreshTimer); shRefreshTimer = null;
-  leadsPanel.classList.remove('hidden');
-  leadsNavBtn.classList.add('active');
-  if (window.innerWidth <= 640) closeSidebar();
-  loadLeads();
-}
-
-function closeLeads() {
-  leadsPanel.classList.add('hidden');
-  chatMain.classList.remove('hidden');
-  leadsNavBtn.classList.remove('active');
-}
-
-leadsNavBtn.addEventListener('click', openLeads);
-document.getElementById('leads-back-btn').addEventListener('click', closeLeads);
-
-function interestClass(level) {
-  if (!level) return '';
-  return `interest-badge interest-${level.toLowerCase()}`;
-}
-
-function renderLeads(leads) {
-  const el = document.getElementById('leads-list');
-  if (!leads.length) {
-    el.innerHTML = '<div class="leads-empty">No leads yet — add a phone number above.</div>';
-    return;
-  }
-  el.innerHTML = leads.map(l => {
-    const d = l.extracted_data || {};
-    const name = d.name || '';
-    const displayName = name || l.phone;
-    const fields = [
-      d.budget        ? `<div class="lead-field"><span>Budget</span>${escHtml(String(d.budget))}</div>` : '',
-      d.move_in_date  ? `<div class="lead-field"><span>Move-in</span>${escHtml(d.move_in_date)}</div>` : '',
-      d.num_people    ? `<div class="lead-field"><span>People</span>${escHtml(String(d.num_people))}</div>` : '',
-      d.pets          ? `<div class="lead-field"><span>Pets</span>${escHtml(d.pets)}</div>` : '',
-      d.employment    ? `<div class="lead-field"><span>Work</span>${escHtml(d.employment)}</div>` : '',
-      d.requirements  ? `<div class="lead-field"><span>Needs</span>${escHtml(d.requirements)}</div>` : '',
-    ].filter(Boolean).join('');
-    const badge = d.interest_level
-      ? `<span class="${interestClass(d.interest_level)}">${escHtml(d.interest_level)}</span>` : '';
-    const activity = l.last_activity ? `Last message ${relTime(l.last_activity)}` : 'No messages yet';
-    return `<div class="lead-card" data-id="${l.id}">
-      <div class="lead-card-top">
-        <div class="lead-avatar">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-        </div>
-        <div class="lead-info">
-          <div class="lead-name">${escHtml(displayName)}</div>
-          <div class="lead-phone">${escHtml(l.phone)}</div>
-          <div class="lead-label">${escHtml(l.label || '')}</div>
-        </div>
-        <div class="lead-actions">
-          ${badge}
-          <button class="lead-del-btn" data-id="${l.id}" title="Remove lead">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-      ${fields ? `<div class="lead-fields">${fields}</div>` : ''}
-      <div class="lead-activity">${escHtml(activity)}</div>
-    </div>`;
-  }).join('');
-}
-
-async function loadLeads() {
-  try {
-    const res = await fetch('/api/leads', { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) return;
-    renderLeads(await res.json());
-  } catch { /* silent */ }
-}
-
-document.getElementById('leads-add-btn').addEventListener('click', async () => {
-  const phone = document.getElementById('lead-phone').value.trim();
-  const label = document.getElementById('lead-label').value.trim();
-  const note  = document.getElementById('lead-note').value.trim();
-  if (!phone) { document.getElementById('lead-phone').focus(); return; }
-  const btn = document.getElementById('leads-add-btn');
-  btn.disabled = true;
-  btn.textContent = 'Adding…';
-  try {
-    const res = await fetch('/api/leads', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, label, obsidian_note: note }),
-    });
-    if (!res.ok) { alert('Failed to add lead'); return; }
-    document.getElementById('lead-phone').value = '';
-    document.getElementById('lead-label').value = '';
-    document.getElementById('lead-note').value  = '';
-    loadLeads();
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Add';
-  }
-});
-
-document.getElementById('leads-list').addEventListener('click', async e => {
-  const btn = e.target.closest('.lead-del-btn');
-  if (!btn) return;
-  if (!confirm('Remove this lead? Messages will be deleted.')) return;
-  const id = btn.dataset.id;
-  try {
-    const res = await fetch(`/api/leads/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) { alert('Failed to remove lead'); return; }
-    loadLeads();
-  } catch { alert('Failed to remove lead'); }
-});
-
 // ── Smart Home ────────────────────────────────────────────────────────────────
 
 const smarthomePanel  = document.getElementById('smarthome-panel');
@@ -2512,10 +2269,10 @@ function shIsCurtain(cat) { return CURTAIN_CATS.has(cat); }
 const AC_MODES  = ['cool','heat','fan','dry','auto'];
 const FAN_SPEEDS = ['low','medium','high','auto'];
 
+const chatMain = document.getElementById('chat-main');
+
 function openSmartHome() {
   chatMain.classList.add('hidden');
-  leadsPanel.classList.add('hidden');
-  leadsNavBtn.classList.remove('active');
   smarthomePanel.classList.remove('hidden');
   smarthomeNavBtn.classList.add('active');
   if (window.innerWidth <= 640) closeSidebar();
@@ -3077,7 +2834,7 @@ let _homeRefreshTimer = null;
 async function loadHomePage() {
   clearInterval(_homeRefreshTimer);
   _updateTodayStrip();
-  await Promise.all([_loadHomeCards(), _loadHomeJobs()]);
+  await Promise.all([_loadHomeCards(), _loadHomeJobs(), _loadCalendarEvents()]);
   _homeRefreshTimer = setInterval(() => {
     _tickJobCountdowns('home-jobs-list');
   }, 1000);
@@ -3099,6 +2856,27 @@ async function _updateTodayStrip() {
     summaryEl.textContent = parts.join(' · ');
   } catch(e) {
     document.getElementById('today-weather').textContent = '';
+  }
+}
+
+async function _loadCalendarEvents() {
+  const section = document.getElementById('calendar-section');
+  const list = document.getElementById('cal-events-list');
+  try {
+    const data = await apiGet(`/api/calendar-today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    if (!data.connected || !data.events || !data.events.length) {
+      section.style.display = 'none';
+      return;
+    }
+    list.innerHTML = data.events.map(e =>
+      `<div class="cal-event-row">
+        <span class="cal-event-time">${_esc(e.time)}</span>
+        <span class="cal-event-title">${_esc(e.title)}</span>
+      </div>`
+    ).join('');
+    section.style.display = '';
+  } catch (e) {
+    section.style.display = 'none';
   }
 }
 
