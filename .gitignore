@@ -52,3 +52,6 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 *~
+
+# Generated at deploy time — not source-controlled
+backend/app/memory/recent_changes.json
