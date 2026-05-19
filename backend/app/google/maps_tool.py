@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import re
+import urllib.parse
 
 import httpx
 from langchain_core.tools import tool
@@ -144,37 +145,22 @@ def _build_kml(title: str, places: list[dict]) -> bytes:
     return kml.encode("utf-8")
 
 
-# ── Drive upload helpers ───────────────────────────────────────────────────────
+# ── Google Maps URL builder ────────────────────────────────────────────────────
 
-def _upload_map(svc, title: str, kml: bytes, folder_id: str) -> tuple[str, str]:
-    """Upload KML to Drive and convert to My Maps. Returns (file_id, edit_link)."""
-    from googleapiclient.http import MediaIoBaseUpload
-    f = svc.files().create(
-        body={
-            "name": title,
-            "mimeType": "application/vnd.google-apps.map",
-            "parents": [folder_id],
-        },
-        media_body=MediaIoBaseUpload(
-            io.BytesIO(kml),
-            mimetype="application/vnd.google-earth.kml+xml",
-        ),
-        fields="id",
-    ).execute()
-    fid = f["id"]
-    return fid, f"https://www.google.com/maps/d/edit?mid={fid}"
+def _maps_url(places: list[dict]) -> str:
+    """Build a Google Maps URL that shows all places as pins.
 
-
-def _update_map(svc, file_id: str, kml: bytes) -> None:
-    """Replace KML content of an existing My Maps file."""
-    from googleapiclient.http import MediaIoBaseUpload
-    svc.files().update(
-        fileId=file_id,
-        media_body=MediaIoBaseUpload(
-            io.BytesIO(kml),
-            mimetype="application/vnd.google-earth.kml+xml",
-        ),
-    ).execute()
+    Single place  → /maps?q=lat,lon  (opens location card)
+    Multiple      → /maps/dir/lat1,lon1/lat2,lon2/…  (shows all as waypoints/pins)
+    """
+    if not places:
+        return "https://www.google.com/maps"
+    if len(places) == 1:
+        p = places[0]
+        name = urllib.parse.quote(p["name"])
+        return f"https://www.google.com/maps/search/?api=1&query={p['lat']},{p['lon']}&query_place_id={name}"
+    parts = "/".join(f"{p['lat']},{p['lon']}" for p in places)
+    return f"https://www.google.com/maps/dir/{parts}"
 
 
 # ── Vault helpers ─────────────────────────────────────────────────────────────
@@ -217,26 +203,17 @@ def get_maps_tools(chat_id: str) -> list:
         country: str,
         places: list[str],
     ) -> str:
-        """Create an editable Google My Maps with specific places marked as pins, saved to the user's Google account.
+        """Create a Google Maps link with specific places marked as pins.
 
         Use when the user wants to mark places to visit in a city, create a trip map, or pin locations.
-        Example triggers: "צור לי מפה של מקומות", "תסמן לי את המקומות האלה על מפה", "create a map with these places".
+        Example triggers: "צור לי מפה של מקומות", "תסמן לי את המקומות האלה על מפה", "הצג במפה", "create a map with these places", "show on map".
 
         title: descriptive map name, e.g. "מקומות לביקור בירושלים"
         city: city name in English, e.g. "Jerusalem"
         country: country name in English, e.g. "Israel"
-        places: list of place names to geocode and add as pins
+        places: list of CLEAN place names only — strip any "הכתובת של", "המיקום של", "the address of" prefixes
         """
-        from app.google.auth import get_credentials
-        from app.google.drive import _svc, _get_or_create_folder
-
-        creds = get_credentials(chat_id)
-        if not creds or not creds.valid:
-            return "Google Drive לא מחובר. אנא קרא ל-google_connect."
-        if creds.scopes and not any("drive" in s for s in creds.scopes):
-            return "הרשאת Drive חסרה. אנא קרא ל-google_connect כדי להוסיף אותה."
-
-        # Geocode all places (with web search fallback)
+        # Geocode all places (with web search fallback) — no Drive needed
         geocoded: list[dict] = []
         via_web: list[str] = []
         needs_clarification: list[str] = []
@@ -257,19 +234,10 @@ def get_maps_tools(chat_id: str) -> list:
             )
             return f"❌ לא הצלחתי למצוא מיקומים עבור: {', '.join(places)}{clarify_hint}"
 
-        kml = _build_kml(title, geocoded)
-
-        try:
-            svc = _svc(creds)
-            pa_id = _get_or_create_folder(svc, "PA")
-            folder_id = _get_or_create_folder(svc, "Maps", pa_id)
-            file_id, edit_link = _upload_map(svc, title, kml, folder_id)
-        except Exception as e:
-            logger.exception("create_google_map: upload failed")
-            return f"❌ שגיאה ביצירת המפה: {e}"
+        map_url = _maps_url(geocoded)
 
         _save_meta(title, {
-            "file_id": file_id,
+            "map_url": map_url,
             "title": title,
             "city": city,
             "country": country,
@@ -277,23 +245,23 @@ def get_maps_tools(chat_id: str) -> list:
         })
 
         lines = [
-            f"✅ מפה נוצרה: **{title}**",
+            f"✅ {title}",
             "",
-            f"🗺️ **[פתח וערוך ב-Google My Maps]({edit_link})**",
+            f"🗺️ **[פתח ב-Google Maps]({map_url})**",
             "",
-            f"📍 {len(geocoded)} מקומות סומנו:",
+            f"📍 {len(geocoded)} מקומות:",
         ] + [f"  • {p['name']}" for p in geocoded]
 
         if via_web:
-            lines += ["", f"🔍 מיקום נמצא דרך חיפוש ברשת: {', '.join(via_web)}"]
+            lines += ["", f"🔍 נמצא דרך חיפוש ברשת: {', '.join(via_web)}"]
         if needs_clarification:
             lines += [
                 "",
-                f"❓ לא הצלחתי לאתר את המקומות הבאים גם אחרי חיפוש ברשת: {', '.join(needs_clarification)}",
-                "אנא ספק פרטים מדויקים יותר (שם רחוב, שכונה, או תיאור מפורט) כדי שאוכל להוסיף אותם למפה.",
+                f"❓ לא הצלחתי לאתר: {', '.join(needs_clarification)}",
+                "אנא ספק פרטים מדויקים יותר (שם רחוב, שכונה, או מזהה מפורט).",
             ]
         else:
-            lines += ["", "💡 ניתן להוסיף מקומות נוספים ישירות ב-My Maps או לבקש ממני להוסיף."]
+            lines += ["", "💡 אפשר לבקש ממני להוסיף מקומות נוספים."]
         return "\n".join(lines)
 
     @tool
@@ -303,16 +271,13 @@ def get_maps_tools(chat_id: str) -> list:
         city: str = "",
         country: str = "",
     ) -> str:
-        """Add more places to an existing Google My Maps that was previously created.
+        """Add more places to an existing map that was previously created.
 
         Use when the user says "הוסף למפה", "תוסיף עוד מקומות למפה שלי", "add more places to the map".
         map_title: exact title of the previously created map
         new_places: list of new place names to add
         city/country: override if the new places are in a different location (otherwise uses original)
         """
-        from app.google.auth import get_credentials
-        from app.google.drive import _svc
-
         meta = _load_meta(map_title)
         if not meta:
             return (
@@ -345,40 +310,29 @@ def get_maps_tools(chat_id: str) -> list:
             return f"❌ לא הצלחתי למצוא מיקומים עבור: {', '.join(new_places)}{clarify_hint}"
 
         all_places = existing + new_geocoded
-        kml = _build_kml(meta["title"], all_places)
-
-        creds = get_credentials(chat_id)
-        if not creds or not creds.valid:
-            return "Google Drive לא מחובר."
-
-        try:
-            svc = _svc(creds)
-            _update_map(svc, meta["file_id"], kml)
-        except Exception as e:
-            logger.exception("add_places_to_map: update failed")
-            return f"❌ שגיאה בעדכון המפה: {e}"
+        map_url = _maps_url(all_places)
 
         meta["places"] = all_places
+        meta["map_url"] = map_url
         _save_meta(map_title, meta)
 
-        edit_link = f"https://www.google.com/maps/d/edit?mid={meta['file_id']}"
         lines = [
             f"✅ המפה עודכנה: **{meta['title']}**",
             "",
-            f"🗺️ **[פתח ב-Google My Maps]({edit_link})**",
+            f"🗺️ **[פתח ב-Google Maps]({map_url})**",
             "",
             f"➕ נוספו {len(new_geocoded)} מקומות:",
         ] + [f"  • {p['name']}" for p in new_geocoded]
 
         if via_web:
-            lines += ["", f"🔍 מיקום נמצא דרך חיפוש ברשת: {', '.join(via_web)}"]
+            lines += ["", f"🔍 נמצא דרך חיפוש ברשת: {', '.join(via_web)}"]
         if needs_clarification:
             lines += [
                 "",
-                f"❓ לא הצלחתי לאתר: {', '.join(needs_clarification)} — גם אחרי חיפוש ברשת.",
+                f"❓ לא הצלחתי לאתר: {', '.join(needs_clarification)}",
                 "אנא ספק פרטים מדויקים יותר (שם רחוב, שכונה, או תיאור מפורט).",
             ]
-        lines += ["", f"📍 סה\"כ {len(all_places)} מקומות במפה"]
+        lines += ["", f"📍 סה\"כ {len(all_places)} מקומות"]
         return "\n".join(lines)
 
     return [create_google_map, add_places_to_map]
