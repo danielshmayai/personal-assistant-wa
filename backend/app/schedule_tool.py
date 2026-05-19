@@ -102,6 +102,57 @@ def get_schedule_tools(chat_id: str) -> list:
         return f"✅ תזכורת נקבעה לשעה {local_time} (מזהה #{job_id})."
 
     @tool
+    def schedule_recurring_reminder(
+        text: str,
+        recurrence: str,
+        first_run_at_iso: str = "",
+        delay_minutes: int = 0,
+    ) -> str:
+        """Schedule a reminder that repeats automatically.
+
+        Use for "remind me every day at 8 AM", "תזכיר לי כל יום בשעה 8",
+        "every week on Sunday", "alert me every hour", "כל שעה תשלח לי הודעה".
+
+        text: the reminder message
+        recurrence: one of — "daily", "weekly", "hourly", or "minutes:N" (e.g. "minutes:30")
+        first_run_at_iso: when to fire the first occurrence (ISO time or "HH:MM"); if empty uses delay_minutes
+        delay_minutes: minutes from now for first occurrence (used when first_run_at_iso is empty)
+        """
+        from app.scheduled_jobs import insert_job
+
+        if not text:
+            return "חסר text לתזכורת."
+        valid = {"daily", "weekly", "hourly"}
+        if recurrence not in valid and not recurrence.startswith("minutes:"):
+            return (
+                f"recurrence לא תקין: '{recurrence}'. "
+                "השתמש ב: daily, weekly, hourly, minutes:N (למשל minutes:30)."
+            )
+        if recurrence.startswith("minutes:"):
+            try:
+                mins = int(recurrence.split(":")[1])
+                if mins < 1:
+                    raise ValueError
+            except (IndexError, ValueError):
+                return "recurrence 'minutes:N' — N חייב להיות מספר שלם חיובי."
+
+        run_at = _parse_run_at(delay_minutes, first_run_at_iso)
+        job_id = insert_job(chat_id, "send_message", {"text": text}, run_at, recurrence)
+        tz = ZoneInfo(USER_TIMEZONE)
+        local_time = run_at.astimezone(tz).strftime("%H:%M")
+
+        recurrence_labels = {
+            "daily": "כל יום",
+            "weekly": "כל שבוע",
+            "hourly": "כל שעה",
+        }
+        rec_label = recurrence_labels.get(recurrence) or f"כל {recurrence.split(':')[1]} דקות"
+        return (
+            f"✅ תזכורת חוזרת נקבעה: {rec_label}, החל מ-{local_time} "
+            f"(מזהה #{job_id})."
+        )
+
+    @tool
     def list_scheduled() -> str:
         """Show all pending scheduled actions for this chat.
 
@@ -118,7 +169,17 @@ def get_schedule_tools(chat_id: str) -> list:
         for j in jobs:
             local_time = j["run_at"].astimezone(tz).strftime("%H:%M")
             desc = j["payload"].get("description") or j["payload"].get("text", j["action_type"])
-            lines.append(f"• #{j['id']} — {desc} (בשעה {local_time})")
+            recurrence_labels = {
+                "daily": " 🔁 כל יום",
+                "weekly": " 🔁 כל שבוע",
+                "hourly": " 🔁 כל שעה",
+            }
+            rec = j.get("recurrence") or ""
+            if rec.startswith("minutes:"):
+                rec_label = f" 🔁 כל {rec.split(':')[1]} דקות"
+            else:
+                rec_label = recurrence_labels.get(rec, "")
+            lines.append(f"• #{j['id']} — {desc} (בשעה {local_time}){rec_label}")
         return "\n".join(lines)
 
     @tool
@@ -135,4 +196,4 @@ def get_schedule_tools(chat_id: str) -> list:
             return f"✅ ביטלתי את הפעולה #{job_id}."
         return f"לא מצאתי פעולה ממתינה עם מזהה #{job_id}."
 
-    return [schedule_tuya_command, schedule_reminder, list_scheduled, cancel_scheduled]
+    return [schedule_tuya_command, schedule_reminder, schedule_recurring_reminder, list_scheduled, cancel_scheduled]

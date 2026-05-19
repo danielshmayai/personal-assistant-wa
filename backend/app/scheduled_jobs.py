@@ -1,7 +1,8 @@
 """Scheduled jobs — DB helpers + background execution loop.
 
 Table: scheduled_jobs
-  id, chat_id, action_type, payload (JSONB), run_at, status, error, created_at
+  id, chat_id, action_type, payload (JSONB), run_at, status, error, created_at,
+  recurrence (TEXT: null | daily | weekly | hourly | minutes:N)
 
 Action types:
   tuya_command  — payload: {device_id, commands, description}
@@ -11,7 +12,7 @@ Action types:
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import psycopg2
 
@@ -37,9 +38,13 @@ def init_table() -> None:
                     status      TEXT NOT NULL DEFAULT 'pending',
                     error       TEXT,
                     created_at  TIMESTAMPTZ DEFAULT NOW(),
-                    executed_at TIMESTAMPTZ
+                    executed_at TIMESTAMPTZ,
+                    recurrence  TEXT
                 )
             """)
+            cur.execute(
+                "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS recurrence TEXT"
+            )
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_run_at "
                 "ON scheduled_jobs (run_at) WHERE status = 'pending'"
@@ -142,17 +147,23 @@ def mark_notifications_delivered(chat_id: str) -> None:
 
 # ── DB CRUD ───────────────────────────────────────────────────────────────────
 
-def insert_job(chat_id: str, action_type: str, payload: dict, run_at: datetime) -> int:
+def insert_job(
+    chat_id: str,
+    action_type: str,
+    payload: dict,
+    run_at: datetime,
+    recurrence: str | None = None,
+) -> int:
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO scheduled_jobs (chat_id, action_type, payload, run_at)
-                VALUES (%s, %s, %s::jsonb, %s)
+                INSERT INTO scheduled_jobs (chat_id, action_type, payload, run_at, recurrence)
+                VALUES (%s, %s, %s::jsonb, %s, %s)
                 RETURNING id
                 """,
-                (chat_id, action_type, json.dumps(payload), run_at),
+                (chat_id, action_type, json.dumps(payload), run_at, recurrence),
             )
             job_id = cur.fetchone()[0]
         conn.commit()
@@ -169,7 +180,7 @@ def get_due_jobs() -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, chat_id, action_type, payload, run_at
+                SELECT id, chat_id, action_type, payload, run_at, recurrence
                 FROM scheduled_jobs
                 WHERE status = 'pending' AND run_at <= NOW()
                 ORDER BY run_at
@@ -177,11 +188,35 @@ def get_due_jobs() -> list[dict]:
             )
             rows = cur.fetchall()
         return [
-            {"id": r[0], "chat_id": r[1], "action_type": r[2], "payload": r[3], "run_at": r[4]}
+            {
+                "id": r[0], "chat_id": r[1], "action_type": r[2],
+                "payload": r[3], "run_at": r[4], "recurrence": r[5],
+            }
             for r in rows
         ]
     finally:
         conn.close()
+
+
+def _next_run(run_at: datetime, recurrence: str) -> datetime | None:
+    """Compute next fire time for a recurring job. Returns None for unknown patterns."""
+    from zoneinfo import ZoneInfo
+    from app.config import USER_TIMEZONE
+    tz = ZoneInfo(USER_TIMEZONE)
+    local = run_at.astimezone(tz)
+    if recurrence == "daily":
+        return (local + timedelta(days=1)).astimezone(timezone.utc)
+    if recurrence == "weekly":
+        return (local + timedelta(weeks=1)).astimezone(timezone.utc)
+    if recurrence == "hourly":
+        return (local + timedelta(hours=1)).astimezone(timezone.utc)
+    if recurrence.startswith("minutes:"):
+        try:
+            mins = int(recurrence.split(":")[1])
+            return (local + timedelta(minutes=mins)).astimezone(timezone.utc)
+        except (IndexError, ValueError):
+            pass
+    return None
 
 
 def _set_status(job_id: int, status: str, error: str | None = None) -> None:
@@ -217,7 +252,7 @@ def list_pending_jobs(chat_id: str) -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, action_type, payload, run_at
+                SELECT id, action_type, payload, run_at, recurrence
                 FROM scheduled_jobs
                 WHERE chat_id = %s AND status = 'pending'
                 ORDER BY run_at
@@ -226,7 +261,7 @@ def list_pending_jobs(chat_id: str) -> list[dict]:
             )
             rows = cur.fetchall()
         return [
-            {"id": r[0], "action_type": r[1], "payload": r[2], "run_at": r[3]}
+            {"id": r[0], "action_type": r[1], "payload": r[2], "run_at": r[3], "recurrence": r[4]}
             for r in rows
         ]
     finally:
@@ -480,6 +515,17 @@ async def _execute_due_jobs() -> None:
                 log_activity, job["chat_id"], "job",
                 msg, {"job_id": jid, "action_type": job["action_type"]}
             )
+            # Re-schedule if recurring
+            recurrence = job.get("recurrence")
+            if recurrence:
+                next_run = _next_run(job["run_at"], recurrence)
+                if next_run:
+                    new_id = await asyncio.to_thread(
+                        insert_job,
+                        job["chat_id"], job["action_type"], job["payload"],
+                        next_run, recurrence,
+                    )
+                    logger.info("Recurring job %d rescheduled → #%d at %s", jid, new_id, next_run)
             await _notify(job["chat_id"], msg)
         except Exception as exc:
             logger.exception("Job %d failed", jid)
