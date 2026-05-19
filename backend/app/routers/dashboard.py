@@ -182,3 +182,59 @@ async def get_today(
         pass
 
     return result
+
+
+# ── Calendar today ─────────────────────────────────────────────────────────────
+
+@router.get("/api/calendar-today")
+async def get_calendar_today(
+    chat_id: str = Query(...),
+    _: str = Depends(_require_token),
+):
+    """Return today's calendar events as structured JSON for the Home page."""
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+    from app.config import USER_TIMEZONE
+
+    tz = ZoneInfo(USER_TIMEZONE)
+    now = datetime.now(tz=tz)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+
+    try:
+        from app.google.auth import get_credentials
+        creds = get_credentials(chat_id)
+        if not creds or not creds.valid:
+            return {"events": [], "connected": False}
+
+        from googleapiclient.discovery import build
+        service = build("calendar", "v3", credentials=creds)
+        result = service.events().list(
+            calendarId="primary",
+            timeMin=today_start.astimezone(timezone.utc).isoformat(),
+            timeMax=today_end.astimezone(timezone.utc).isoformat(),
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=10,
+        ).execute()
+
+        events = []
+        for e in result.get("items", []):
+            start = e["start"].get("dateTime", e["start"].get("date", ""))
+            full_day = "dateTime" not in e["start"]
+            if full_day:
+                time_str = "כל היום"
+            else:
+                dt = datetime.fromisoformat(start)
+                dt_local = dt.astimezone(tz)
+                time_str = dt_local.strftime("%H:%M")
+            events.append({
+                "title": e.get("summary", "(no title)"),
+                "time": time_str,
+                "full_day": full_day,
+            })
+
+        return {"events": events, "connected": True}
+    except Exception as e:
+        logger.warning("calendar-today failed: %s", e)
+        return {"events": [], "connected": True, "error": str(e)}
