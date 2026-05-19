@@ -1452,10 +1452,12 @@ function showLogin(err) {
 }
 
 function showApp() {
-  loginScreen.classList.add('hidden');
-  appEl.classList.remove('hidden');
-  loadConversations();
-  switchPage('home', true);
+  if (!loginScreen.classList.contains('hidden')) {
+    loginScreen.classList.add('hidden');
+    appEl.classList.remove('hidden');
+    loadConversations();
+    switchPage('home', true);
+  }
 }
 
 function setStatus(state) {
