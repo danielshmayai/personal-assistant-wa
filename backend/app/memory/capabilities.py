@@ -75,6 +75,36 @@ _BEST_PRACTICES = """\
 
 
 # ---------------------------------------------------------------------------
+# Recent changes (written by deploy workflow, baked into Docker image)
+# ---------------------------------------------------------------------------
+
+def _load_recent_changes() -> str:
+    """Read recent_changes.json generated at deploy time and return a bullet list."""
+    import json
+    from pathlib import Path
+    path = Path(__file__).parent / "recent_changes.json"
+    if not path.exists():
+        return ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not data:
+            return ""
+        if isinstance(data, dict):
+            data = [data]
+        lines = []
+        for entry in data:
+            if isinstance(entry, str):
+                lines.append(f"- {entry}")
+            else:
+                date = entry.get("date", "")
+                msg = entry.get("message", "")
+                lines.append(f"- **{date}** — {msg}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
 # Tool introspection
 # ---------------------------------------------------------------------------
 
@@ -140,6 +170,12 @@ def generate_capabilities_doc() -> str:
     """Build and return the full capabilities Markdown document."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     tools_section = _build_tools_section()
+    recent = _load_recent_changes()
+    whats_new_section = (
+        f"## What's New\n\n{recent}\n\n"
+        if recent
+        else ""
+    )
 
     return f"""\
 ---
@@ -156,7 +192,7 @@ updated: {now}
 
 {_INTRO}
 
-## Available Tools
+{whats_new_section}## Available Tools
 
 {tools_section}
 

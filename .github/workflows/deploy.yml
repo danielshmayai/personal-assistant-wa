@@ -80,6 +80,22 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
+      - name: Generate recent changes for PA capabilities
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          # Collect functional commits from the last 90 days, filter by conventional-commit prefix
+          $raw = git log --format="%h|%as|%s" --no-merges --since="90 days ago"
+          $entries = @($raw | Where-Object {
+            $_ -match "\|(feat|fix|add|new|improve|update|enable|support)[:( ]"
+          } | Select-Object -First 30 | ForEach-Object {
+            $parts = $_ -split "\|", 3
+            [PSCustomObject]@{ sha = $parts[0]; date = $parts[1]; message = $parts[2] }
+          })
+          $json = ConvertTo-Json $entries -Compress -Depth 3
+          Set-Content -Path "backend\app\memory\recent_changes.json" -Value $json -Encoding UTF8
+          Write-Host "Wrote $($entries.Count) recent changes to recent_changes.json"
+
       - name: Rebuild and restart backend
         shell: powershell
         run: |
