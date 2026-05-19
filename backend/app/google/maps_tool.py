@@ -67,6 +67,17 @@ def _extract_address_candidates(search_text: str, city: str, country: str) -> li
     return candidates
 
 
+_PLACE_STRIP = re.compile(
+    r'^(הכתובת של|המיקום של|כתובת|מיקום|the address of|the location of|address of|location of)\s+',
+    re.IGNORECASE,
+)
+
+
+def _clean_place(place: str) -> str:
+    """Strip common descriptive prefixes so the geocoder gets a clean name."""
+    return _PLACE_STRIP.sub("", place.strip())
+
+
 async def _geocode_with_fallback(place: str, city: str, country: str) -> tuple[dict | None, str]:
     """Geocode a place via Nominatim, falling back to web search if not found.
 
@@ -75,6 +86,8 @@ async def _geocode_with_fallback(place: str, city: str, country: str) -> tuple[d
       'web'       — found after web search fallback
       'not_found' — could not locate even after web search
     """
+    place = _clean_place(place)
+
     async with httpx.AsyncClient(timeout=8.0) as client:
         # Pass 1: try Nominatim with progressively looser queries
         for q in [f"{place}, {city}, {country}", f"{place}, {city}", f"{place}, {country}", place]:
