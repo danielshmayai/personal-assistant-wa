@@ -82,6 +82,15 @@ def init_table() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_nutrition_chat_date "
                 "ON nutrition_logs (chat_id, log_date)"
             )
+            # Migrate rows written before _nutrition_key() normalisation was added.
+            # Any chat_id that starts with 'web' but isn't exactly 'web' gets collapsed.
+            cur.execute(
+                "UPDATE nutrition_logs SET chat_id = 'web' "
+                "WHERE chat_id LIKE 'web\\_%' ESCAPE '\\'"
+            )
+            migrated = cur.rowcount
+            if migrated:
+                logger.info("nutrition init_table: migrated %d old web_* rows to 'web'", migrated)
         conn.commit()
     finally:
         conn.close()
