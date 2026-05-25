@@ -25,6 +25,7 @@ from app.routers.leads import router as leads_router
 from app.routers.smart_home import router as smart_home_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.memory_api import router as memory_api_router
+from app.routers.nutrition import router as nutrition_router
 from app.graph.checkpointer import setup_checkpointer
 
 from app.logging_config import setup_logging
@@ -174,6 +175,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed to initialise scheduled_jobs tables")
     try:
+        from app.nutrition import init_table as init_nutrition_table
+        init_nutrition_table()
+    except Exception:
+        logger.exception("Failed to initialise nutrition_logs table")
+    try:
         await setup_checkpointer()
     except Exception:
         logger.exception("Failed to initialise postgres checkpointer — aborting startup")
@@ -219,6 +225,7 @@ app.include_router(leads_router)
 app.include_router(smart_home_router)
 app.include_router(dashboard_router)
 app.include_router(memory_api_router)
+app.include_router(nutrition_router)
 
 # Serve the web UI static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

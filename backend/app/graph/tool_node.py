@@ -47,6 +47,9 @@ _TOOL_EVENT_TYPE: dict[str, str] = {
     "schedule_remind":  "job",
     "list_scheduled":   "job",
     "cancel_scheduled": "job",
+    # Nutrition
+    "log_meal":         "nutrition",
+    "nutrition_today":  "nutrition",
     # Web / search
     "web_search":       "search",
     "wikipedia":        "search",

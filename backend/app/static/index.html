@@ -972,6 +972,73 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: 5px;
 }
 .collapsible-toggle:hover { color: var(--text2); }
+
+/* ── Nutrition page ── */
+.nutri-toggle { display: inline-flex; gap: 4px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 999px; padding: 4px; }
+.nutri-toggle button {
+  border: none; background: none; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600;
+  color: var(--text2); padding: 7px 18px; border-radius: 999px; transition: background .15s, color .15s;
+}
+.nutri-toggle button.active { background: var(--bg2); color: var(--accent); box-shadow: var(--shadow-sm); }
+.rings-row { display: flex; gap: 12px; justify-content: space-between; }
+.ring-card {
+  flex: 1; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  padding: 14px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.ring-svg { width: 96px; height: 96px; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--bg3); stroke-width: 10; }
+.ring-prog  { fill: none; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+.ring-center { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.ring-value { font-family: "Outfit", sans-serif; font-size: 17px; font-weight: 700; color: var(--text); }
+.ring-unit { font-size: 10px; color: var(--text3); }
+.ring-name { font-size: 12px; font-weight: 600; color: var(--text2); }
+.ring-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
+.ring-wrap .ring-center { position: absolute; inset: 0; justify-content: center; }
+
+.nutri-upload {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer;
+  background: var(--bg2); border: 1.5px dashed var(--border2); border-radius: var(--radius-sm);
+  padding: 22px 16px; color: var(--text2); text-align: center; transition: border-color .15s, background .15s;
+}
+.nutri-upload:hover { border-color: var(--accent); background: var(--accent-dim); }
+.nutri-upload .up-icon { font-size: 26px; }
+.nutri-upload .up-hint { font-size: 12px; color: var(--text3); }
+.nutri-text-row { display: flex; gap: 8px; align-items: center; }
+.nutri-busy { font-size: 13px; color: var(--accent); padding: 6px 2px; }
+
+.meal-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.meal-item:last-child { border-bottom: none; }
+.meal-src { font-size: 18px; flex-shrink: 0; }
+.meal-body { flex: 1; min-width: 0; }
+.meal-desc { font-size: 14px; font-weight: 600; color: var(--text); }
+.meal-macros { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.meal-del { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; padding: 0 4px; }
+.meal-del:hover { color: var(--red); }
+
+.micro-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.micro-chip {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;
+}
+.micro-name { font-size: 11px; color: var(--text3); text-transform: capitalize; }
+.micro-val { font-size: 14px; font-weight: 600; color: var(--text); }
+
+.hist-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.hist-date { width: 54px; flex-shrink: 0; font-size: 12px; color: var(--text2); }
+.hist-bars { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.hist-bar-track { position: relative; height: 8px; background: var(--bg3); border-radius: 999px; overflow: hidden; }
+.hist-bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; }
+.hist-bar-fill.protein { background: var(--green); }
+.hist-bar-fill.carbs   { background: var(--accent); }
+.hist-bar-fill.cals    { background: var(--user-2); }
+.hist-target { position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--text); opacity: .45; }
+.hist-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+.hist-legend span::before { content: "●"; margin-inline-end: 4px; }
+.hist-legend .l-protein::before { color: var(--green); }
+.hist-legend .l-carbs::before   { color: var(--accent); }
+.hist-legend .l-cals::before    { color: var(--user-2); }
 </style>
 </head>
 <body>
@@ -1016,6 +1083,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <button class="nav-tab" data-page="home" onclick="switchPage('home')">🏠 Home</button>
       <button class="nav-tab active" data-page="chat" onclick="switchPage('chat')">💬 Chat</button>
       <button class="nav-tab" data-page="tasks" onclick="switchPage('tasks')">✓ Tasks</button>
+      <button class="nav-tab" data-page="nutrition" onclick="switchPage('nutrition')">🥗 Nutrition</button>
       <button class="nav-tab" data-page="activity" onclick="switchPage('activity')">⚡ Activity</button>
       <button class="nav-tab" data-page="memory" onclick="switchPage('memory')">🧠 Memory</button>
       <button class="nav-tab" data-page="automations" onclick="switchPage('automations')">⚙️ Automations</button>
@@ -1226,6 +1294,99 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     </div>
   </div>
 
+  <!-- Nutrition page -->
+  <div id="page-nutrition" class="page">
+    <div class="page-content">
+      <div class="page-header">
+        <h2>Nutrition</h2>
+        <div class="nutri-toggle">
+          <button id="nutri-tab-today" class="active" onclick="showNutritionTab('today')">Today</button>
+          <button id="nutri-tab-history" onclick="showNutritionTab('history')">History</button>
+        </div>
+      </div>
+
+      <!-- Today view -->
+      <div id="nutri-today-view">
+        <div class="rings-row" id="nutri-rings">
+          <div class="ring-card">
+            <div class="ring-wrap">
+              <svg class="ring-svg" viewBox="0 0 120 120">
+                <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+                <circle class="ring-prog" id="ring-protein" cx="60" cy="60" r="52" stroke="var(--green)"></circle>
+              </svg>
+              <div class="ring-center">
+                <span class="ring-value" id="val-protein">0</span>
+                <span class="ring-unit">/ 110 g</span>
+              </div>
+            </div>
+            <div class="ring-name">Protein</div>
+          </div>
+          <div class="ring-card">
+            <div class="ring-wrap">
+              <svg class="ring-svg" viewBox="0 0 120 120">
+                <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+                <circle class="ring-prog" id="ring-carbs" cx="60" cy="60" r="52" stroke="var(--accent)"></circle>
+              </svg>
+              <div class="ring-center">
+                <span class="ring-value" id="val-carbs">0</span>
+                <span class="ring-unit">g carbs</span>
+              </div>
+            </div>
+            <div class="ring-name">Carbs</div>
+          </div>
+          <div class="ring-card">
+            <div class="ring-wrap">
+              <svg class="ring-svg" viewBox="0 0 120 120">
+                <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+                <circle class="ring-prog" id="ring-cals" cx="60" cy="60" r="52" stroke="var(--user-2)"></circle>
+              </svg>
+              <div class="ring-center">
+                <span class="ring-value" id="val-cals">0</span>
+                <span class="ring-unit">kcal</span>
+              </div>
+            </div>
+            <div class="ring-name">Calories</div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-title">Log a meal</div>
+          <label class="nutri-upload" for="nutri-image-input">
+            <span class="up-icon">📷</span>
+            <span>Snap or upload a photo of your plate</span>
+            <span class="up-hint">tap to use the camera on mobile</span>
+          </label>
+          <input id="nutri-image-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="uploadNutritionImage(this)">
+          <div class="nutri-text-row" style="margin-top:12px">
+            <input id="nutri-text-input" class="quick-task-input" placeholder='Or type a meal… "חזה עוף עם ברוקולי וטחינה"' onkeydown="if(event.key==='Enter')submitNutritionText()">
+            <button class="add-btn" onclick="submitNutritionText()">+ Log</button>
+          </div>
+          <div id="nutri-busy" class="nutri-busy" style="display:none">Analyzing meal…</div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-title">Today's logged meals</div>
+          <div id="nutri-meals-list"><div class="empty-state">No meals logged yet today.</div></div>
+        </div>
+
+        <div class="section-block" id="nutri-micros-block" style="display:none">
+          <div class="section-title">Nutrients consumed so far</div>
+          <div id="nutri-micros-grid" class="micro-grid"></div>
+        </div>
+      </div>
+
+      <!-- History view -->
+      <div id="nutri-history-view" style="display:none">
+        <div class="hist-legend">
+          <span class="l-protein">Protein</span>
+          <span class="l-carbs">Carbs</span>
+          <span class="l-cals">Calories</span>
+        </div>
+        <div id="nutri-history-list"><div class="empty-state">Loading…</div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Activity page -->
   <div id="page-activity" class="page">
     <div class="page-content">
@@ -1238,6 +1399,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         <button class="filter-pill" data-type="device" onclick="setActivityFilter(this,'device')">🏠 Device</button>
         <button class="filter-pill" data-type="search" onclick="setActivityFilter(this,'search')">🔍 Search</button>
         <button class="filter-pill" data-type="job" onclick="setActivityFilter(this,'job')">⏰ Scheduled</button>
+        <button class="filter-pill" data-type="nutrition" onclick="setActivityFilter(this,'nutrition')">🥗 Nutrition</button>
         <button class="filter-pill" data-type="map" onclick="setActivityFilter(this,'map')">🗺️ Maps</button>
       </div>
       <div id="activity-feed"><div class="empty-state">Nothing happened yet today.</div></div>
@@ -1332,6 +1494,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     <button class="bnav-tab active" data-page="home" onclick="switchPage('home')"><span class="bnav-icon">🏠</span>Home</button>
     <button class="bnav-tab" data-page="chat" onclick="switchPage('chat')"><span class="bnav-icon">💬</span>Chat</button>
     <button class="bnav-tab" data-page="tasks" onclick="switchPage('tasks')"><span class="bnav-icon">✓</span>Tasks</button>
+    <button class="bnav-tab" data-page="nutrition" onclick="switchPage('nutrition')"><span class="bnav-icon">🥗</span>Food</button>
     <button class="bnav-tab" data-page="activity" onclick="switchPage('activity')"><span class="bnav-icon">⚡</span>Activity</button>
     <button class="bnav-tab" data-page="memory" onclick="switchPage('memory')"><span class="bnav-icon">🧠</span>Memory</button>
     <button class="bnav-tab" onclick="hardRefresh()" title="Clear cache &amp; reload"><span class="bnav-icon">🔄</span>Update</button>
@@ -2728,7 +2891,7 @@ async function hardRefresh() {
 }
 
 // ── Page switching ──────────────────────────────────────────────────────────
-const PAGE_ORDER = ['home', 'chat', 'tasks', 'activity', 'memory'];
+const PAGE_ORDER = ['home', 'chat', 'tasks', 'nutrition', 'activity', 'memory'];
 let currentPage = 'chat';
 
 function switchPage(page, instant) {
@@ -2744,6 +2907,7 @@ function switchPage(page, instant) {
   });
   if (page === 'home')     loadHomePage();
   if (page === 'tasks')    loadTasksPage();
+  if (page === 'nutrition') loadNutritionPage();
   if (page === 'activity') loadActivityPage();
   if (page === 'memory')      loadMemoryPage();
   if (page === 'automations') loadAutomationsPage();
@@ -3111,6 +3275,186 @@ function createAutomationViaChat() {
     const msgInput = document.getElementById('message-input');
     if (msgInput) { msgInput.value = `צור אוטומציה: ${text}`; msgInput.focus(); }
   }, 200);
+}
+
+// ── Nutrition page ───────────────────────────────────────────────────────────
+const NUTRI_RING_C = 2 * Math.PI * 52;        // ring circumference (r=52)
+const NUTRI_CARB_CEIL = 100;                  // low-carb ceiling for the ring (g)
+const NUTRI_CAL_CEIL  = 2000;                 // calorie reference for the ring (kcal)
+let _nutriTab = 'today';
+
+function _setRing(id, pct) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const clamped = Math.max(0, Math.min(1, pct));
+  el.style.strokeDasharray = NUTRI_RING_C;
+  el.style.strokeDashoffset = NUTRI_RING_C * (1 - clamped);
+}
+
+function _microLabel(key) {
+  const parts = key.split('_');
+  const unit = ['g', 'mg', 'ug', 'kcal'].includes(parts[parts.length - 1]) ? parts.pop() : '';
+  const name = parts.join(' ');
+  return { name, unit: unit === 'ug' ? 'µg' : unit };
+}
+
+function showNutritionTab(tab) {
+  _nutriTab = tab;
+  document.getElementById('nutri-tab-today').classList.toggle('active', tab === 'today');
+  document.getElementById('nutri-tab-history').classList.toggle('active', tab === 'history');
+  document.getElementById('nutri-today-view').style.display = tab === 'today' ? 'block' : 'none';
+  document.getElementById('nutri-history-view').style.display = tab === 'history' ? 'block' : 'none';
+  if (tab === 'history') loadNutritionHistory();
+}
+
+function loadNutritionPage() {
+  showNutritionTab(_nutriTab);
+  if (_nutriTab === 'today') refreshNutritionToday();
+}
+
+function _renderNutritionToday(data) {
+  const t = data.totals || { protein: 0, carbs: 0, calories: 0, micros: {} };
+  const target = data.protein_target || 110;
+  document.getElementById('val-protein').textContent = Math.round(t.protein);
+  document.getElementById('val-carbs').textContent = Math.round(t.carbs);
+  document.getElementById('val-cals').textContent = Math.round(t.calories);
+  _setRing('ring-protein', t.protein / target);
+  _setRing('ring-carbs', t.carbs / NUTRI_CARB_CEIL);
+  _setRing('ring-cals', t.calories / NUTRI_CAL_CEIL);
+
+  const list = document.getElementById('nutri-meals-list');
+  const meals = data.meals || [];
+  if (!meals.length) {
+    list.innerHTML = '<div class="empty-state">No meals logged yet today.</div>';
+  } else {
+    list.innerHTML = '';
+    for (const m of meals) {
+      const div = document.createElement('div');
+      div.className = 'meal-item';
+      div.innerHTML = `
+        <span class="meal-src">${m.source === 'image' ? '📷' : '✍️'}</span>
+        <div class="meal-body">
+          <div class="meal-desc">${_esc(m.meal_description)}</div>
+          <div class="meal-macros">חלבון ${Math.round(m.protein)}g · פחמימות ${Math.round(m.carbs)}g · ${Math.round(m.calories)} kcal</div>
+        </div>
+        <button class="meal-del" title="Delete" onclick="deleteNutritionEntry(${m.id})">✕</button>`;
+      list.appendChild(div);
+    }
+  }
+
+  const micros = t.micros || {};
+  const keys = Object.keys(micros).sort();
+  const block = document.getElementById('nutri-micros-block');
+  const grid = document.getElementById('nutri-micros-grid');
+  if (keys.length) {
+    block.style.display = 'flex';
+    grid.innerHTML = '';
+    for (const k of keys) {
+      const { name, unit } = _microLabel(k);
+      const chip = document.createElement('div');
+      chip.className = 'micro-chip';
+      chip.innerHTML = `<span class="micro-name">${_esc(name)}</span><span class="micro-val">${micros[k]} ${unit}</span>`;
+      grid.appendChild(chip);
+    }
+  } else {
+    block.style.display = 'none';
+  }
+}
+
+async function refreshNutritionToday() {
+  try {
+    const data = await apiGet(`/api/nutrition/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    _renderNutritionToday(data);
+  } catch (e) {
+    document.getElementById('nutri-meals-list').innerHTML = `<div class="empty-state">Error: ${_esc(e.message)}</div>`;
+  }
+}
+
+function _nutriBusy(on) {
+  document.getElementById('nutri-busy').style.display = on ? 'block' : 'none';
+}
+
+async function uploadNutritionImage(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+  _nutriBusy(true);
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch(`/api/nutrition/log-image?chat_id=${encodeURIComponent(currentChatId || 'web')}`, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd,
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    _renderNutritionToday(res.today);
+  } catch (e) {
+    alert('Could not analyze image: ' + e.message);
+  } finally {
+    _nutriBusy(false);
+  }
+}
+
+async function submitNutritionText() {
+  const inp = document.getElementById('nutri-text-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  _nutriBusy(true);
+  try {
+    const res = await apiPost(`/api/nutrition/log-text?chat_id=${encodeURIComponent(currentChatId || 'web')}`, { text });
+    _renderNutritionToday(res.today);
+  } catch (e) {
+    alert('Could not log meal: ' + e.message);
+  } finally {
+    _nutriBusy(false);
+  }
+}
+
+async function deleteNutritionEntry(id) {
+  try {
+    await apiDelete(`/api/nutrition/${id}?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    refreshNutritionToday();
+  } catch (e) {
+    alert('Could not delete: ' + e.message);
+  }
+}
+
+async function loadNutritionHistory() {
+  const list = document.getElementById('nutri-history-list');
+  list.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const { days } = await apiGet(`/api/nutrition/history?chat_id=${encodeURIComponent(currentChatId || 'web')}&days=14`);
+    if (!days || !days.length) {
+      list.innerHTML = '<div class="empty-state">No history yet — log a meal to start tracking.</div>';
+      return;
+    }
+    const maxProtein = Math.max(110, ...days.map(d => d.protein));
+    const maxCarbs   = Math.max(1, ...days.map(d => d.carbs));
+    const maxCals    = Math.max(1, ...days.map(d => d.calories));
+    list.innerHTML = '';
+    for (const d of days) {
+      const dt = new Date(d.date + 'T00:00:00');
+      const label = dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      const targetPct = (110 / maxProtein) * 100;
+      const row = document.createElement('div');
+      row.className = 'hist-row';
+      row.innerHTML = `
+        <div class="hist-date">${label}</div>
+        <div class="hist-bars">
+          <div class="hist-bar-track">
+            <div class="hist-bar-fill protein" style="width:${(d.protein / maxProtein) * 100}%"></div>
+            <div class="hist-target" style="left:${targetPct}%"></div>
+          </div>
+          <div class="hist-bar-track"><div class="hist-bar-fill carbs" style="width:${(d.carbs / maxCarbs) * 100}%"></div></div>
+          <div class="hist-bar-track"><div class="hist-bar-fill cals" style="width:${(d.calories / maxCals) * 100}%"></div></div>
+        </div>
+        <div class="hist-date" style="text-align:right">${Math.round(d.protein)}g</div>`;
+      list.appendChild(row);
+    }
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state">Error: ${_esc(e.message)}</div>`;
+  }
 }
 
 // ── Activity page ────────────────────────────────────────────────────────────
