@@ -72,8 +72,15 @@ def get_nutrition_tools(chat_id: str) -> list:
         t = data["totals"]
         target = data["protein_target"]
         remaining = max(0, target - t["protein"])
-        lines = [
-            f"*תזונה היום ({len(meals)} ארוחות):*",
+        lines = [f"*ארוחות היום ({len(meals)}):*"]
+        for i, m in enumerate(meals, 1):
+            lines.append(
+                f"{i}. {m['meal_description']} "
+                f"(חלבון {m['protein']:.0f}ג' · פחמימות {m['carbs']:.0f}ג' · {m['calories']:.0f} קל')"
+            )
+        lines += [
+            "",
+            "*סה\"כ היום:*",
             f"• חלבון: {t['protein']:.0f} / {target} ג'  (נותרו {remaining:.0f} ג')",
             f"• פחמימות: {t['carbs']:.0f} ג'",
             f"• קלוריות: {t['calories']:.0f} קל'",
