@@ -1354,9 +1354,9 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           <label class="nutri-upload" for="nutri-image-input">
             <span class="up-icon">📷</span>
             <span>Snap or upload a photo of your plate</span>
-            <span class="up-hint">tap to use the camera on mobile</span>
+            <span class="up-hint">tap to choose a photo or take one</span>
           </label>
-          <input id="nutri-image-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="uploadNutritionImage(this)">
+          <input id="nutri-image-input" type="file" accept="image/*" style="display:none" onchange="uploadNutritionImage(this)">
           <div class="nutri-text-row" style="margin-top:12px">
             <input id="nutri-text-input" class="quick-task-input" placeholder='Or type a meal… "חזה עוף עם ברוקולי וטחינה"' onkeydown="if(event.key==='Enter')submitNutritionText()">
             <button class="add-btn" onclick="submitNutritionText()">+ Log</button>
