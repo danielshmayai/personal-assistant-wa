@@ -82,15 +82,14 @@ def init_table() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_nutrition_chat_date "
                 "ON nutrition_logs (chat_id, log_date)"
             )
-            # Migrate rows written before _nutrition_key() normalisation was added.
-            # Any chat_id that starts with 'web' but isn't exactly 'web' gets collapsed.
+            # Collapse all historic rows (web_*, web, WhatsApp phone numbers) into
+            # the single canonical key so every device sees the same data.
             cur.execute(
-                "UPDATE nutrition_logs SET chat_id = 'web' "
-                "WHERE chat_id LIKE 'web\\_%' ESCAPE '\\'"
+                "UPDATE nutrition_logs SET chat_id = 'default' WHERE chat_id != 'default'"
             )
             migrated = cur.rowcount
             if migrated:
-                logger.info("nutrition init_table: migrated %d old web_* rows to 'web'", migrated)
+                logger.info("nutrition init_table: migrated %d rows to 'default'", migrated)
         conn.commit()
     finally:
         conn.close()
@@ -98,16 +97,9 @@ def init_table() -> None:
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
 
-def _nutrition_key(chat_id: str) -> str:
-    """Normalize chat_id so all web sessions share one nutrition store.
-
-    WhatsApp chat_ids are phone numbers (e.g. '972501234567@c.us') and are already
-    canonical per-user.  Web sessions use 'web_<uuid>' — strip the UUID so every
-    browser/device for the same user writes to the same partition key 'web'.
-    """
-    if (chat_id or "").startswith("web"):
-        return "web"
-    return chat_id or "default"
+def _nutrition_key(_chat_id: str) -> str:
+    """Single-user PA — all sources (WhatsApp, web) share one nutrition store."""
+    return "default"
 
 
 def _user_today() -> date:
