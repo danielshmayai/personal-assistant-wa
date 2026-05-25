@@ -3031,6 +3031,7 @@ const PAGE_ORDER = ['home', 'chat', 'tasks', 'nutrition'];
 let currentPage = 'chat';
 
 function switchPage(page, instant) {
+  closeMoreDrawer();
   currentPage = page;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active', 'no-anim'));
   const el = document.getElementById('page-' + page);
@@ -3133,102 +3134,98 @@ function countdownStr(isoRunAt) {
 // ── Home page ────────────────────────────────────────────────────────────────
 let _homeRefreshTimer = null;
 
-async function loadHomePage() {
-  clearInterval(_homeRefreshTimer);
-  _updateTodayStrip();
-  await Promise.all([_loadHomeCards(), _loadHomeJobs(), _loadCalendarEvents()]);
-  _homeRefreshTimer = setInterval(() => {
-    _tickJobCountdowns('home-jobs-list');
-  }, 1000);
+function _greetingText() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning ☀️';
+  if (h < 17) return 'Good afternoon 🌤';
+  return 'Good evening 🌙';
 }
 
-async function _updateTodayStrip() {
-  const now = new Date();
-  document.getElementById('today-date').textContent = now.toLocaleDateString(undefined, {
+async function loadHomePage() {
+  clearInterval(_homeRefreshTimer);
+
+  // Greeting + date
+  document.getElementById('dash-greeting-text').textContent = _greetingText();
+  document.getElementById('dash-date-text').textContent = new Date().toLocaleDateString(undefined, {
     weekday: 'long', day: 'numeric', month: 'long',
   });
+
+  // Load all dashboard data in parallel
+  await Promise.all([_dashLoadNutrition(), _dashLoadCalendar(), _dashLoadJobs()]);
+
+  _homeRefreshTimer = setInterval(() => _tickJobCountdowns('dash-jobs-list'), 1000);
+}
+
+async function _dashLoadNutrition() {
   try {
-    const data = await apiGet(`/api/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
-    const weatherEl = document.getElementById('today-weather');
-    const summaryEl = document.getElementById('today-summary');
-    if (data.weather) weatherEl.textContent = data.weather;
-    else weatherEl.textContent = '';
-    const parts = [];
-    if (data.jobs_count > 0) parts.push(`${data.jobs_count} scheduled`);
-    summaryEl.textContent = parts.join(' · ');
+    const data = await apiGet(`/api/nutrition/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+    const t = data.totals || {};
+    const target = data.protein_target || 110;
+    document.getElementById('dash-prot-val').textContent = Math.round(t.protein || 0);
+    document.getElementById('dash-prot-sub').textContent = `/ ${target}g`;
+    document.getElementById('dash-carbs-val').textContent = Math.round(t.carbs || 0);
+    document.getElementById('dash-cals-val').textContent = Math.round(t.calories || 0);
+
+    // Weather from /api/today
+    try {
+      const today = await apiGet(`/api/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
+      if (today.weather) document.getElementById('dash-weather-icon').textContent = today.weather;
+    } catch(e) {}
   } catch(e) {
-    document.getElementById('today-weather').textContent = '';
+    document.getElementById('dash-prot-val').textContent = '—';
   }
 }
 
-async function _loadCalendarEvents() {
-  const section = document.getElementById('calendar-section');
-  const list = document.getElementById('cal-events-list');
+async function _dashLoadCalendar() {
+  const list = document.getElementById('dash-cal-list');
   try {
     const data = await apiGet(`/api/calendar-today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
     if (!data.connected || !data.events || !data.events.length) {
-      section.style.display = 'none';
+      list.innerHTML = '<div class="dash-empty">No events today</div>';
       return;
     }
-    list.innerHTML = data.events.map(e =>
-      `<div class="cal-event-row">
-        <span class="cal-event-time">${_esc(e.time)}</span>
-        <span class="cal-event-title">${_esc(e.title)}</span>
-      </div>`
+    list.innerHTML = data.events.slice(0, 4).map(e =>
+      `<div class="dash-cal-row"><span class="dash-cal-time">${_esc(e.time)}</span><span class="dash-cal-title">${_esc(e.title)}</span></div>`
     ).join('');
-    section.style.display = '';
-  } catch (e) {
-    section.style.display = 'none';
+  } catch(e) {
+    list.innerHTML = '<div class="dash-empty">Calendar not connected</div>';
   }
 }
 
-async function _loadHomeCards() {
-  const feed = document.getElementById('cards-feed');
-  try {
-    const { cards } = await apiGet(`/api/proactive-cards?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
-    if (!cards.length) {
-      feed.innerHTML = '<div class="empty-state">Danidin is watching — nothing needs your attention right now.</div>';
-      return;
-    }
-    feed.innerHTML = '';
-    const dismissed = JSON.parse(localStorage.getItem('pa_dismissed_cards') || '{}');
-    const typeIcon = { trigger: '🔴', notice: '🟡', memory: '🔵' };
-    for (const card of cards) {
-      const key = `${card.card_type}_${card.id}`;
-      if (dismissed[key] && Date.now() - dismissed[key] < 86400000) continue;
-      const div = document.createElement('div');
-      div.className = `proactive-card ${card.card_type}`;
-      div.innerHTML = `
-        <div class="card-header">
-          <span class="card-icon">${typeIcon[card.card_type] || '●'}</span>
-          <span class="card-title">${_esc(card.title)}</span>
-          ${card.expires_at ? `<span class="card-time">${relTimeFromNow(card.expires_at)}</span>` : ''}
-        </div>
-        ${card.detail ? `<div class="card-detail">${_esc(card.detail)}</div>` : ''}
-        <div class="card-actions">
-          ${card.action_label ? `<button class="card-action-btn" onclick="cardAction(${card.id},${JSON.stringify(card.action_chat || '')})">${_esc(card.action_label)}</button>` : ''}
-          <button class="card-dismiss-btn" onclick="dismissCard(${card.id},'${key}')" title="Dismiss">×</button>
-        </div>`;
-      feed.appendChild(div);
-    }
-    if (!feed.children.length) {
-      feed.innerHTML = '<div class="empty-state">Danidin is watching — nothing needs your attention right now.</div>';
-    }
-  } catch (e) {
-    feed.innerHTML = `<div class="empty-state">Could not load cards: ${e.message}</div>`;
-  }
-}
-
-async function _loadHomeJobs() {
-  const section = document.getElementById('jobs-section');
-  const list = document.getElementById('home-jobs-list');
+async function _dashLoadJobs() {
+  const section = document.getElementById('dash-jobs-card');
+  const list = document.getElementById('dash-jobs-list');
   try {
     const { jobs } = await apiGet(`/api/jobs?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
-    if (!jobs.length) { section.style.display = 'none'; return; }
+    const pending = (jobs || []).filter(j => j.status === 'pending');
+    if (!pending.length) { section.style.display = 'none'; return; }
     section.style.display = '';
     list.innerHTML = '';
-    for (const job of jobs) _appendJobItem(list, job, 'home');
-  } catch (e) { section.style.display = 'none'; }
+    for (const job of pending.slice(0, 3)) {
+      const icon = job.action_type === 'tuya_command' ? '💡' : '🔔';
+      const desc = _jobLabel(job);
+      const row = document.createElement('div');
+      row.className = 'dash-job-row';
+      row.innerHTML = `<span class="dash-job-icon">${icon}</span>
+        <span class="dash-job-desc">${_esc(String(desc).slice(0,60))}</span>
+        <span class="dash-job-time" data-run-at="${job.run_at}">${countdownStr(job.run_at)}</span>`;
+      list.appendChild(row);
+    }
+  } catch(e) { section.style.display = 'none'; }
+}
+
+function toggleMoreDrawer() {
+  const drawer = document.getElementById('more-drawer');
+  if (drawer.classList.contains('open')) closeMoreDrawer();
+  else openMoreDrawer();
+}
+function openMoreDrawer() {
+  document.getElementById('more-drawer').classList.add('open');
+  document.getElementById('more-overlay').classList.add('visible');
+}
+function closeMoreDrawer() {
+  document.getElementById('more-drawer').classList.remove('open');
+  document.getElementById('more-overlay').classList.remove('visible');
 }
 
 function _parsePayload(raw) {
