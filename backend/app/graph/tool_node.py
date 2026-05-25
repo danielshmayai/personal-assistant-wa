@@ -49,6 +49,7 @@ _TOOL_EVENT_TYPE: dict[str, str] = {
     "cancel_scheduled": "job",
     # Nutrition
     "log_meal":         "nutrition",
+    "log_water":        "nutrition",
     "nutrition_today":  "nutrition",
     # Web / search
     "web_search":       "search",

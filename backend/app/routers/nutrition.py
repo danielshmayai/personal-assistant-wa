@@ -26,6 +26,9 @@ def _require_token(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)
 class TextLog(BaseModel):
     text: str
 
+class WaterLog(BaseModel):
+    amount_ml: int
+
 
 @router.post("/api/nutrition/log-image")
 async def log_image(
@@ -73,6 +76,18 @@ async def log_text(
         parsed["calories"], parsed["micros"], source="text",
     )
     return {"id": log_id, "entry": parsed, "today": nutrition.list_today(chat_id)}
+
+
+@router.post("/api/nutrition/log-water")
+async def log_water(
+    body: WaterLog,
+    chat_id: str = Query(...),
+    _: str = Depends(_require_token),
+):
+    if body.amount_ml <= 0:
+        raise HTTPException(status_code=400, detail="amount_ml must be positive")
+    nutrition.log_water(chat_id, body.amount_ml)
+    return {"today": nutrition.list_today(chat_id)}
 
 
 @router.get("/api/nutrition/today")
