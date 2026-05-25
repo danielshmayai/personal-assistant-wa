@@ -28,6 +28,7 @@ logger = logging.getLogger("pa.nutrition")
 
 # Daily protein goal — the one fixed target from the spec.
 PROTEIN_TARGET_G = 110
+WATER_TARGET_ML  = 2000
 
 # Strict-JSON contract enforced on every Gemini parse.
 _PARSE_INSTRUCTIONS = """\
@@ -206,9 +207,10 @@ def list_today(chat_id: str) -> dict:
     finally:
         conn.close()
 
+    all_rows = []
     meals = []
     for r in rows:
-        meals.append({
+        entry = {
             "id": r["id"],
             "meal_description": r["meal_description"],
             "protein": float(r["protein"]),
@@ -217,13 +219,22 @@ def list_today(chat_id: str) -> dict:
             "micros": r["micros"] or {},
             "source": r["source"],
             "created_at": r["created_at"].isoformat(),
-        })
+        }
+        all_rows.append(entry)
+        if r["source"] != "water":
+            meals.append(entry)
+
+    merged_micros = _merge_micros([r["micros"] for r in all_rows])
+    water_ml = int(merged_micros.pop("water_ml", 0))
+
     result["meals"] = meals
+    result["water_ml"] = water_ml
+    result["water_target_ml"] = WATER_TARGET_ML
     result["totals"] = {
         "protein": round(sum(m["protein"] for m in meals), 1),
         "carbs": round(sum(m["carbs"] for m in meals), 1),
         "calories": round(sum(m["calories"] for m in meals), 1),
-        "micros": _merge_micros([m["micros"] for m in meals]),
+        "micros": merged_micros,
     }
     return result
 
@@ -280,6 +291,25 @@ def history(chat_id: str, days: int = 14) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def log_water(chat_id: str, amount_ml: int, log_date: date | None = None) -> int:
+    """Record a water drink. Stored as a zero-calorie entry with micros.water_ml."""
+    ml = max(1, int(amount_ml))
+    return insert_log(
+        _nutrition_key(chat_id),
+        f"מים ({ml} מ\"ל)",
+        protein=0, carbs=0, calories=0,
+        micros={"water_ml": ml},
+        source="water",
+        log_date=log_date,
+    )
+
+
+def water_today(chat_id: str) -> int:
+    """Total water in ml logged today for *chat_id*."""
+    data = list_today(chat_id)
+    return int(data["totals"]["micros"].get("water_ml", 0))
 
 
 # ── Gemini parsing ────────────────────────────────────────────────────────────

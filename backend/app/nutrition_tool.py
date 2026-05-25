@@ -55,6 +55,28 @@ def get_nutrition_tools(chat_id: str) -> list:
         )
 
     @tool
+    async def log_water(amount_ml: int) -> str:
+        """Log water the user drank. Daily target is 2000 ml (2 litres).
+
+        Use whenever the user mentions drinking water: "שתיתי כוס מים",
+        "drank 500ml", "תרשום שתיית מים 300 מ\"ל".
+
+        amount_ml: amount drunk in millilitres (e.g. 250 for a glass, 500 for a bottle).
+        """
+        from app import nutrition
+
+        ml = max(1, int(amount_ml or 0))
+        nutrition.log_water(chat_id, ml)
+        total = nutrition.water_today(chat_id)
+        remaining = max(0, nutrition.WATER_TARGET_ML - total)
+        pct = min(100, round(total / nutrition.WATER_TARGET_ML * 100))
+        status = "🎉 יעד המים הושג!" if remaining == 0 else f"נותרו {remaining} מ\"ל"
+        return (
+            f"💧 נרשם: {ml} מ\"ל מים\n"
+            f"סה\"כ היום: {total} / {nutrition.WATER_TARGET_ML} מ\"ל ({pct}%) — {status}"
+        )
+
+    @tool
     async def nutrition_today() -> str:
         """Report how much the user has consumed today so far — protein vs the 110g target,
         carbs, calories, and every micronutrient logged (vitamins, minerals, fat, fiber, …).
@@ -78,12 +100,16 @@ def get_nutrition_tools(chat_id: str) -> list:
                 f"{i}. {m['meal_description']} "
                 f"(חלבון {m['protein']:.0f}ג' · פחמימות {m['carbs']:.0f}ג' · {m['calories']:.0f} קל')"
             )
+        water_ml = data.get("water_ml", 0)
+        water_target = data.get("water_target_ml", 2000)
+        water_remaining = max(0, water_target - water_ml)
         lines += [
             "",
             "*סה\"כ היום:*",
             f"• חלבון: {t['protein']:.0f} / {target} ג'  (נותרו {remaining:.0f} ג')",
             f"• פחמימות: {t['carbs']:.0f} ג'",
             f"• קלוריות: {t['calories']:.0f} קל'",
+            f"• 💧 מים: {water_ml} / {water_target} מ\"ל  (נותרו {water_remaining} מ\"ל)",
         ]
         micro_lines = _fmt_micros(t["micros"])
         if micro_lines:
@@ -91,4 +117,4 @@ def get_nutrition_tools(chat_id: str) -> list:
             lines.extend(micro_lines)
         return "\n".join(lines)
 
-    return [log_meal, nutrition_today]
+    return [log_meal, log_water, nutrition_today]
