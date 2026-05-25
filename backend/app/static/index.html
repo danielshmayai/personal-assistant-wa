@@ -48,7 +48,7 @@ body {
   color: var(--text);
   height: 100dvh;
   overflow: hidden;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
@@ -623,8 +623,6 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 #menu-btn:hover { color: var(--text); background: var(--bg3); }
 
 @media (max-width: 900px) {
-  #top-nav { display: none; }
-  #bottom-nav { display: flex; }
   #page-chat.active { grid-template-columns: 1fr; }
   .category-grid { grid-template-columns: repeat(2, 1fr); }
   .page-content { padding: 16px 12px 90px; }
@@ -646,8 +644,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   .tool-badge { margin-left: 34px; }
 
   /* Larger tap targets */
-  .bnav-tab { min-height: 56px; font-size: 11px; padding: 10px 4px; }
-  .bnav-tab .bnav-icon { font-size: 22px; }
+  .bnav-tab { min-height: 58px; font-size: 12px; padding: 10px 4px; }
+  .bnav-tab .bnav-icon { font-size: 24px; }
   .quick-btn { min-height: 48px; font-size: 14px; padding: 10px 16px; }
   .card-action-btn { min-height: 42px; padding: 9px 16px; font-size: 13px; }
   .add-btn { min-height: 48px; padding: 11px 20px; font-size: 14px; }
@@ -688,7 +686,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 /* ── Top nav ── */
 #top-nav {
   height: 48px; background: var(--bg2); border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; padding: 0 16px; gap: 0; flex-shrink: 0; z-index: 10;
+  display: none; align-items: center; padding: 0 16px; gap: 0; flex-shrink: 0; z-index: 10;
 }
 .nav-brand { display: flex; align-items: center; gap: 8px; margin-right: 20px; flex-shrink: 0; }
 .nav-brand .brand-icon {
@@ -718,19 +716,20 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 #hard-refresh-btn.spinning svg { animation: spin360 0.7s linear; }
 @keyframes spin360 { to { transform: rotate(360deg); } }
 
-/* ── Bottom nav (mobile) ── */
+/* ── Bottom nav ── */
 #bottom-nav {
-  height: 56px; background: var(--bg2); border-top: 1px solid var(--border);
-  display: none; align-items: center; justify-content: space-around;
+  height: 64px; background: var(--bg2); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-around;
   flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .bnav-tab {
   flex: 1; background: none; border: none; color: var(--text3); cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  font-family: inherit; font-size: 10px; font-weight: 500; padding: 8px 4px; transition: color .15s;
+  font-family: inherit; font-size: 11px; font-weight: 500; padding: 8px 4px; transition: color .15s;
+  min-height: 52px;
 }
 .bnav-tab.active { color: var(--accent); }
-.bnav-tab .bnav-icon { font-size: 18px; line-height: 1; }
+.bnav-tab .bnav-icon { font-size: 22px; line-height: 1; }
 
 /* ── Page content ── */
 .page-content {
@@ -1039,6 +1038,101 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .hist-legend .l-protein::before { color: var(--green); }
 .hist-legend .l-carbs::before   { color: var(--accent); }
 .hist-legend .l-cals::before    { color: var(--user-2); }
+
+/* ── Dashboard ── */
+.dash-greeting {
+  display: flex; align-items: center; justify-content: space-between; padding: 4px 0 4px;
+}
+.dash-greeting-text {
+  font-family: "Outfit", sans-serif; font-size: 22px; font-weight: 700;
+  color: var(--text); letter-spacing: -.02em;
+}
+.dash-date { font-size: 14px; color: var(--text2); margin-top: 3px; }
+.dash-weather { font-size: 22px; }
+.dash-card {
+  background: var(--bg2); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border); padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.dash-card-header { display: flex; align-items: center; gap: 8px; }
+.dash-card-icon { font-size: 20px; }
+.dash-card-title { font-size: 15px; font-weight: 600; color: var(--text); flex: 1; }
+.dash-card-link {
+  background: none; border: none; color: var(--accent); font-size: 13px; font-weight: 500;
+  cursor: pointer; padding: 4px 8px; border-radius: 8px; font-family: inherit;
+  transition: background .15s;
+}
+.dash-card-link:hover { background: var(--accent-dim); }
+.dash-macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dash-macro {
+  background: var(--bg3); border-radius: var(--radius-sm);
+  padding: 10px 8px; text-align: center;
+}
+.dash-macro-val {
+  font-size: 22px; font-weight: 700; font-family: "Outfit", sans-serif; color: var(--text);
+}
+.dash-macro-label {
+  font-size: 10px; color: var(--text2); font-weight: 600; margin-top: 2px;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.dash-macro-sub { font-size: 11px; color: var(--accent); margin-top: 2px; }
+.dash-action-btn {
+  background: var(--accent-dim); color: var(--accent); border: none;
+  border-radius: var(--radius-sm); padding: 12px 16px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: background .15s; text-align: center; font-family: inherit; width: 100%;
+}
+.dash-action-btn:hover { background: rgba(99,102,241,.18); }
+.dash-cal-row {
+  display: flex; align-items: baseline; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dash-cal-row:last-child { border-bottom: none; }
+.dash-cal-time { font-size: 12px; color: var(--accent); font-weight: 600; min-width: 44px; flex-shrink: 0; }
+.dash-cal-title { font-size: 14px; color: var(--text); }
+.dash-job-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dash-job-row:last-child { border-bottom: none; }
+.dash-job-icon { font-size: 16px; }
+.dash-job-desc { flex: 1; font-size: 13px; color: var(--text); }
+.dash-job-time { font-size: 12px; color: var(--text2); white-space: nowrap; }
+.dash-empty { font-size: 13px; color: var(--text3); text-align: center; padding: 8px 0; }
+
+/* ── More drawer ── */
+.more-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4);
+  z-index: 60; backdrop-filter: blur(3px);
+}
+.more-overlay.visible { display: block; }
+.more-drawer {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--bg2); border-radius: 20px 20px 0 0;
+  padding: 12px 20px 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(100%); transition: transform .3s cubic-bezier(.4,0,.2,1);
+  z-index: 61; box-shadow: 0 -8px 40px rgba(0,0,0,.15);
+  max-width: 600px; left: 50%; transform: translateX(-50%) translateY(100%);
+}
+.more-drawer.open { transform: translateX(-50%) translateY(0); }
+.more-drawer-handle {
+  width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 16px;
+}
+.more-drawer-title {
+  font-size: 13px; font-weight: 600; color: var(--text2); text-align: center; margin-bottom: 12px;
+}
+.more-drawer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.more-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 16px 8px; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 500; color: var(--text2);
+  transition: background .15s, color .15s, transform .1s; min-height: 72px;
+}
+.more-item .more-item-icon { font-size: 24px; }
+.more-item:hover, .more-item:active {
+  background: var(--accent-dim); color: var(--accent); transform: scale(.97);
+}
 </style>
 </head>
 <body>
@@ -1099,38 +1193,65 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   <!-- Page area -->
   <div class="page-area">
 
-    <!-- Home page -->
+    <!-- Home page / Dashboard -->
     <div id="page-home" class="page">
       <div class="page-content">
-        <div id="today-strip">
-          <span id="today-date"></span>
-          <div id="today-meta">
-            <span id="today-weather">…</span>
-            <span id="today-summary"></span>
+        <div class="dash-greeting">
+          <div>
+            <div class="dash-greeting-text" id="dash-greeting-text">Hello</div>
+            <div class="dash-date" id="dash-date-text"></div>
           </div>
+          <div class="dash-weather" id="dash-weather-icon"></div>
         </div>
-        <div id="calendar-section" class="section-block" style="display:none">
-          <div class="section-title">📅 Today's Events</div>
-          <div id="cal-events-list"></div>
-        </div>
-        <div class="section-block">
-          <div class="section-title">Proactive</div>
-          <div id="cards-feed"><div class="empty-state">Danidin is watching — nothing needs your attention right now.</div></div>
-        </div>
-        <div id="jobs-section" class="section-block" style="display:none">
-          <div class="section-title">Scheduled</div>
-          <div id="home-jobs-list"></div>
-        </div>
-        <div class="section-block">
-          <div class="section-title">Quick actions</div>
-          <div class="quick-actions">
-            <button class="quick-btn" onclick="startNewChat()">💬 New chat</button>
-            <button class="quick-btn" onclick="openReminderModal()">⏰ Remind me</button>
-            <button class="quick-btn" onclick="openAddFactModal()">📝 Add note</button>
-            <button class="quick-btn" onclick="switchPage('tasks')">✓ View tasks</button>
-            <button class="quick-btn" onclick="switchPage('chat');setTimeout(openSmartHome,300)">🏠 Smart Home</button>
-            <button class="quick-btn" onclick="switchPage('automations')">⚙️ Automations</button>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <span class="dash-card-icon">🥗</span>
+            <span class="dash-card-title">Nutrition Today</span>
+            <button class="dash-card-link" onclick="switchPage('nutrition')">View →</button>
           </div>
+          <div class="dash-macros">
+            <div class="dash-macro">
+              <div class="dash-macro-val" id="dash-prot-val">—</div>
+              <div class="dash-macro-label">Protein</div>
+              <div class="dash-macro-sub" id="dash-prot-sub"></div>
+            </div>
+            <div class="dash-macro">
+              <div class="dash-macro-val" id="dash-carbs-val">—</div>
+              <div class="dash-macro-label">Carbs g</div>
+            </div>
+            <div class="dash-macro">
+              <div class="dash-macro-val" id="dash-cals-val">—</div>
+              <div class="dash-macro-label">Kcal</div>
+            </div>
+          </div>
+          <button class="dash-action-btn" onclick="switchPage('nutrition')">+ Log a meal</button>
+        </div>
+
+        <div class="dash-card" id="dash-cal-card">
+          <div class="dash-card-header">
+            <span class="dash-card-icon">📅</span>
+            <span class="dash-card-title">Today's Schedule</span>
+            <button class="dash-card-link" onclick="switchPage('tasks')">View all →</button>
+          </div>
+          <div id="dash-cal-list"><div class="dash-empty">Loading…</div></div>
+        </div>
+
+        <div class="dash-card" id="dash-jobs-card" style="display:none">
+          <div class="dash-card-header">
+            <span class="dash-card-icon">⏰</span>
+            <span class="dash-card-title">Scheduled</span>
+            <button class="dash-card-link" onclick="switchPage('tasks')">View all →</button>
+          </div>
+          <div id="dash-jobs-list"></div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <span class="dash-card-icon">🏠</span>
+            <span class="dash-card-title">Smart Home</span>
+          </div>
+          <button class="dash-action-btn" onclick="switchPage('chat');setTimeout(openSmartHome,350)">Open controls →</button>
         </div>
       </div>
     </div>
@@ -1491,16 +1612,29 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 
   </div><!-- end .page-area -->
 
-  <!-- Bottom nav (mobile) -->
+  <!-- Bottom nav -->
   <nav id="bottom-nav">
     <button class="bnav-tab active" data-page="home" onclick="switchPage('home')"><span class="bnav-icon">🏠</span>Home</button>
     <button class="bnav-tab" data-page="chat" onclick="switchPage('chat')"><span class="bnav-icon">💬</span>Chat</button>
-    <button class="bnav-tab" data-page="tasks" onclick="switchPage('tasks')"><span class="bnav-icon">✓</span>Tasks</button>
+    <button class="bnav-tab" data-page="tasks" onclick="switchPage('tasks')"><span class="bnav-icon">📅</span>Calendar</button>
     <button class="bnav-tab" data-page="nutrition" onclick="switchPage('nutrition')"><span class="bnav-icon">🥗</span>Food</button>
-    <button class="bnav-tab" data-page="activity" onclick="switchPage('activity')"><span class="bnav-icon">⚡</span>Activity</button>
-    <button class="bnav-tab" data-page="memory" onclick="switchPage('memory')"><span class="bnav-icon">🧠</span>Memory</button>
-    <button class="bnav-tab" onclick="hardRefresh()" title="Clear cache &amp; reload"><span class="bnav-icon">🔄</span>Update</button>
+    <button class="bnav-tab" id="bnav-more-btn" onclick="toggleMoreDrawer()"><span class="bnav-icon">···</span>More</button>
   </nav>
+
+  <!-- More drawer -->
+  <div id="more-overlay" class="more-overlay" onclick="closeMoreDrawer()"></div>
+  <div id="more-drawer" class="more-drawer">
+    <div class="more-drawer-handle"></div>
+    <div class="more-drawer-title">More</div>
+    <div class="more-drawer-grid">
+      <button class="more-item" onclick="closeMoreDrawer();switchPage('memory')"><span class="more-item-icon">🧠</span>Memory</button>
+      <button class="more-item" onclick="closeMoreDrawer();switchPage('activity')"><span class="more-item-icon">⚡</span>Activity</button>
+      <button class="more-item" onclick="closeMoreDrawer();switchPage('automations')"><span class="more-item-icon">⚙️</span>Automations</button>
+      <button class="more-item" onclick="closeMoreDrawer();openReminderModal()"><span class="more-item-icon">⏰</span>Reminder</button>
+      <button class="more-item" onclick="closeMoreDrawer();openAddFactModal()"><span class="more-item-icon">📝</span>Add note</button>
+      <button class="more-item" onclick="closeMoreDrawer();hardRefresh()"><span class="more-item-icon">🔄</span>Update</button>
+    </div>
+  </div>
 
 </div><!-- end #app -->
 
@@ -2893,7 +3027,7 @@ async function hardRefresh() {
 }
 
 // ── Page switching ──────────────────────────────────────────────────────────
-const PAGE_ORDER = ['home', 'chat', 'tasks', 'nutrition', 'activity', 'memory'];
+const PAGE_ORDER = ['home', 'chat', 'tasks', 'nutrition'];
 let currentPage = 'chat';
 
 function switchPage(page, instant) {
