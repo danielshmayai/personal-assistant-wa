@@ -89,6 +89,18 @@ def init_table() -> None:
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
 
+def _nutrition_key(chat_id: str) -> str:
+    """Normalize chat_id so all web sessions share one nutrition store.
+
+    WhatsApp chat_ids are phone numbers (e.g. '972501234567@c.us') and are already
+    canonical per-user.  Web sessions use 'web_<uuid>' — strip the UUID so every
+    browser/device for the same user writes to the same partition key 'web'.
+    """
+    if (chat_id or "").startswith("web"):
+        return "web"
+    return chat_id or "default"
+
+
 def _user_today() -> date:
     return datetime.now(tz=ZoneInfo(USER_TIMEZONE)).date()
 
@@ -149,7 +161,7 @@ def insert_log(
                 RETURNING id
                 """,
                 (
-                    chat_id,
+                    _nutrition_key(chat_id),
                     log_date or _user_today(),
                     meal_description,
                     _num(protein),
@@ -187,7 +199,7 @@ def list_today(chat_id: str) -> dict:
                 WHERE chat_id = %s AND log_date = %s
                 ORDER BY created_at
                 """,
-                (chat_id, today),
+                (_nutrition_key(chat_id), today),
             )
             rows = cur.fetchall()
     finally:
@@ -223,7 +235,7 @@ def delete_log(log_id: int, chat_id: str) -> bool:
         with conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM nutrition_logs WHERE id = %s AND chat_id = %s",
-                (log_id, chat_id),
+                (log_id, _nutrition_key(chat_id)),
             )
             affected = cur.rowcount
         conn.commit()
@@ -252,7 +264,7 @@ def history(chat_id: str, days: int = 14) -> list[dict]:
                 GROUP BY log_date
                 ORDER BY log_date DESC
                 """,
-                (chat_id, since),
+                (_nutrition_key(chat_id), since),
             )
             rows = cur.fetchall()
     finally:
