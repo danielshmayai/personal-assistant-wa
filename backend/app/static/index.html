@@ -3372,26 +3372,34 @@ async function refreshNutritionToday() {
   }
 }
 
-function _nutriBusy(on) {
-  document.getElementById('nutri-busy').style.display = on ? 'block' : 'none';
+function _nutriBusy(on, msg) {
+  const el = document.getElementById('nutri-busy');
+  el.style.display = on ? 'block' : 'none';
+  if (on && msg) el.textContent = msg;
+  else if (!on) el.textContent = 'Analyzing meal…';
 }
 
 async function uploadNutritionImage(input) {
   const file = input.files && input.files[0];
   if (!file) return;
   input.value = '';
-  _nutriBusy(true);
+  _nutriBusy(true, 'Analyzing meal… (this can take up to 30s)');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
     const fd = new FormData();
     fd.append('file', file);
     const r = await fetch(`/api/nutrition/log-image?chat_id=${encodeURIComponent(currentChatId || 'web')}`, {
-      method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd,
+      method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd, signal: ctrl.signal,
     });
+    clearTimeout(timer);
     if (!r.ok) throw new Error(await r.text());
     const res = await r.json();
     _renderNutritionToday(res.today);
   } catch (e) {
-    alert('Could not analyze image: ' + e.message);
+    clearTimeout(timer);
+    const msg = e.name === 'AbortError' ? 'Timed out — Gemini took too long. Try again.' : e.message;
+    alert('Could not analyze image: ' + msg);
   } finally {
     _nutriBusy(false);
   }
