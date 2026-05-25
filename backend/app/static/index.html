@@ -490,24 +490,16 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 #smarthome-nav-btn svg { flex-shrink: 0; }
 
 /* ── Smart Home panel ── */
-#smarthome-panel {
-  display: flex; flex-direction: column; overflow: hidden;
-  background: var(--bg); position: relative;
+#page-smarthome {
+  display: flex; flex-direction: column; overflow: hidden; background: var(--bg);
 }
 #smarthome-header {
   display: flex; align-items: center; gap: 12px;
   padding: 0 20px; height: 60px; flex-shrink: 0;
   background: var(--bg2); border-bottom: 1px solid var(--border);
 }
-#smarthome-back-btn {
-  background: none; border: none; color: var(--text2); cursor: pointer;
-  padding: 6px 8px; border-radius: 8px; font-family: inherit; font-size: 13px;
-  display: flex; align-items: center; gap: 6px; transition: color .15s, background .15s;
-}
-#smarthome-back-btn:hover { color: var(--text); background: var(--bg3); }
-#smarthome-header h2 { font-family: "Outfit", sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
 #sh-refresh-btn {
-  margin-left: auto; background: none; border: none; color: var(--text3); cursor: pointer;
+  background: none; border: none; color: var(--text3); cursor: pointer;
   padding: 6px; border-radius: 8px; display: flex; align-items: center;
   transition: color .15s, background .15s;
 }
@@ -1250,7 +1242,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <span class="dash-card-icon">🏠</span>
             <span class="dash-card-title">Smart Home</span>
           </div>
-          <button class="dash-action-btn" onclick="switchPage('chat');setTimeout(openSmartHome,350)">Open controls →</button>
+          <button class="dash-action-btn" onclick="switchPage('smarthome')">Open controls →</button>
         </div>
       </div>
     </div>
@@ -1288,39 +1280,6 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   <div id="sidebar-overlay"></div>
 
   <!-- Smart Home panel (replaces chat-main when active) -->
-  <div id="smarthome-panel" class="hidden">
-    <header id="smarthome-header">
-      <button id="smarthome-back-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-        Back
-      </button>
-      <h2>Smart Home</h2>
-      <button id="sh-refresh-btn" title="Refresh devices">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10"/>
-          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-        </svg>
-      </button>
-    </header>
-    <div id="smarthome-content">
-      <div id="sh-loading" class="sh-state">
-        <div class="sh-state-icon">🏠</div>
-        <span>Loading devices…</span>
-      </div>
-      <div id="sh-error" class="sh-state sh-error-state hidden">
-        <div class="sh-state-icon">⚠️</div>
-        <span id="sh-error-msg">Failed to load devices</span>
-        <button id="sh-retry-btn">Retry</button>
-      </div>
-      <div id="device-grid" class="device-grid hidden"></div>
-      <div id="sh-empty" class="sh-state hidden">
-        <div class="sh-state-icon">🔌</div>
-        <span>No devices found on this account.</span>
-      </div>
-    </div>
-  </div>
 
   <main id="chat-main">
     <header id="chat-header">
@@ -1394,6 +1353,35 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     </div>
   </main>
   </div><!-- end #page-chat -->
+
+  <!-- Smart Home page -->
+  <div id="page-smarthome" class="page">
+    <header id="smarthome-header">
+      <h2 style="font-family:'Outfit',sans-serif;font-size:18px;font-weight:700;color:var(--text);flex:1;padding:0 4px;">🏠 Smart Home</h2>
+      <button id="sh-refresh-btn" title="Refresh devices" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:8px;border-radius:8px;display:flex;align-items:center;transition:color .15s,background .15s;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+      </button>
+    </header>
+    <div id="smarthome-content">
+      <div id="sh-loading" class="sh-state">
+        <div class="sh-state-icon">🏠</div>
+        <span>Loading devices…</span>
+      </div>
+      <div id="sh-error" class="sh-state sh-error-state hidden">
+        <div class="sh-state-icon">⚠️</div>
+        <span id="sh-error-msg">Failed to load devices</span>
+        <button id="sh-retry-btn">Retry</button>
+      </div>
+      <div id="device-grid" class="device-grid hidden"></div>
+      <div id="sh-empty" class="sh-state hidden">
+        <div class="sh-state-icon">🔌</div>
+        <span>No devices found on this account.</span>
+      </div>
+    </div>
+  </div>
 
   <!-- Tasks page -->
   <div id="page-tasks" class="page">
@@ -1615,7 +1603,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   <nav id="bottom-nav">
     <button class="bnav-tab active" data-page="home" onclick="switchPage('home')"><span class="bnav-icon">🏠</span>Home</button>
     <button class="bnav-tab" data-page="chat" onclick="switchPage('chat')"><span class="bnav-icon">💬</span>Chat</button>
-    <button class="bnav-tab" data-page="tasks" onclick="switchPage('tasks')"><span class="bnav-icon">📅</span>Calendar</button>
+    <button class="bnav-tab" data-page="smarthome" onclick="switchPage('smarthome')"><span class="bnav-icon">💡</span>Smart Home</button>
     <button class="bnav-tab" data-page="nutrition" onclick="switchPage('nutrition')"><span class="bnav-icon">🥗</span>Food</button>
     <button class="bnav-tab" id="bnav-more-btn" onclick="toggleMoreDrawer()"><span class="bnav-icon">···</span>More</button>
   </nav>
@@ -1626,6 +1614,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     <div class="more-drawer-handle"></div>
     <div class="more-drawer-title">More</div>
     <div class="more-drawer-grid">
+      <button class="more-item" onclick="closeMoreDrawer();switchPage('tasks')"><span class="more-item-icon">📅</span>Calendar</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('memory')"><span class="more-item-icon">🧠</span>Memory</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('activity')"><span class="more-item-icon">⚡</span>Activity</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('automations')"><span class="more-item-icon">⚙️</span>Automations</button>
@@ -2533,7 +2522,6 @@ if ('serviceWorker' in navigator) {
 
 // ── Smart Home ────────────────────────────────────────────────────────────────
 
-const smarthomePanel  = document.getElementById('smarthome-panel');
 const smarthomeNavBtn = document.getElementById('smarthome-nav-btn');
 
 let shDevices        = [];
@@ -2569,26 +2557,20 @@ function shIsCurtain(cat) { return CURTAIN_CATS.has(cat); }
 const AC_MODES  = ['cool','heat','fan','dry','auto'];
 const FAN_SPEEDS = ['low','medium','high','auto'];
 
-const chatMain = document.getElementById('chat-main');
 
-function openSmartHome() {
-  chatMain.classList.add('hidden');
-  smarthomePanel.classList.remove('hidden');
-  smarthomeNavBtn.classList.add('active');
+function openSmartHome() { switchPage('smarthome'); }
+function closeSmartHome() { switchPage('chat'); }
+
+function _openSmartHomePage() {
   if (window.innerWidth <= 640) closeSidebar();
   loadSmartHomeDevices();
-  shRefreshTimer = setInterval(refreshSmartHomeStatuses, 30000);
+  if (!shRefreshTimer) shRefreshTimer = setInterval(refreshSmartHomeStatuses, 30000);
 }
-
-function closeSmartHome() {
+function _closeSmartHomePage() {
   clearInterval(shRefreshTimer); shRefreshTimer = null;
-  smarthomePanel.classList.add('hidden');
-  chatMain.classList.remove('hidden');
-  smarthomeNavBtn.classList.remove('active');
 }
 
 smarthomeNavBtn.addEventListener('click', openSmartHome);
-document.getElementById('smarthome-back-btn').addEventListener('click', closeSmartHome);
 document.getElementById('sh-refresh-btn').addEventListener('click', () => loadSmartHomeDevices());
 document.getElementById('sh-retry-btn').addEventListener('click', () => loadSmartHomeDevices());
 
@@ -3026,7 +3008,7 @@ async function hardRefresh() {
 }
 
 // ── Page switching ──────────────────────────────────────────────────────────
-const PAGE_ORDER = ['home', 'chat', 'tasks', 'nutrition'];
+const PAGE_ORDER = ['home', 'chat', 'smarthome', 'nutrition'];
 let currentPage = 'chat';
 
 function switchPage(page, instant) {
@@ -3041,12 +3023,14 @@ function switchPage(page, instant) {
   document.querySelectorAll('.nav-tab, .bnav-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.page === page);
   });
-  if (page === 'home')     loadHomePage();
-  if (page === 'tasks')    loadTasksPage();
-  if (page === 'nutrition') loadNutritionPage();
-  if (page === 'activity') loadActivityPage();
+  if (page === 'home')        loadHomePage();
+  if (page === 'tasks')       loadTasksPage();
+  if (page === 'nutrition')   loadNutritionPage();
+  if (page === 'activity')    loadActivityPage();
   if (page === 'memory')      loadMemoryPage();
   if (page === 'automations') loadAutomationsPage();
+  if (page === 'smarthome')   _openSmartHomePage();
+  else                        _closeSmartHomePage();
 }
 
 // ── Swipe navigation ─────────────────────────────────────────────────────────
