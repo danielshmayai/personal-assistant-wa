@@ -60,6 +60,18 @@ _BEST_PRACTICES = """\
 - Name your devices by their Tuya name: "turn off the living room light",
   "set the AC to 22 degrees", "show me all devices".
 
+### Nutrition & water tracking
+- Log meals naturally: "אכלתי חזה עוף עם אורז", "log my lunch: tuna salad".
+  I estimate protein, carbs, calories and micronutrients automatically.
+- Log water: "שתיתי כוס מים", "drank 500 ml". Daily target is 2 litres.
+- Ask for your daily summary: "כמה חלבון אכלתי היום?", "what did I eat today?".
+- Snap a photo of your meal and upload it — I'll recognise and log it.
+
+### Google Drive & images
+- Forward any photo or document to me and I save it to Drive automatically.
+- Ask me to show a saved image: "show me the photo from last week" → it appears inline.
+- Browse Drive: "show me my PDFs", "list files in Photos/2026-05".
+
 ### Web & research
 - I browse the web proactively — never say "I can't check that online", just ask.
 - For deep research: "search for X and summarise the key points".
@@ -143,6 +155,13 @@ def _build_tools_section() -> str:
     except Exception:
         pass
 
+    # Maps tools
+    try:
+        from app.google.maps_tool import get_maps_tools
+        sections.append("### 🗺️ Maps\n" + _tool_rows(get_maps_tools("")))
+    except Exception:
+        pass
+
     # Tuya / Smart home
     try:
         from app.tuya.tools import get_tuya_tools
@@ -156,6 +175,28 @@ def _build_tools_section() -> str:
     try:
         from app.memory.manager import MEMORY_TOOLS
         sections.append("### 🧠 Memory & Vault\n" + _tool_rows(MEMORY_TOOLS))
+    except Exception:
+        pass
+
+    # Schedule tools
+    try:
+        from app.schedule_tool import get_schedule_tools
+        sections.append("### ⏰ Scheduled Actions & Reminders\n" + _tool_rows(get_schedule_tools("")))
+    except Exception:
+        pass
+
+    # Nutrition tools
+    try:
+        from app.nutrition_tool import get_nutrition_tools
+        sections.append("### 🥗 Nutrition & Water Tracking\n" + _tool_rows(get_nutrition_tools("")))
+    except Exception:
+        pass
+
+    # TTS tool
+    try:
+        from app.tts_tool import TTS_TOOLS
+        if TTS_TOOLS:
+            sections.append("### 🔊 Voice & TTS\n" + _tool_rows(TTS_TOOLS))
     except Exception:
         pass
 
