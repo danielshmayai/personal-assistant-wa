@@ -1005,7 +1005,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .meal-item:last-child { border-bottom: none; }
 .meal-src { font-size: 18px; flex-shrink: 0; }
 .meal-body { flex: 1; min-width: 0; }
-.meal-desc { font-size: 14px; font-weight: 600; color: var(--text); }
+.meal-desc { font-size: 14px; font-weight: 600; color: var(--text); white-space: normal; word-break: break-word; }
 .meal-macros { font-size: 12px; color: var(--text2); margin-top: 2px; }
 .meal-del { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; padding: 0 4px; }
 .meal-del:hover { color: var(--red); }
@@ -1482,14 +1482,22 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 
         <div class="section-block">
           <div class="section-title">Log a meal</div>
-          <div class="nutri-upload" role="button" tabindex="0"
-               onclick="document.getElementById('nutri-image-input').click()"
-               onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('nutri-image-input').click()">
-            <span class="up-icon">📷</span>
-            <span>Snap or upload a photo of your plate</span>
-            <span class="up-hint">tap to choose a photo or take one</span>
+          <div style="display:flex;gap:10px">
+            <div class="nutri-upload" style="flex:1" role="button" tabindex="0"
+                 onclick="document.getElementById('nutri-image-gallery').click()"
+                 onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('nutri-image-gallery').click()">
+              <span class="up-icon">🖼️</span>
+              <span style="font-size:13px">Gallery</span>
+            </div>
+            <div class="nutri-upload" style="flex:1" role="button" tabindex="0"
+                 onclick="document.getElementById('nutri-image-camera').click()"
+                 onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('nutri-image-camera').click()">
+              <span class="up-icon">📷</span>
+              <span style="font-size:13px">Camera</span>
+            </div>
           </div>
-          <input id="nutri-image-input" type="file" accept="image/*" style="display:none" onchange="uploadNutritionImage(this)">
+          <input id="nutri-image-gallery" type="file" accept="image/*" style="display:none" onchange="uploadNutritionImage(this)">
+          <input id="nutri-image-camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="uploadNutritionImage(this)">
           <div class="nutri-text-row" style="margin-top:12px">
             <input id="nutri-text-input" class="quick-task-input" placeholder='Or type a meal… "חזה עוף עם ברוקולי וטחינה"' onkeydown="if(event.key==='Enter')submitNutritionText()">
             <button class="add-btn" onclick="submitNutritionText()">+ Log</button>

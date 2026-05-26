@@ -37,7 +37,7 @@ Respond with ONLY a single JSON object — no markdown, no code fences, no comme
 
 Schema (all numeric values are plain numbers, no units inside the value):
 {
-  "meal_description": "<short description IN HEBREW>",
+  "meal_description": "<full description of all components IN HEBREW, e.g. 'חזה עוף על הגריל, אורז לבן, סלט ירקות עם שמן זית ולימון'>",
   "protein": <grams, number>,
   "carbs": <grams, number>,
   "calories": <kcal, number>,
