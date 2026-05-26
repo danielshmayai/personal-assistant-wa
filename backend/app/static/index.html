@@ -321,6 +321,8 @@ body {
 .message-assistant table { border-collapse: collapse; font-size: 13px; margin: .5em 0; width: 100%; }
 .message-assistant th,.message-assistant td { border: 1px solid var(--border); padding: 7px 11px; text-align: left; }
 .message-assistant th { background: var(--bg3); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text2); }
+.message-assistant img { max-width: 100%; border-radius: 10px; margin: 6px 0; display: block; box-shadow: var(--shadow-sm); cursor: zoom-in; }
+.message-assistant img.img-zoom { position: fixed; inset: 0; max-width: 95vw; max-height: 95vh; width: auto; height: auto; margin: auto; border-radius: 14px; box-shadow: 0 8px 40px rgba(0,0,0,.5); z-index: 9999; cursor: zoom-out; }
 .message-assistant blockquote { border-left: 3px solid var(--accent); color: var(--text2); margin: .5em 0; padding: 2px 0 2px 14px; font-style: italic; }
 .message-assistant a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .message-assistant a:hover { opacity: .8; }
@@ -2209,6 +2211,21 @@ messagesEl.addEventListener('drop', e => {
   messagesEl.classList.remove('drag-over');
   const file = e.dataTransfer.files[0];
   if (file) doUpload(file);
+});
+
+// ── Image zoom ───────────────────────────────────────────────────────────────
+messagesEl.addEventListener('click', e => {
+  const img = e.target.closest('.message-assistant img');
+  if (!img) return;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9998;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+  const big = document.createElement('img');
+  big.src = img.src;
+  big.alt = img.alt;
+  big.style.cssText = 'max-width:95vw;max-height:92vh;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.5);';
+  overlay.appendChild(big);
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
 });
 
 // ── Conversations ────────────────────────────────────────────────────────────

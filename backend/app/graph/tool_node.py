@@ -22,6 +22,7 @@ _TOOL_EVENT_TYPE: dict[str, str] = {
     "list_emails":      "email",
     # Google Drive
     "drive_":             "drive",
+    "drive_show":         "drive",
     # Google Maps
     "create_google_map":  "map",
     "add_places_to_map":  "map",

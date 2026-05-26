@@ -8,7 +8,7 @@ import logging
 import httpx
 from langchain_core.tools import tool
 
-from app.config import WAHA_API_KEY, WAHA_BASE_URL, WAHA_SESSION
+from app.config import TEST_TOKEN, WAHA_API_KEY, WAHA_BASE_URL, WAHA_SESSION
 from app.google import drive as drive_api
 from app.google.auth import get_credentials
 from app.google.drive import DOC_CATEGORY_MAP, PHOTO_MIME_TYPES
@@ -155,4 +155,30 @@ def get_drive_tools(chat_id: str) -> list:
             logger.exception("drive_list_files failed")
             return f"Failed to list files: {e}"
 
-    return [drive_save_photo, drive_save_document, drive_list_files]
+    @tool
+    def drive_show_image(file_id: str) -> str:
+        """Display/show an image from Google Drive inline in the chat.
+        Use when the user asks to see, show, display, or view a photo or image that was saved to Drive.
+        The image will appear inline in the conversation.
+        file_id: the Google Drive file ID (from drive_list_files results).
+        """
+        creds = get_credentials(chat_id)
+        err = _check_drive_scope(creds)
+        if err:
+            return err
+        try:
+            # Verify the file exists and is an image
+            from app.google.drive import _svc
+            svc = _svc(creds)
+            meta = svc.files().get(fileId=file_id, fields="name,mimeType").execute()
+            name = meta.get("name", "image")
+            mime = meta.get("mimeType", "")
+            if mime and not mime.startswith("image/"):
+                return f"'{name}' is not an image file (type: {mime}). Use drive_list_files to find image files."
+            proxy_url = f"/api/drive/proxy/{file_id}?chat_id={chat_id}&token={TEST_TOKEN}"
+            return f"![{name}]({proxy_url})"
+        except Exception as e:
+            logger.exception("drive_show_image failed for file_id=%s", file_id)
+            return f"Failed to load image: {e}"
+
+    return [drive_save_photo, drive_save_document, drive_list_files, drive_show_image]

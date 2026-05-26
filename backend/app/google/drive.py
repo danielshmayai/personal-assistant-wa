@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from app.config import USER_TIMEZONE
 
@@ -143,6 +143,20 @@ def upload_document(
     link = _upload(svc, data, filename, mime_type, folder_id)
     logger.info("Drive: uploaded document '%s' → PA/Documents/%s", filename, category)
     return link
+
+
+def download_file(creds: Credentials, file_id: str) -> tuple[bytes, str]:
+    """Download a file from Drive by ID. Returns (bytes, mime_type)."""
+    svc = _svc(creds)
+    meta = svc.files().get(fileId=file_id, fields="mimeType,name").execute()
+    mime_type = meta.get("mimeType", "application/octet-stream")
+    request = svc.files().get_media(fileId=file_id)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buf.getvalue(), mime_type
 
 
 def list_files(
