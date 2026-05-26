@@ -267,10 +267,12 @@ def history(chat_id: str, days: int = 14) -> list[dict]:
             cur.execute(
                 """
                 SELECT log_date,
-                       SUM(protein)  AS protein,
-                       SUM(carbs)    AS carbs,
-                       SUM(calories) AS calories,
-                       COUNT(*)      AS meals
+                       SUM(protein)  FILTER (WHERE source != 'water') AS protein,
+                       SUM(carbs)    FILTER (WHERE source != 'water') AS carbs,
+                       SUM(calories) FILTER (WHERE source != 'water') AS calories,
+                       COUNT(*)      FILTER (WHERE source != 'water') AS meals,
+                       SUM(COALESCE((micros->>'water_ml')::int, 0))
+                         FILTER (WHERE source = 'water')              AS water_ml
                 FROM nutrition_logs
                 WHERE chat_id = %s AND log_date >= %s
                 GROUP BY log_date
@@ -284,10 +286,11 @@ def history(chat_id: str, days: int = 14) -> list[dict]:
     return [
         {
             "date": r[0].isoformat(),
-            "protein": round(float(r[1]), 1),
-            "carbs": round(float(r[2]), 1),
-            "calories": round(float(r[3]), 1),
-            "meals": int(r[4]),
+            "protein": round(float(r[1] or 0), 1),
+            "carbs": round(float(r[2] or 0), 1),
+            "calories": round(float(r[3] or 0), 1),
+            "meals": int(r[4] or 0),
+            "water_ml": int(r[5] or 0),
         }
         for r in rows
     ]

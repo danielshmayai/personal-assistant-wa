@@ -1026,12 +1026,14 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .hist-bar-fill.protein { background: var(--green); }
 .hist-bar-fill.carbs   { background: var(--accent); }
 .hist-bar-fill.cals    { background: var(--user-2); }
+.hist-bar-fill.water   { background: #38bdf8; }
 .hist-target { position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--text); opacity: .45; }
-.hist-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+.hist-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text3); margin-bottom: 4px; flex-wrap: wrap; }
 .hist-legend span::before { content: "●"; margin-inline-end: 4px; }
 .hist-legend .l-protein::before { color: var(--green); }
 .hist-legend .l-carbs::before   { color: var(--accent); }
 .hist-legend .l-cals::before    { color: var(--user-2); }
+.hist-legend .l-water::before   { color: #38bdf8; }
 
 /* ── Dashboard ── */
 .dash-greeting {
@@ -1526,6 +1528,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           <span class="l-protein">Protein</span>
           <span class="l-carbs">Carbs</span>
           <span class="l-cals">Calories</span>
+          <span class="l-water">Water</span>
         </div>
         <div id="nutri-history-list"><div class="empty-state">Loading…</div></div>
       </div>
@@ -3626,11 +3629,14 @@ async function loadNutritionHistory() {
     const maxProtein = Math.max(110, ...days.map(d => d.protein));
     const maxCarbs   = Math.max(1, ...days.map(d => d.carbs));
     const maxCals    = Math.max(1, ...days.map(d => d.calories));
+    const waterTarget = 2000;
     list.innerHTML = '';
     for (const d of days) {
       const dt = new Date(d.date + 'T00:00:00');
       const label = dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       const targetPct = (110 / maxProtein) * 100;
+      const waterPct = Math.min(100, Math.round((d.water_ml || 0) / waterTarget * 100));
+      const waterLabel = d.water_ml ? `${Math.round(d.water_ml / 100) / 10}L` : '—';
       const row = document.createElement('div');
       row.className = 'hist-row';
       row.innerHTML = `
@@ -3642,8 +3648,9 @@ async function loadNutritionHistory() {
           </div>
           <div class="hist-bar-track"><div class="hist-bar-fill carbs" style="width:${(d.carbs / maxCarbs) * 100}%"></div></div>
           <div class="hist-bar-track"><div class="hist-bar-fill cals" style="width:${(d.calories / maxCals) * 100}%"></div></div>
+          <div class="hist-bar-track"><div class="hist-bar-fill water" style="width:${waterPct}%"></div></div>
         </div>
-        <div class="hist-date" style="text-align:right">${Math.round(d.protein)}g</div>`;
+        <div class="hist-date" style="text-align:right;line-height:1.4">${Math.round(d.protein)}g<br><span style="font-size:10px;color:#38bdf8">${waterLabel}</span></div>`;
       list.appendChild(row);
     }
   } catch (e) {
