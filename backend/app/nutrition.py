@@ -271,7 +271,7 @@ def history(chat_id: str, days: int = 14) -> list[dict]:
                        SUM(carbs)    FILTER (WHERE source != 'water') AS carbs,
                        SUM(calories) FILTER (WHERE source != 'water') AS calories,
                        COUNT(*)      FILTER (WHERE source != 'water') AS meals,
-                       SUM(COALESCE((micros->>'water_ml')::int, 0))
+                       SUM(COALESCE((micros->>'water_ml')::numeric, 0))
                          FILTER (WHERE source = 'water')              AS water_ml
                 FROM nutrition_logs
                 WHERE chat_id = %s AND log_date >= %s
