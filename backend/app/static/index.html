@@ -1105,6 +1105,15 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   cursor: pointer; transition: background .15s; text-align: center; font-family: inherit; width: 100%;
 }
 .dash-action-btn:hover { background: rgba(99,102,241,.18); }
+#home-fab-container { position: absolute; bottom: 80px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 50; }
+#home-fab-btn { width: 52px; height: 52px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 26px; line-height: 1; cursor: pointer; box-shadow: 0 4px 16px rgba(99,102,241,.45); transition: transform .2s, background .15s; display: flex; align-items: center; justify-content: center; }
+#home-fab-btn:hover { background: #5558e6; transform: scale(1.08); }
+#home-fab-menu { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+#home-fab-menu.hidden { display: none; }
+.home-fab-option { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: var(--radius-sm); background: var(--bg2); border: 1px solid var(--border2); color: var(--text); font-size: 14px; font-family: inherit; cursor: pointer; box-shadow: var(--shadow-sm); white-space: nowrap; transition: background .15s; }
+.home-fab-option:hover { background: var(--accent-dim); }
+.home-fab-option span { font-size: 18px; }
+#page-home.active { position: relative; }
 .dash-cal-row {
   display: flex; align-items: baseline; gap: 10px; padding: 7px 0;
   border-bottom: 1px solid var(--border);
@@ -1295,6 +1304,16 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           </div>
           <button class="dash-action-btn" onclick="switchPage('smarthome')">Open controls →</button>
         </div>
+      </div>
+
+      <!-- FAB -->
+      <div id="home-fab-container">
+        <div id="home-fab-menu" class="hidden">
+          <button class="home-fab-option" onclick="closeFab();openNutritionToday()"><span>🥗</span>Log meal</button>
+          <button class="home-fab-option" onclick="closeFab();setTimeout(openReminderModal,120)"><span>⏰</span>Reminder</button>
+          <button class="home-fab-option" onclick="closeFab();switchPage('chat')"><span>💬</span>New chat</button>
+        </div>
+        <button id="home-fab-btn" onclick="toggleFab()" aria-label="Quick actions">＋</button>
       </div>
     </div>
 
@@ -3169,6 +3188,7 @@ let currentPage = 'chat';
 
 function switchPage(page, instant) {
   closeMoreDrawer();
+  if (page !== 'home') closeFab();
   currentPage = page;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active', 'no-anim'));
   const el = document.getElementById('page-' + page);
@@ -3293,6 +3313,19 @@ async function loadHomePage() {
   await Promise.all([_dashLoadNutrition(), _dashLoadCalendar(), _dashLoadJobs()]);
 
   _homeRefreshTimer = setInterval(() => _tickJobCountdowns('dash-jobs-list'), 1000);
+}
+
+function toggleFab() {
+  const menu = document.getElementById('home-fab-menu');
+  const btn  = document.getElementById('home-fab-btn');
+  const open = menu.classList.toggle('hidden');
+  btn.textContent = open ? '＋' : '✕';
+}
+function closeFab() {
+  const menu = document.getElementById('home-fab-menu');
+  const btn  = document.getElementById('home-fab-btn');
+  if (menu) menu.classList.add('hidden');
+  if (btn)  btn.textContent = '＋';
 }
 
 function _updateDashNutrition(totals, target) {
