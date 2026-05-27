@@ -3680,7 +3680,12 @@ async function loadNutritionHistory() {
           <div class="hist-bar-track"><div class="hist-bar-fill cals" style="width:${(d.calories / maxCals) * 100}%"></div></div>
           <div class="hist-bar-track"><div class="hist-bar-fill water" style="width:${waterPct}%"></div></div>
         </div>
-        <div class="hist-date" style="text-align:right;line-height:1.4">${Math.round(d.protein)}g<br><span style="font-size:10px;color:#38bdf8">${waterLabel}</span></div>`;
+        <div class="hist-date" style="text-align:right;line-height:1.55;font-size:11px">
+          <span style="color:var(--green)">${Math.round(d.protein)}g</span><br>
+          <span style="color:var(--accent)">${Math.round(d.carbs)}g</span><br>
+          <span style="color:var(--user-2)">${Math.round(d.calories)}kcal</span><br>
+          <span style="color:#38bdf8">${waterLabel}</span>
+        </div>`;
       list.appendChild(row);
     }
   } catch (e) {
