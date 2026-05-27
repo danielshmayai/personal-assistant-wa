@@ -3000,6 +3000,7 @@ document.getElementById('device-grid').addEventListener('change', async e => {
   if (bSlider) bSlider.disabled = !anyOn;
   if (tSlider) tSlider.disabled = !anyOn;
 
+  const devName = (shDevices.find(d => d.id === id) || {}).name || id;
   shPendingControls[id] = true;
   try {
     await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
@@ -3008,6 +3009,7 @@ document.getElementById('device-grid').addEventListener('change', async e => {
     });
     shStatuses[id] = { ...st, [switchKey]: newVal };
     flashCard(id);
+    showToast(`${devName} turned ${newVal ? 'on' : 'off'}`, 'success');
   } catch {
     e.target.checked = !newVal;
     if (lbl && (lbl.textContent === 'On' || lbl.textContent === 'Off')) {
@@ -3015,6 +3017,7 @@ document.getElementById('device-grid').addEventListener('change', async e => {
     }
     if (bSlider) bSlider.disabled = anyOn;
     if (tSlider) tSlider.disabled = anyOn;
+    showToast(`Failed to control ${devName}`, 'error');
   } finally {
     delete shPendingControls[id];
   }
@@ -3131,6 +3134,7 @@ document.getElementById('device-grid').addEventListener('click', async e => {
   const cmd = btn.dataset.cmd;
   const val = btn.dataset.val;
 
+  const devName2 = (shDevices.find(d => d.id === id) || {}).name || id;
   btn.disabled = true;
   shPendingControls[id] = true;
   try {
@@ -3147,7 +3151,9 @@ document.getElementById('device-grid').addEventListener('click', async e => {
         b.classList.toggle('active', b.dataset.val === val);
       });
     }
-  } catch { /* silent — refresh will correct */ }
+    const label = curtainBtn ? `${devName2}: ${val}` : `${devName2} ${cmd}: ${val}`;
+    showToast(label, 'success');
+  } catch { showToast(`Failed to control ${devName2}`, 'error'); }
   finally {
     btn.disabled = false;
     delete shPendingControls[id];
