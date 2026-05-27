@@ -3206,15 +3206,23 @@ async function loadHomePage() {
   _homeRefreshTimer = setInterval(() => _tickJobCountdowns('dash-jobs-list'), 1000);
 }
 
+function _updateDashNutrition(totals, target) {
+  const t = totals || {};
+  const tgt = target || 110;
+  const protEl = document.getElementById('dash-prot-val');
+  const subEl  = document.getElementById('dash-prot-sub');
+  const carbEl = document.getElementById('dash-carbs-val');
+  const calEl  = document.getElementById('dash-cals-val');
+  if (protEl) protEl.textContent = Math.round(t.protein || 0) + 'g';
+  if (subEl)  subEl.textContent  = `/ ${tgt}g`;
+  if (carbEl) carbEl.textContent = Math.round(t.carbs || 0);
+  if (calEl)  calEl.textContent  = Math.round(t.calories || 0);
+}
+
 async function _dashLoadNutrition() {
   try {
     const data = await apiGet(`/api/nutrition/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
-    const t = data.totals || {};
-    const target = data.protein_target || 110;
-    document.getElementById('dash-prot-val').textContent = Math.round(t.protein || 0);
-    document.getElementById('dash-prot-sub').textContent = `/ ${target}g`;
-    document.getElementById('dash-carbs-val').textContent = Math.round(t.carbs || 0);
-    document.getElementById('dash-cals-val').textContent = Math.round(t.calories || 0);
+    _updateDashNutrition(data.totals, data.protein_target);
 
     // Weather from /api/today
     try {
@@ -3507,6 +3515,7 @@ function _renderNutritionToday(data) {
   document.getElementById('val-protein').textContent = Math.round(t.protein);
   document.getElementById('val-carbs').textContent = Math.round(t.carbs);
   document.getElementById('val-cals').textContent = Math.round(t.calories);
+  _updateDashNutrition(t, target);
   _setRing('ring-protein', t.protein / target);
   _setRing('ring-carbs', t.carbs / NUTRI_CARB_CEIL);
   _setRing('ring-cals', t.calories / NUTRI_CAL_CEIL);
