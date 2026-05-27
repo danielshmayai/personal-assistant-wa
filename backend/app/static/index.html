@@ -1670,8 +1670,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <button class="more-item" onclick="closeMoreDrawer();switchPage('memory')"><span class="more-item-icon">🧠</span>Memory</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('activity')"><span class="more-item-icon">⚡</span>Activity</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('automations')"><span class="more-item-icon">⚙️</span>Automations</button>
-      <button class="more-item" onclick="closeMoreDrawer();openReminderModal()"><span class="more-item-icon">⏰</span>Reminder</button>
-      <button class="more-item" onclick="closeMoreDrawer();openAddFactModal()"><span class="more-item-icon">📝</span>Add note</button>
+      <button class="more-item" onclick="closeMoreDrawer();setTimeout(openReminderModal,120)"><span class="more-item-icon">⏰</span>Reminder</button>
+      <button class="more-item" onclick="closeMoreDrawer();setTimeout(openAddFactModal,120)"><span class="more-item-icon">📝</span>Add fact</button>
       <button class="more-item" onclick="closeMoreDrawer();hardRefresh()"><span class="more-item-icon">🔄</span>Update</button>
     </div>
   </div>
