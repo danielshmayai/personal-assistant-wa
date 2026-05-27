@@ -539,6 +539,12 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .device-card:hover { box-shadow: var(--shadow); }
 .device-card.offline { opacity: 0.52; }
 .device-card.flash-ok { border-color: var(--green); }
+.sh-room-header { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; grid-column: 1/-1; }
+.sh-offline-toggle { grid-column: 1/-1; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text3); cursor: pointer; padding: 6px 0; user-select: none; }
+.sh-offline-toggle::before { content: "▶"; font-size: 10px; transition: transform .2s; }
+.sh-offline-toggle.open::before { transform: rotate(90deg); }
+.sh-offline-group { grid-column: 1/-1; display: contents; }
+.sh-offline-group.hidden .device-card { display: none; }
 
 .device-card-header { display: flex; align-items: center; gap: 10px; }
 .device-icon {
@@ -2711,10 +2717,52 @@ async function refreshSmartHomeStatuses() {
   shDevices.forEach(d => { if (!shPendingControls[d.id]) updateCardControls(d.id); });
 }
 
+const _ROOM_KEYWORDS = ['living room','bedroom','kitchen','bathroom','office','hallway','entrance','balcony','dining','garden','garage','laundry','kids room','guest room','master bedroom'];
+function _extractRoom(name) {
+  const lower = name.toLowerCase();
+  for (const kw of _ROOM_KEYWORDS) if (lower.includes(kw)) return kw.replace(/\b\w/g, c => c.toUpperCase());
+  return 'General';
+}
+
 function renderDeviceGrid() {
   const grid = document.getElementById('device-grid');
   grid.innerHTML = '';
-  shDevices.forEach(d => grid.appendChild(buildDeviceCard(d)));
+  const online = shDevices.filter(d => d.online);
+  const offline = shDevices.filter(d => !d.online);
+
+  // Group online devices by room
+  const rooms = {};
+  online.forEach(d => {
+    const room = _extractRoom(d.name);
+    (rooms[room] = rooms[room] || []).push(d);
+  });
+  const roomNames = Object.keys(rooms).sort();
+  const showRoomHeaders = roomNames.length > 1;
+  roomNames.forEach(room => {
+    if (showRoomHeaders) {
+      const hdr = document.createElement('div');
+      hdr.className = 'sh-room-header';
+      hdr.textContent = room;
+      grid.appendChild(hdr);
+    }
+    rooms[room].forEach(d => grid.appendChild(buildDeviceCard(d)));
+  });
+
+  // Collapsible offline section
+  if (offline.length) {
+    const toggle = document.createElement('div');
+    toggle.className = 'sh-offline-toggle';
+    toggle.textContent = ` Offline (${offline.length})`;
+    const group = document.createElement('div');
+    group.className = 'sh-offline-group hidden';
+    toggle.addEventListener('click', () => {
+      const hidden = group.classList.toggle('hidden');
+      toggle.classList.toggle('open', !hidden);
+    });
+    grid.appendChild(toggle);
+    offline.forEach(d => group.appendChild(buildDeviceCard(d)));
+    grid.appendChild(group);
+  }
 }
 
 // Returns all switch-type DPS keys in a status dict, sorted numerically
