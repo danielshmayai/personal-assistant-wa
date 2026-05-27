@@ -1222,7 +1222,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           <div class="dash-card-header">
             <span class="dash-card-icon">🥗</span>
             <span class="dash-card-title">Nutrition Today</span>
-            <button class="dash-card-link" onclick="switchPage('nutrition')">View →</button>
+            <button class="dash-card-link" onclick="openNutritionToday()">View →</button>
           </div>
           <div class="dash-macros">
             <div class="dash-macro">
@@ -1239,7 +1239,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
               <div class="dash-macro-label">Kcal</div>
             </div>
           </div>
-          <button class="dash-action-btn" onclick="switchPage('nutrition')">+ Log a meal</button>
+          <button class="dash-action-btn" onclick="openNutritionToday()">+ Log a meal</button>
         </div>
 
         <div class="dash-card" id="dash-cal-card">
@@ -3482,6 +3482,11 @@ function showNutritionTab(tab) {
   document.getElementById('nutri-today-view').style.display = tab === 'today' ? 'block' : 'none';
   document.getElementById('nutri-history-view').style.display = tab === 'history' ? 'block' : 'none';
   if (tab === 'history') loadNutritionHistory();
+}
+
+function openNutritionToday() {
+  _nutriTab = 'today';
+  switchPage('nutrition');
 }
 
 function loadNutritionPage() {
