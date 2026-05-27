@@ -3319,12 +3319,26 @@ function toggleMoreDrawer() {
   else openMoreDrawer();
 }
 function openMoreDrawer() {
-  document.getElementById('more-drawer').classList.add('open');
+  const drawer = document.getElementById('more-drawer');
+  drawer.classList.add('open');
   document.getElementById('more-overlay').classList.add('visible');
+  _initMoreDrawerSwipe(drawer);
 }
 function closeMoreDrawer() {
   document.getElementById('more-drawer').classList.remove('open');
   document.getElementById('more-overlay').classList.remove('visible');
+}
+let _moreSwipeY = null;
+function _initMoreDrawerSwipe(drawer) {
+  if (drawer._swipeInited) return;
+  drawer._swipeInited = true;
+  drawer.addEventListener('touchstart', e => { _moreSwipeY = e.touches[0].clientY; }, { passive: true });
+  drawer.addEventListener('touchend', e => {
+    if (_moreSwipeY === null) return;
+    const delta = e.changedTouches[0].clientY - _moreSwipeY;
+    _moreSwipeY = null;
+    if (delta > 60) closeMoreDrawer();
+  }, { passive: true });
 }
 
 function _parsePayload(raw) {
