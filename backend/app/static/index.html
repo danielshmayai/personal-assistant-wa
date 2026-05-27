@@ -3735,6 +3735,7 @@ function showMemoryCategories() {
   document.getElementById('memory-entity-list').style.display = 'none';
   document.getElementById('memory-entity-detail').style.display = 'none';
   document.getElementById('memory-categories-view').style.display = '';
+  document.getElementById('memory-rules-section').style.display = '';
   document.getElementById('memory-page-title').textContent = 'Memory';
   _loadCategories();
 }
@@ -3763,6 +3764,7 @@ async function openCategory(catName) {
   _memoryCategory = catName;
   document.getElementById('memory-categories-view').style.display = 'none';
   document.getElementById('memory-entity-detail').style.display = 'none';
+  document.getElementById('memory-rules-section').style.display = 'none';
   const listSection = document.getElementById('memory-entity-list');
   listSection.style.display = '';
   document.getElementById('entity-list-title').textContent = `${CAT_ICON[catName] || ''} ${catName}`;
