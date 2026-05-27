@@ -923,8 +923,14 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .add-btn:hover { background: rgba(99,102,241,.2); }
 .entity-full-content {
   background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 16px; font-size: 13px; color: var(--text); line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+  padding: 16px; font-size: 13px; color: var(--text); line-height: 1.7; word-break: break-word;
 }
+.entity-full-content h1,.entity-full-content h2,.entity-full-content h3 { font-weight: 700; margin: .5em 0 .2em; }
+.entity-full-content p { margin: .25em 0; }
+.entity-full-content ul,.entity-full-content ol { padding-left: 1.4em; margin: .25em 0; }
+.entity-full-content li { margin: .1em 0; }
+.entity-full-content strong { font-weight: 700; }
+.entity-full-content code { background: rgba(0,0,0,.06); border-radius: 3px; padding: .1em .3em; font-size: .9em; }
 
 /* ── Modals ── */
 .modal-overlay {
@@ -3804,7 +3810,7 @@ async function openEntity(catName, entityName) {
   content.textContent = 'Loading…';
   try {
     const data = await apiGet(`/api/memory/entity?category=${encodeURIComponent(catName)}&entity=${encodeURIComponent(entityName)}`);
-    content.textContent = data.content || '(empty)';
+    content.innerHTML = marked.parse(data.content || '*(empty)*');
   } catch (e) {
     content.textContent = `Error: ${e.message}`;
   }
