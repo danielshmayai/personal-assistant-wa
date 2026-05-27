@@ -219,7 +219,7 @@ body {
 }
 .conv-item.active .conv-item-icon { background: var(--accent-dim); color: var(--accent); border-color: rgba(99,102,241,.25); }
 .conv-item-body { flex: 1; min-width: 0; }
-.conv-item-title { font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.conv-item-title { font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; direction: rtl; unicode-bidi: plaintext; }
 .conv-item.active .conv-item-title { color: var(--accent); }
 .conv-item-title.untitled { color: var(--text2); font-style: italic; }
 .conv-item-time { font-size: 10.5px; color: var(--text3); display: block; margin-top: 1px; }
@@ -434,6 +434,19 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .system-msg { align-self: center; color: var(--text3); font-size: 12px; padding: 3px 0; margin: 4px 0; }
 .hidden { display: none !important; }
 
+/* ── Action toast ── */
+.app-toast {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(12px);
+  padding: 10px 18px; border-radius: 22px; font-size: 13px; font-weight: 500;
+  white-space: nowrap; z-index: 400; pointer-events: none;
+  opacity: 0; transition: opacity .2s, transform .2s;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+}
+.app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.app-toast.success { background: #22c55e; color: #fff; }
+.app-toast.error   { background: #ef4444; color: #fff; }
+.app-toast.info    { background: var(--bg2); color: var(--text); border: 1px solid var(--border2); }
+
 /* ── Update toast ── */
 #update-toast {
   position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
@@ -526,6 +539,12 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .device-card:hover { box-shadow: var(--shadow); }
 .device-card.offline { opacity: 0.52; }
 .device-card.flash-ok { border-color: var(--green); }
+.sh-room-header { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; grid-column: 1/-1; }
+.sh-offline-toggle { grid-column: 1/-1; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text3); cursor: pointer; padding: 6px 0; user-select: none; }
+.sh-offline-toggle::before { content: "▶"; font-size: 10px; transition: transform .2s; }
+.sh-offline-toggle.open::before { transform: rotate(90deg); }
+.sh-offline-group { grid-column: 1/-1; display: contents; }
+.sh-offline-group.hidden .device-card { display: none; }
 
 .device-card-header { display: flex; align-items: center; gap: 10px; }
 .device-icon {
@@ -1040,6 +1059,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .hist-legend .l-carbs::before   { color: var(--accent); }
 .hist-legend .l-cals::before    { color: var(--user-2); }
 .hist-legend .l-water::before   { color: #38bdf8; }
+.hist-range-btn { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg2); color: var(--text2); font-size: 12px; cursor: pointer; transition: background .15s, color .15s; }
+.hist-range-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* ── Dashboard ── */
 .dash-greeting {
@@ -1078,12 +1099,28 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   text-transform: uppercase; letter-spacing: .05em;
 }
 .dash-macro-sub { font-size: 11px; color: var(--accent); margin-top: 2px; }
+.dash-ring-wrap { position: relative; width: 54px; height: 54px; margin: 0 auto 4px; }
+.dash-ring { width: 54px; height: 54px; transform: rotate(-90deg); }
+.dash-ring-bg { fill: none; stroke: var(--bg3); stroke-width: 3.5; }
+.dash-ring-fill { fill: none; stroke-width: 3.5; stroke-linecap: round; transition: stroke-dasharray .5s ease; }
+.dash-ring-fill.protein { stroke: var(--green); }
+.dash-ring-fill.water { stroke: #38bdf8; }
+.dash-ring-wrap .dash-macro-val { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 13px; line-height: 1; }
 .dash-action-btn {
   background: var(--accent-dim); color: var(--accent); border: none;
   border-radius: var(--radius-sm); padding: 12px 16px; font-size: 14px; font-weight: 600;
   cursor: pointer; transition: background .15s; text-align: center; font-family: inherit; width: 100%;
 }
 .dash-action-btn:hover { background: rgba(99,102,241,.18); }
+#home-fab-container { position: absolute; bottom: 80px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 50; }
+#home-fab-btn { width: 52px; height: 52px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 26px; line-height: 1; cursor: pointer; box-shadow: 0 4px 16px rgba(99,102,241,.45); transition: transform .2s, background .15s; display: flex; align-items: center; justify-content: center; }
+#home-fab-btn:hover { background: #5558e6; transform: scale(1.08); }
+#home-fab-menu { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+#home-fab-menu.hidden { display: none; }
+.home-fab-option { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: var(--radius-sm); background: var(--bg2); border: 1px solid var(--border2); color: var(--text); font-size: 14px; font-family: inherit; cursor: pointer; box-shadow: var(--shadow-sm); white-space: nowrap; transition: background .15s; }
+.home-fab-option:hover { background: var(--accent-dim); }
+.home-fab-option span { font-size: 18px; }
+#page-home.active { position: relative; }
 .dash-cal-row {
   display: flex; align-items: baseline; gap: 10px; padding: 7px 0;
   border-bottom: 1px solid var(--border);
@@ -1232,7 +1269,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           </div>
           <div class="dash-macros">
             <div class="dash-macro">
-              <div class="dash-macro-val" id="dash-prot-val">—</div>
+              <div class="dash-ring-wrap">
+                <svg class="dash-ring" viewBox="0 0 36 36">
+                  <circle class="dash-ring-bg" cx="18" cy="18" r="15.9"/>
+                  <circle class="dash-ring-fill protein" id="dash-prot-ring" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/>
+                </svg>
+                <div class="dash-macro-val" id="dash-prot-val">—</div>
+              </div>
               <div class="dash-macro-label">Protein</div>
               <div class="dash-macro-sub" id="dash-prot-sub"></div>
             </div>
@@ -1242,7 +1285,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
               <div class="dash-macro-sub">g</div>
             </div>
             <div class="dash-macro">
-              <div class="dash-macro-val" id="dash-cals-val">—</div>
+              <div class="dash-ring-wrap">
+                <svg class="dash-ring" viewBox="0 0 36 36">
+                  <circle class="dash-ring-bg" cx="18" cy="18" r="15.9"/>
+                  <circle class="dash-ring-fill water" id="dash-water-ring" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/>
+                </svg>
+                <div class="dash-macro-val" id="dash-cals-val">—</div>
+              </div>
               <div class="dash-macro-label">Kcal</div>
             </div>
           </div>
@@ -1274,6 +1323,16 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           </div>
           <button class="dash-action-btn" onclick="switchPage('smarthome')">Open controls →</button>
         </div>
+      </div>
+
+      <!-- FAB -->
+      <div id="home-fab-container">
+        <div id="home-fab-menu" class="hidden">
+          <button class="home-fab-option" onclick="closeFab();openNutritionToday()"><span>🥗</span>Log meal</button>
+          <button class="home-fab-option" onclick="closeFab();setTimeout(openReminderModal,120)"><span>⏰</span>Reminder</button>
+          <button class="home-fab-option" onclick="closeFab();switchPage('chat')"><span>💬</span>New chat</button>
+        </div>
+        <button id="home-fab-btn" onclick="toggleFab()" aria-label="Quick actions">＋</button>
       </div>
     </div>
 
@@ -1417,6 +1476,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   <div id="page-tasks" class="page">
     <div class="page-content">
       <div class="page-header"><h2>Schedule</h2></div>
+      <div class="section-block">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>📅 Calendar — next 7 days</span>
+          <button class="dash-card-link" onclick="loadCalendarEvents()">↻</button>
+        </div>
+        <div id="tasks-cal-list"><div class="empty-state">Loading…</div></div>
+      </div>
       <div class="quick-add-task-row">
         <input id="quick-task-input" class="quick-task-input" placeholder="Add a task… (opens chat)" onkeydown="if(event.key==='Enter')submitQuickTask()">
         <button class="add-btn" onclick="submitQuickTask()">+ Add</button>
@@ -1539,11 +1605,18 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 
       <!-- History view -->
       <div id="nutri-history-view" style="display:none">
-        <div class="hist-legend">
-          <span class="l-protein">Protein</span>
-          <span class="l-carbs">Carbs</span>
-          <span class="l-cals">Calories</span>
-          <span class="l-water">Water</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="hist-legend" style="margin-bottom:0">
+            <span class="l-protein">Protein</span>
+            <span class="l-carbs">Carbs</span>
+            <span class="l-cals">Calories</span>
+            <span class="l-water">Water</span>
+          </div>
+          <div id="hist-range-btns" style="display:flex;gap:4px">
+            <button class="hist-range-btn active" data-days="7" onclick="setHistoryRange(7)">7d</button>
+            <button class="hist-range-btn" data-days="14" onclick="setHistoryRange(14)">14d</button>
+            <button class="hist-range-btn" data-days="30" onclick="setHistoryRange(30)">30d</button>
+          </div>
         </div>
         <div id="nutri-history-list"><div class="empty-state">Loading…</div></div>
       </div>
@@ -2689,10 +2762,52 @@ async function refreshSmartHomeStatuses() {
   shDevices.forEach(d => { if (!shPendingControls[d.id]) updateCardControls(d.id); });
 }
 
+const _ROOM_KEYWORDS = ['living room','bedroom','kitchen','bathroom','office','hallway','entrance','balcony','dining','garden','garage','laundry','kids room','guest room','master bedroom'];
+function _extractRoom(name) {
+  const lower = name.toLowerCase();
+  for (const kw of _ROOM_KEYWORDS) if (lower.includes(kw)) return kw.replace(/\b\w/g, c => c.toUpperCase());
+  return 'General';
+}
+
 function renderDeviceGrid() {
   const grid = document.getElementById('device-grid');
   grid.innerHTML = '';
-  shDevices.forEach(d => grid.appendChild(buildDeviceCard(d)));
+  const online = shDevices.filter(d => d.online);
+  const offline = shDevices.filter(d => !d.online);
+
+  // Group online devices by room
+  const rooms = {};
+  online.forEach(d => {
+    const room = _extractRoom(d.name);
+    (rooms[room] = rooms[room] || []).push(d);
+  });
+  const roomNames = Object.keys(rooms).sort();
+  const showRoomHeaders = roomNames.length > 1;
+  roomNames.forEach(room => {
+    if (showRoomHeaders) {
+      const hdr = document.createElement('div');
+      hdr.className = 'sh-room-header';
+      hdr.textContent = room;
+      grid.appendChild(hdr);
+    }
+    rooms[room].forEach(d => grid.appendChild(buildDeviceCard(d)));
+  });
+
+  // Collapsible offline section
+  if (offline.length) {
+    const toggle = document.createElement('div');
+    toggle.className = 'sh-offline-toggle';
+    toggle.textContent = ` Offline (${offline.length})`;
+    const group = document.createElement('div');
+    group.className = 'sh-offline-group hidden';
+    toggle.addEventListener('click', () => {
+      const hidden = group.classList.toggle('hidden');
+      toggle.classList.toggle('open', !hidden);
+    });
+    grid.appendChild(toggle);
+    offline.forEach(d => group.appendChild(buildDeviceCard(d)));
+    grid.appendChild(group);
+  }
 }
 
 // Returns all switch-type DPS keys in a status dict, sorted numerically
@@ -2885,6 +3000,7 @@ document.getElementById('device-grid').addEventListener('change', async e => {
   if (bSlider) bSlider.disabled = !anyOn;
   if (tSlider) tSlider.disabled = !anyOn;
 
+  const devName = (shDevices.find(d => d.id === id) || {}).name || id;
   shPendingControls[id] = true;
   try {
     await shFetch(`/api/devices/${encodeURIComponent(id)}/control`, {
@@ -2893,6 +3009,7 @@ document.getElementById('device-grid').addEventListener('change', async e => {
     });
     shStatuses[id] = { ...st, [switchKey]: newVal };
     flashCard(id);
+    showToast(`${devName} turned ${newVal ? 'on' : 'off'}`, 'success');
   } catch {
     e.target.checked = !newVal;
     if (lbl && (lbl.textContent === 'On' || lbl.textContent === 'Off')) {
@@ -2900,6 +3017,7 @@ document.getElementById('device-grid').addEventListener('change', async e => {
     }
     if (bSlider) bSlider.disabled = anyOn;
     if (tSlider) tSlider.disabled = anyOn;
+    showToast(`Failed to control ${devName}`, 'error');
   } finally {
     delete shPendingControls[id];
   }
@@ -3016,6 +3134,7 @@ document.getElementById('device-grid').addEventListener('click', async e => {
   const cmd = btn.dataset.cmd;
   const val = btn.dataset.val;
 
+  const devName2 = (shDevices.find(d => d.id === id) || {}).name || id;
   btn.disabled = true;
   shPendingControls[id] = true;
   try {
@@ -3032,12 +3151,32 @@ document.getElementById('device-grid').addEventListener('click', async e => {
         b.classList.toggle('active', b.dataset.val === val);
       });
     }
-  } catch { /* silent — refresh will correct */ }
+    const label = curtainBtn ? `${devName2}: ${val}` : `${devName2} ${cmd}: ${val}`;
+    showToast(label, 'success');
+  } catch { showToast(`Failed to control ${devName2}`, 'error'); }
   finally {
     btn.disabled = false;
     delete shPendingControls[id];
   }
 });
+
+let _toastTimer = null;
+function showToast(msg, type = 'success') {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    el.className = 'app-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.className = `app-toast ${type}`;
+  clearTimeout(_toastTimer);
+  requestAnimationFrame(() => {
+    el.classList.add('show');
+    _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  });
+}
 
 function showUpdateToast(registration) {
   if (document.getElementById('update-toast')) return; // already shown
@@ -3081,6 +3220,7 @@ let currentPage = 'chat';
 
 function switchPage(page, instant) {
   closeMoreDrawer();
+  if (page !== 'home') closeFab();
   currentPage = page;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active', 'no-anim'));
   const el = document.getElementById('page-' + page);
@@ -3207,6 +3347,19 @@ async function loadHomePage() {
   _homeRefreshTimer = setInterval(() => _tickJobCountdowns('dash-jobs-list'), 1000);
 }
 
+function toggleFab() {
+  const menu = document.getElementById('home-fab-menu');
+  const btn  = document.getElementById('home-fab-btn');
+  const open = menu.classList.toggle('hidden');
+  btn.textContent = open ? '＋' : '✕';
+}
+function closeFab() {
+  const menu = document.getElementById('home-fab-menu');
+  const btn  = document.getElementById('home-fab-btn');
+  if (menu) menu.classList.add('hidden');
+  if (btn)  btn.textContent = '＋';
+}
+
 function _updateDashNutrition(totals, target) {
   const t = totals || {};
   const tgt = target || 110;
@@ -3218,12 +3371,17 @@ function _updateDashNutrition(totals, target) {
   if (subEl)  subEl.textContent  = `/ ${tgt}g`;
   if (carbEl) carbEl.textContent = Math.round(t.carbs || 0);
   if (calEl)  calEl.textContent  = Math.round(t.calories || 0);
+  // Update progress rings (circumference = 2π × 15.9 ≈ 99.9, so pct maps directly)
+  const protRing  = document.getElementById('dash-prot-ring');
+  const waterRing = document.getElementById('dash-water-ring');
+  if (protRing)  { const pct = Math.min(100, Math.round((t.protein || 0) / tgt * 100)); protRing.setAttribute('stroke-dasharray', `${pct} 100`); }
+  if (waterRing) { const pct = Math.min(100, Math.round((t.water_ml || 0) / 2000 * 100)); waterRing.setAttribute('stroke-dasharray', `${pct} 100`); }
 }
 
 async function _dashLoadNutrition() {
   try {
     const data = await apiGet(`/api/nutrition/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
-    _updateDashNutrition(data.totals, data.protein_target);
+    _updateDashNutrition({ ...(data.totals || {}), water_ml: data.water_ml || 0 }, data.protein_target);
 
     // Weather from /api/today
     try {
@@ -3279,12 +3437,26 @@ function toggleMoreDrawer() {
   else openMoreDrawer();
 }
 function openMoreDrawer() {
-  document.getElementById('more-drawer').classList.add('open');
+  const drawer = document.getElementById('more-drawer');
+  drawer.classList.add('open');
   document.getElementById('more-overlay').classList.add('visible');
+  _initMoreDrawerSwipe(drawer);
 }
 function closeMoreDrawer() {
   document.getElementById('more-drawer').classList.remove('open');
   document.getElementById('more-overlay').classList.remove('visible');
+}
+let _moreSwipeY = null;
+function _initMoreDrawerSwipe(drawer) {
+  if (drawer._swipeInited) return;
+  drawer._swipeInited = true;
+  drawer.addEventListener('touchstart', e => { _moreSwipeY = e.touches[0].clientY; }, { passive: true });
+  drawer.addEventListener('touchend', e => {
+    if (_moreSwipeY === null) return;
+    const delta = e.changedTouches[0].clientY - _moreSwipeY;
+    _moreSwipeY = null;
+    if (delta > 60) closeMoreDrawer();
+  }, { passive: true });
 }
 
 function _parsePayload(raw) {
@@ -3361,8 +3533,48 @@ function _esc(s) {
 // ── Tasks page ───────────────────────────────────────────────────────────────
 let _tasksRefreshTimer = null;
 
+async function loadCalendarEvents() {
+  const calList = document.getElementById('tasks-cal-list');
+  if (!calList) return;
+  calList.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const data = await apiGet(`/api/calendar-today?chat_id=${encodeURIComponent(currentChatId || 'web')}&days=7`);
+    if (!data.connected) {
+      calList.innerHTML = '<div class="empty-state">Connect Google Calendar to see events here.</div>';
+      return;
+    }
+    if (!data.events || !data.events.length) {
+      calList.innerHTML = '<div class="empty-state">No events in the next 7 days.</div>';
+      return;
+    }
+    // Group events by date
+    const byDate = {};
+    data.events.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+    calList.innerHTML = '';
+    const today = new Date().toISOString().slice(0, 10);
+    Object.keys(byDate).sort().forEach(dateStr => {
+      const dt = new Date(dateStr + 'T00:00:00');
+      const isToday = dateStr === today;
+      const label = isToday ? 'Today' : dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:10px 0 4px;';
+      hdr.textContent = label;
+      calList.appendChild(hdr);
+      byDate[dateStr].forEach(ev => {
+        const row = document.createElement('div');
+        row.className = 'dash-cal-row';
+        row.innerHTML = `<span class="dash-cal-time">${_esc(ev.time)}</span><span class="dash-cal-title">${_esc(ev.title)}</span>`;
+        calList.appendChild(row);
+      });
+    });
+  } catch (e) {
+    calList.innerHTML = `<div class="empty-state">${_esc(e.message)}</div>`;
+  }
+}
+
 async function loadTasksPage() {
   clearInterval(_tasksRefreshTimer);
+  loadCalendarEvents();
   try {
     const { jobs } = await apiGet(`/api/jobs?chat_id=${encodeURIComponent(currentChatId || 'web')}&include_done=true`);
     const pending = jobs.filter(j => j.status === 'pending');
@@ -3516,7 +3728,7 @@ function _renderNutritionToday(data) {
   document.getElementById('val-protein').textContent = Math.round(t.protein);
   document.getElementById('val-carbs').textContent = Math.round(t.carbs);
   document.getElementById('val-cals').textContent = Math.round(t.calories);
-  _updateDashNutrition(t, target);
+  _updateDashNutrition({ ...t, water_ml: data.water_ml || 0 }, target);
   _setRing('ring-protein', t.protein / target);
   _setRing('ring-carbs', t.carbs / NUTRI_CARB_CEIL);
   _setRing('ring-cals', t.calories / NUTRI_CAL_CEIL);
@@ -3604,6 +3816,7 @@ async function uploadNutritionImage(input) {
     if (!r.ok) throw new Error(await r.text());
     const res = await r.json();
     _renderNutritionToday(res.today);
+    showToast('✓ Meal logged from photo');
   } catch (e) {
     clearTimeout(timer);
     const msg = e.name === 'AbortError' ? 'Timed out — Gemini took too long. Try again.' : e.message;
@@ -3622,6 +3835,7 @@ async function submitNutritionText() {
   try {
     const res = await apiPost(`/api/nutrition/log-text?chat_id=${encodeURIComponent(currentChatId || 'web')}`, { text });
     _renderNutritionToday(res.today);
+    showToast('✓ Meal logged');
   } catch (e) {
     alert('Could not log meal: ' + e.message);
   } finally {
@@ -3633,6 +3847,7 @@ async function logWater(ml) {
   try {
     const res = await apiPost(`/api/nutrition/log-water?chat_id=${encodeURIComponent(currentChatId || 'web')}`, { amount_ml: ml });
     _renderNutritionToday(res.today);
+    showToast(`💧 +${ml} ml water logged`);
   } catch(e) {
     alert('Could not log water: ' + e.message);
   }
@@ -3647,11 +3862,18 @@ async function deleteNutritionEntry(id) {
   }
 }
 
+let _historyDays = 7;
+function setHistoryRange(days) {
+  _historyDays = days;
+  document.querySelectorAll('.hist-range-btn').forEach(b => b.classList.toggle('active', +b.dataset.days === days));
+  loadNutritionHistory();
+}
+
 async function loadNutritionHistory() {
   const list = document.getElementById('nutri-history-list');
   list.innerHTML = '<div class="empty-state">Loading…</div>';
   try {
-    const { days } = await apiGet(`/api/nutrition/history?chat_id=${encodeURIComponent(currentChatId || 'web')}&days=14`);
+    const { days } = await apiGet(`/api/nutrition/history?chat_id=${encodeURIComponent(currentChatId || 'web')}&days=${_historyDays}`);
     if (!days || !days.length) {
       list.innerHTML = '<div class="empty-state">No history yet — log a meal to start tracking.</div>';
       return;
@@ -3857,6 +4079,26 @@ async function hideRule(ruleText, btn) {
   } catch (e) { alert('Failed: ' + e.message); }
 }
 
+function _filterCategoryTiles(q) {
+  const lower = q.toLowerCase().trim();
+  const tiles = document.querySelectorAll('#category-grid .category-tile');
+  let visible = 0;
+  tiles.forEach(tile => {
+    const name = (tile.querySelector('.category-tile-name')?.textContent || '').toLowerCase();
+    const match = !lower || name.includes(lower);
+    tile.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  const grid = document.getElementById('category-grid');
+  let noMatch = grid.querySelector('.cat-no-match');
+  if (!visible && lower) {
+    if (!noMatch) { noMatch = document.createElement('div'); noMatch.className = 'empty-state cat-no-match'; grid.appendChild(noMatch); }
+    noMatch.textContent = `No categories matching "${q}"`;
+  } else if (noMatch) {
+    noMatch.remove();
+  }
+}
+
 function onMemorySearch(q) {
   clearTimeout(_searchDebounce);
   const resultsEl = document.getElementById('memory-search-results');
@@ -3864,8 +4106,11 @@ function onMemorySearch(q) {
   if (!q.trim()) {
     resultsEl.style.display = 'none';
     catsView.style.display = '';
+    _filterCategoryTiles('');
     return;
   }
+  // Immediately filter visible category tiles
+  _filterCategoryTiles(q);
   catsView.style.display = 'none';
   resultsEl.style.display = '';
   resultsEl.innerHTML = '<div class="empty-state">Searching…</div>';
@@ -3920,6 +4165,7 @@ async function submitFact() {
   try {
     await apiPost('/api/memory/fact', { category: cat, entity, content });
     closeModal('modal-fact');
+    showToast('✓ Fact saved to memory');
     if (currentPage === 'memory') loadMemoryPage();
   } catch (e) { alert('Failed: ' + e.message); }
 }
@@ -3942,12 +4188,13 @@ async function submitReminder() {
     const chatId = currentChatId || 'web';
     const runAt = new Date(Date.now() + delay * 60000).toISOString();
     // Send via chat so the agent schedules it properly
+    closeModal('modal-reminder');
+    showToast(`⏰ Reminder set for ${delay} min`);
     switchPage('chat');
     setTimeout(() => {
       const inp = document.getElementById('message-input');
-      if (inp) { inp.value = `תזכיר לי בעוד ${delay} דקות: ${text}`; inp.focus(); }
+      if (inp) { inp.value = `תזכיר לי בעוד ${delay} דקות: ${text}`; inp.dispatchEvent(new Event('input')); inp.focus(); }
     }, 200);
-    closeModal('modal-reminder');
   } catch (e) { alert('Failed: ' + e.message); }
 }
 </script>

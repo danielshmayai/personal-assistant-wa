@@ -189,9 +189,10 @@ async def get_today(
 @router.get("/api/calendar-today")
 async def get_calendar_today(
     chat_id: str = Query(...),
+    days: int = Query(default=1, ge=1, le=30),
     _: str = Depends(_require_token),
 ):
-    """Return today's calendar events as structured JSON for the Home page."""
+    """Return upcoming calendar events. days=1 → today only (default); days>1 → multi-day."""
     from datetime import timedelta
     from zoneinfo import ZoneInfo
     from app.config import USER_TIMEZONE
@@ -199,7 +200,7 @@ async def get_calendar_today(
     tz = ZoneInfo(USER_TIMEZONE)
     now = datetime.now(tz=tz)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today_start + timedelta(days=1)
+    range_end = today_start + timedelta(days=days)
 
     try:
         from app.google.auth import get_credentials
@@ -212,10 +213,10 @@ async def get_calendar_today(
         result = service.events().list(
             calendarId="primary",
             timeMin=today_start.astimezone(timezone.utc).isoformat(),
-            timeMax=today_end.astimezone(timezone.utc).isoformat(),
+            timeMax=range_end.astimezone(timezone.utc).isoformat(),
             singleEvents=True,
             orderBy="startTime",
-            maxResults=10,
+            maxResults=50,
         ).execute()
 
         events = []
@@ -223,14 +224,17 @@ async def get_calendar_today(
             start = e["start"].get("dateTime", e["start"].get("date", ""))
             full_day = "dateTime" not in e["start"]
             if full_day:
-                time_str = "כל היום"
+                time_str = "All day"
+                date_str = start  # ISO date string YYYY-MM-DD
             else:
                 dt = datetime.fromisoformat(start)
                 dt_local = dt.astimezone(tz)
                 time_str = dt_local.strftime("%H:%M")
+                date_str = dt_local.date().isoformat()
             events.append({
                 "title": e.get("summary", "(no title)"),
                 "time": time_str,
+                "date": date_str,
                 "full_day": full_day,
             })
 
