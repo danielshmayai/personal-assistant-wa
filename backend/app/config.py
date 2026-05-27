@@ -74,13 +74,6 @@ TUYA_ACCESS_KEY = os.getenv("TUYA_ACCESS_KEY", "")
 TUYA_API_ENDPOINT = os.getenv("TUYA_API_ENDPOINT", "https://openapi.tuyaeu.com")
 TUYA_PREFER_LOCAL = os.getenv("TUYA_PREFER_LOCAL", "false").lower() == "true"
 
-# Ecovacs robot vacuum
-ECOVACS_EMAIL = os.getenv("ECOVACS_EMAIL", "")
-ECOVACS_PASSWORD = os.getenv("ECOVACS_PASSWORD", "")
-ECOVACS_COUNTRY = os.getenv("ECOVACS_COUNTRY", "il")      # 2-letter country code
-ECOVACS_CONTINENT = os.getenv("ECOVACS_CONTINENT", "eu")  # eu | na | as
-ECOVACS_DEVICE_SERIAL = os.getenv("ECOVACS_DEVICE_SERIAL", "")  # optional — if multiple vacuums
-
 # ── Obsidian Vault ──────────────────────────────────────────────────────────
 
 # Path INSIDE the container where the vault volume is mounted.

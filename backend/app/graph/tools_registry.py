@@ -21,7 +21,6 @@ def clear_tools_cache(chat_id: str | None = None) -> None:
 def _build(chat_id: str) -> list:
     from app.google.tools import get_google_tools
     from app.tuya.tools import get_tuya_tools
-    from app.ecovacs.tools import get_ecovacs_tools
     from app.memory.manager import MEMORY_TOOLS
     from app.web.tools import WEB_TOOLS
     from app.tts_tool import TTS_TOOLS
@@ -31,7 +30,6 @@ def _build(chat_id: str) -> list:
         WEB_TOOLS
         + get_google_tools(chat_id)
         + get_tuya_tools()
-        + get_ecovacs_tools()
         + MEMORY_TOOLS
         + TTS_TOOLS
         + get_schedule_tools(chat_id)
