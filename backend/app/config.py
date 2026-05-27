@@ -54,6 +54,14 @@ TEST_TOKEN = os.getenv("TEST_TOKEN", "")
 # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 DB_ENCRYPTION_KEY = os.getenv("DB_ENCRYPTION_KEY", "")
 
+# VAPID keys for Web Push Notifications.
+# Generate once: docker compose exec backend python -c "from app.push_notifications import print_vapid_keys; print_vapid_keys()"
+# VAPID_PRIVATE_KEY: PEM string with literal \n (e.g. -----BEGIN EC PRIVATE KEY-----\nMHQ...\n-----END EC PRIVATE KEY-----)
+# VAPID_PUBLIC_KEY: base64url-encoded uncompressed EC point (for browser applicationServerKey)
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com")
+
 # Timezone used for calendar events — defaults to Israel Standard Time
 USER_TIMEZONE = os.getenv("USER_TIMEZONE", "Asia/Jerusalem")
 

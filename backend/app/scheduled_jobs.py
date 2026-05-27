@@ -469,17 +469,11 @@ async def _notify(chat_id: str, text: str) -> None:
     from app.broadcast import NotificationManager
 
     active = NotificationManager.active_web_sessions()
-    matched = chat_id in active
-    logger.info(
-        "_notify: chat_id=%r active_ws=%s matched=%s",
-        chat_id, active, matched,
-    )
+    logger.info("_notify: chat_id=%r active_ws=%s", chat_id, active)
 
-    db_stored = False
     if chat_id.startswith("web"):
         try:
             await asyncio.to_thread(store_notification, chat_id, text)
-            db_stored = True
         except Exception as exc:
             logger.error("_notify: store_notification failed: %s", exc)
 
@@ -490,6 +484,24 @@ async def _notify(chat_id: str, text: str) -> None:
         whatsapp_chat_ids=wa_ids or None,
         web_chat_id=web_id,
     )
+
+    # Web Push — always attempt so the OS shows a notification even when the
+    # tab is open in the background. The service worker suppresses the OS pop-up
+    # when the page is already focused.
+    if chat_id.startswith("web"):
+        try:
+            from app.push_notifications import get_push_subscriptions, send_web_push_sync
+            subs = await asyncio.to_thread(get_push_subscriptions, chat_id)
+            if subs:
+                await asyncio.gather(
+                    *[
+                        asyncio.to_thread(send_web_push_sync, sub, "danidin 🔔", text)
+                        for sub in subs
+                    ],
+                    return_exceptions=True,
+                )
+        except Exception as exc:
+            logger.warning("_notify: web push failed: %s", exc)
 
 
 async def _execute_due_jobs() -> None:

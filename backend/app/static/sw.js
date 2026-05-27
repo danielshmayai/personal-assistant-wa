@@ -1,5 +1,5 @@
 // Bump VERSION with every deployment to invalidate the old cache.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `pa-${VERSION}`;
 
 const PRECACHE_URLS = [
@@ -36,6 +36,53 @@ self.addEventListener('activate', event => {
 // This is the only place skipWaiting() is called so the user stays in control.
 self.addEventListener('message', event => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// ── Push ──────────────────────────────────────────────────────────────────────
+// Fired when a Web Push message arrives. We only show an OS notification when
+// no focused window is visible — if the app is in the foreground, the in-app
+// WebSocket notification is already visible so we stay silent.
+self.addEventListener('push', event => {
+  if (!event.data) return;
+
+  let payload = { title: 'danidin 🔔', body: '' };
+  try { payload = event.data.json(); } catch {
+    payload.body = event.data.text();
+  }
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then(clients => {
+        // App is open and focused — skip OS notification, WebSocket handles it.
+        if (clients.some(c => c.focused)) return;
+
+        return self.registration.showNotification(payload.title, {
+          body: payload.body,
+          icon: '/static/icon-192.png',
+          badge: '/static/icon-192.png',
+          tag: 'reminder',
+          renotify: true,
+          vibrate: [200, 100, 200],
+          data: { url: '/' },
+        });
+      })
+  );
+});
+
+// ── Notification click ────────────────────────────────────────────────────────
+// Tapping the OS notification opens (or focuses) the app.
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then(clients => {
+        const existing = clients.find(c => c.url.startsWith(self.location.origin));
+        if (existing) return existing.focus();
+        return self.clients.openWindow('/');
+      })
+  );
 });
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
