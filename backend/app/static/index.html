@@ -1476,6 +1476,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   <div id="page-tasks" class="page">
     <div class="page-content">
       <div class="page-header"><h2>Schedule</h2></div>
+      <div class="section-block">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>📅 Calendar — next 7 days</span>
+          <button class="dash-card-link" onclick="loadCalendarEvents()">↻</button>
+        </div>
+        <div id="tasks-cal-list"><div class="empty-state">Loading…</div></div>
+      </div>
       <div class="quick-add-task-row">
         <input id="quick-task-input" class="quick-task-input" placeholder="Add a task… (opens chat)" onkeydown="if(event.key==='Enter')submitQuickTask()">
         <button class="add-btn" onclick="submitQuickTask()">+ Add</button>
@@ -3520,8 +3527,48 @@ function _esc(s) {
 // ── Tasks page ───────────────────────────────────────────────────────────────
 let _tasksRefreshTimer = null;
 
+async function loadCalendarEvents() {
+  const calList = document.getElementById('tasks-cal-list');
+  if (!calList) return;
+  calList.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const data = await apiGet(`/api/calendar-today?chat_id=${encodeURIComponent(currentChatId || 'web')}&days=7`);
+    if (!data.connected) {
+      calList.innerHTML = '<div class="empty-state">Connect Google Calendar to see events here.</div>';
+      return;
+    }
+    if (!data.events || !data.events.length) {
+      calList.innerHTML = '<div class="empty-state">No events in the next 7 days.</div>';
+      return;
+    }
+    // Group events by date
+    const byDate = {};
+    data.events.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+    calList.innerHTML = '';
+    const today = new Date().toISOString().slice(0, 10);
+    Object.keys(byDate).sort().forEach(dateStr => {
+      const dt = new Date(dateStr + 'T00:00:00');
+      const isToday = dateStr === today;
+      const label = isToday ? 'Today' : dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:10px 0 4px;';
+      hdr.textContent = label;
+      calList.appendChild(hdr);
+      byDate[dateStr].forEach(ev => {
+        const row = document.createElement('div');
+        row.className = 'dash-cal-row';
+        row.innerHTML = `<span class="dash-cal-time">${_esc(ev.time)}</span><span class="dash-cal-title">${_esc(ev.title)}</span>`;
+        calList.appendChild(row);
+      });
+    });
+  } catch (e) {
+    calList.innerHTML = `<div class="empty-state">${_esc(e.message)}</div>`;
+  }
+}
+
 async function loadTasksPage() {
   clearInterval(_tasksRefreshTimer);
+  loadCalendarEvents();
   try {
     const { jobs } = await apiGet(`/api/jobs?chat_id=${encodeURIComponent(currentChatId || 'web')}&include_done=true`);
     const pending = jobs.filter(j => j.status === 'pending');
