@@ -3402,9 +3402,10 @@ function submitQuickTask() {
     const msgInput = document.getElementById('message-input');
     if (msgInput) {
       msgInput.value = `תזכור שאני צריך: ${text}`;
+      msgInput.dispatchEvent(new Event('input'));
       msgInput.focus();
     }
-  }, 200);
+  }, 300);
 }
 
 // ── Automations page ─────────────────────────────────────────────────────────
