@@ -923,8 +923,14 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .add-btn:hover { background: rgba(99,102,241,.2); }
 .entity-full-content {
   background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 16px; font-size: 13px; color: var(--text); line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+  padding: 16px; font-size: 13px; color: var(--text); line-height: 1.7; word-break: break-word;
 }
+.entity-full-content h1,.entity-full-content h2,.entity-full-content h3 { font-weight: 700; margin: .5em 0 .2em; }
+.entity-full-content p { margin: .25em 0; }
+.entity-full-content ul,.entity-full-content ol { padding-left: 1.4em; margin: .25em 0; }
+.entity-full-content li { margin: .1em 0; }
+.entity-full-content strong { font-weight: 700; }
+.entity-full-content code { background: rgba(0,0,0,.06); border-radius: 3px; padding: .1em .3em; font-size: .9em; }
 
 /* ── Modals ── */
 .modal-overlay {
@@ -1222,7 +1228,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           <div class="dash-card-header">
             <span class="dash-card-icon">🥗</span>
             <span class="dash-card-title">Nutrition Today</span>
-            <button class="dash-card-link" onclick="switchPage('nutrition')">View →</button>
+            <button class="dash-card-link" onclick="openNutritionToday()">View →</button>
           </div>
           <div class="dash-macros">
             <div class="dash-macro">
@@ -1232,14 +1238,15 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             </div>
             <div class="dash-macro">
               <div class="dash-macro-val" id="dash-carbs-val">—</div>
-              <div class="dash-macro-label">Carbs g</div>
+              <div class="dash-macro-label">Carbs</div>
+              <div class="dash-macro-sub">g</div>
             </div>
             <div class="dash-macro">
               <div class="dash-macro-val" id="dash-cals-val">—</div>
               <div class="dash-macro-label">Kcal</div>
             </div>
           </div>
-          <button class="dash-action-btn" onclick="switchPage('nutrition')">+ Log a meal</button>
+          <button class="dash-action-btn" onclick="openNutritionToday()">+ Log a meal</button>
         </div>
 
         <div class="dash-card" id="dash-cal-card">
@@ -1409,7 +1416,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   <!-- Tasks page -->
   <div id="page-tasks" class="page">
     <div class="page-content">
-      <div class="page-header"><h2>Tasks</h2></div>
+      <div class="page-header"><h2>Schedule</h2></div>
       <div class="quick-add-task-row">
         <input id="quick-task-input" class="quick-task-input" placeholder="Add a task… (opens chat)" onkeydown="if(event.key==='Enter')submitQuickTask()">
         <button class="add-btn" onclick="submitQuickTask()">+ Add</button>
@@ -1660,12 +1667,12 @@ details[open].reasoning-block summary::before { content: "▼  "; }
     <div class="more-drawer-handle"></div>
     <div class="more-drawer-title">More</div>
     <div class="more-drawer-grid">
-      <button class="more-item" onclick="closeMoreDrawer();switchPage('tasks')"><span class="more-item-icon">📅</span>Calendar</button>
+      <button class="more-item" onclick="closeMoreDrawer();switchPage('tasks')"><span class="more-item-icon">📅</span>Schedule</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('memory')"><span class="more-item-icon">🧠</span>Memory</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('activity')"><span class="more-item-icon">⚡</span>Activity</button>
       <button class="more-item" onclick="closeMoreDrawer();switchPage('automations')"><span class="more-item-icon">⚙️</span>Automations</button>
-      <button class="more-item" onclick="closeMoreDrawer();openReminderModal()"><span class="more-item-icon">⏰</span>Reminder</button>
-      <button class="more-item" onclick="closeMoreDrawer();openAddFactModal()"><span class="more-item-icon">📝</span>Add note</button>
+      <button class="more-item" onclick="closeMoreDrawer();setTimeout(openReminderModal,120)"><span class="more-item-icon">⏰</span>Reminder</button>
+      <button class="more-item" onclick="closeMoreDrawer();setTimeout(openAddFactModal,120)"><span class="more-item-icon">📝</span>Add fact</button>
       <button class="more-item" onclick="closeMoreDrawer();hardRefresh()"><span class="more-item-icon">🔄</span>Update</button>
     </div>
   </div>
@@ -3200,15 +3207,23 @@ async function loadHomePage() {
   _homeRefreshTimer = setInterval(() => _tickJobCountdowns('dash-jobs-list'), 1000);
 }
 
+function _updateDashNutrition(totals, target) {
+  const t = totals || {};
+  const tgt = target || 110;
+  const protEl = document.getElementById('dash-prot-val');
+  const subEl  = document.getElementById('dash-prot-sub');
+  const carbEl = document.getElementById('dash-carbs-val');
+  const calEl  = document.getElementById('dash-cals-val');
+  if (protEl) protEl.textContent = Math.round(t.protein || 0) + 'g';
+  if (subEl)  subEl.textContent  = `/ ${tgt}g`;
+  if (carbEl) carbEl.textContent = Math.round(t.carbs || 0);
+  if (calEl)  calEl.textContent  = Math.round(t.calories || 0);
+}
+
 async function _dashLoadNutrition() {
   try {
     const data = await apiGet(`/api/nutrition/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
-    const t = data.totals || {};
-    const target = data.protein_target || 110;
-    document.getElementById('dash-prot-val').textContent = Math.round(t.protein || 0);
-    document.getElementById('dash-prot-sub').textContent = `/ ${target}g`;
-    document.getElementById('dash-carbs-val').textContent = Math.round(t.carbs || 0);
-    document.getElementById('dash-cals-val').textContent = Math.round(t.calories || 0);
+    _updateDashNutrition(data.totals, data.protein_target);
 
     // Weather from /api/today
     try {
@@ -3402,9 +3417,10 @@ function submitQuickTask() {
     const msgInput = document.getElementById('message-input');
     if (msgInput) {
       msgInput.value = `תזכור שאני צריך: ${text}`;
+      msgInput.dispatchEvent(new Event('input'));
       msgInput.focus();
     }
-  }, 200);
+  }, 300);
 }
 
 // ── Automations page ─────────────────────────────────────────────────────────
@@ -3484,6 +3500,11 @@ function showNutritionTab(tab) {
   if (tab === 'history') loadNutritionHistory();
 }
 
+function openNutritionToday() {
+  _nutriTab = 'today';
+  switchPage('nutrition');
+}
+
 function loadNutritionPage() {
   showNutritionTab(_nutriTab);
   if (_nutriTab === 'today') refreshNutritionToday();
@@ -3495,6 +3516,7 @@ function _renderNutritionToday(data) {
   document.getElementById('val-protein').textContent = Math.round(t.protein);
   document.getElementById('val-carbs').textContent = Math.round(t.carbs);
   document.getElementById('val-cals').textContent = Math.round(t.calories);
+  _updateDashNutrition(t, target);
   _setRing('ring-protein', t.protein / target);
   _setRing('ring-carbs', t.carbs / NUTRI_CARB_CEIL);
   _setRing('ring-cals', t.calories / NUTRI_CAL_CEIL);
@@ -3658,7 +3680,12 @@ async function loadNutritionHistory() {
           <div class="hist-bar-track"><div class="hist-bar-fill cals" style="width:${(d.calories / maxCals) * 100}%"></div></div>
           <div class="hist-bar-track"><div class="hist-bar-fill water" style="width:${waterPct}%"></div></div>
         </div>
-        <div class="hist-date" style="text-align:right;line-height:1.4">${Math.round(d.protein)}g<br><span style="font-size:10px;color:#38bdf8">${waterLabel}</span></div>`;
+        <div class="hist-date" style="text-align:right;line-height:1.55;font-size:11px">
+          <span style="color:var(--green)">${Math.round(d.protein)}g</span><br>
+          <span style="color:var(--accent)">${Math.round(d.carbs)}g</span><br>
+          <span style="color:var(--user-2)">${Math.round(d.calories)}kcal</span><br>
+          <span style="color:#38bdf8">${waterLabel}</span>
+        </div>`;
       list.appendChild(row);
     }
   } catch (e) {
@@ -3729,6 +3756,7 @@ function showMemoryCategories() {
   document.getElementById('memory-entity-list').style.display = 'none';
   document.getElementById('memory-entity-detail').style.display = 'none';
   document.getElementById('memory-categories-view').style.display = '';
+  document.getElementById('memory-rules-section').style.display = '';
   document.getElementById('memory-page-title').textContent = 'Memory';
   _loadCategories();
 }
@@ -3742,8 +3770,9 @@ async function _loadCategories() {
     for (const cat of categories) {
       const div = document.createElement('div');
       div.className = 'category-tile';
-      div.innerHTML = `<span class="category-tile-icon">${CAT_ICON[cat.name] || '📁'}</span>
-        <span class="category-tile-name">${_esc(cat.name)}</span>
+      const displayName = cat.name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      div.innerHTML = `<span class="category-tile-icon">${CAT_ICON[cat.name] || CAT_ICON[displayName] || '📁'}</span>
+        <span class="category-tile-name">${_esc(displayName)}</span>
         <span class="category-tile-count">${cat.count} entries</span>`;
       div.addEventListener('click', () => openCategory(cat.name));
       grid.appendChild(div);
@@ -3757,6 +3786,7 @@ async function openCategory(catName) {
   _memoryCategory = catName;
   document.getElementById('memory-categories-view').style.display = 'none';
   document.getElementById('memory-entity-detail').style.display = 'none';
+  document.getElementById('memory-rules-section').style.display = 'none';
   const listSection = document.getElementById('memory-entity-list');
   listSection.style.display = '';
   document.getElementById('entity-list-title').textContent = `${CAT_ICON[catName] || ''} ${catName}`;
@@ -3796,7 +3826,7 @@ async function openEntity(catName, entityName) {
   content.textContent = 'Loading…';
   try {
     const data = await apiGet(`/api/memory/entity?category=${encodeURIComponent(catName)}&entity=${encodeURIComponent(entityName)}`);
-    content.textContent = data.content || '(empty)';
+    content.innerHTML = marked.parse(data.content || '*(empty)*');
   } catch (e) {
     content.textContent = `Error: ${e.message}`;
   }
