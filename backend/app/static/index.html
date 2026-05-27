@@ -1053,6 +1053,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .hist-legend .l-carbs::before   { color: var(--accent); }
 .hist-legend .l-cals::before    { color: var(--user-2); }
 .hist-legend .l-water::before   { color: #38bdf8; }
+.hist-range-btn { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg2); color: var(--text2); font-size: 12px; cursor: pointer; transition: background .15s, color .15s; }
+.hist-range-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* ── Dashboard ── */
 .dash-greeting {
@@ -1552,11 +1554,18 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 
       <!-- History view -->
       <div id="nutri-history-view" style="display:none">
-        <div class="hist-legend">
-          <span class="l-protein">Protein</span>
-          <span class="l-carbs">Carbs</span>
-          <span class="l-cals">Calories</span>
-          <span class="l-water">Water</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="hist-legend" style="margin-bottom:0">
+            <span class="l-protein">Protein</span>
+            <span class="l-carbs">Carbs</span>
+            <span class="l-cals">Calories</span>
+            <span class="l-water">Water</span>
+          </div>
+          <div id="hist-range-btns" style="display:flex;gap:4px">
+            <button class="hist-range-btn active" data-days="7" onclick="setHistoryRange(7)">7d</button>
+            <button class="hist-range-btn" data-days="14" onclick="setHistoryRange(14)">14d</button>
+            <button class="hist-range-btn" data-days="30" onclick="setHistoryRange(30)">30d</button>
+          </div>
         </div>
         <div id="nutri-history-list"><div class="empty-state">Loading…</div></div>
       </div>
@@ -3681,11 +3690,18 @@ async function deleteNutritionEntry(id) {
   }
 }
 
+let _historyDays = 7;
+function setHistoryRange(days) {
+  _historyDays = days;
+  document.querySelectorAll('.hist-range-btn').forEach(b => b.classList.toggle('active', +b.dataset.days === days));
+  loadNutritionHistory();
+}
+
 async function loadNutritionHistory() {
   const list = document.getElementById('nutri-history-list');
   list.innerHTML = '<div class="empty-state">Loading…</div>';
   try {
-    const { days } = await apiGet(`/api/nutrition/history?chat_id=${encodeURIComponent(currentChatId || 'web')}&days=14`);
+    const { days } = await apiGet(`/api/nutrition/history?chat_id=${encodeURIComponent(currentChatId || 'web')}&days=${_historyDays}`);
     if (!days || !days.length) {
       list.innerHTML = '<div class="empty-state">No history yet — log a meal to start tracking.</div>';
       return;
