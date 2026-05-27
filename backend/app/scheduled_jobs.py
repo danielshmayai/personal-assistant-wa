@@ -483,19 +483,10 @@ async def _notify(chat_id: str, text: str) -> None:
         except Exception as exc:
             logger.error("_notify: store_notification failed: %s", exc)
 
-    debug_suffix = (
-        f"\n\n---\n🔧 *Debug scheduler:*\n"
-        f"• job chat_id: `{chat_id}`\n"
-        f"• active WebSocket sessions: `{active}`\n"
-        f"• chat_id matched: {'✅' if matched else '❌'}\n"
-        f"• stored in DB: {'✅' if db_stored else '❌ (see logs)'}"
-    )
-    full_text = text + debug_suffix
-
     wa_ids = [] if chat_id.startswith("web") else [chat_id]
     web_id = chat_id if chat_id.startswith("web") else None
     await NotificationManager.broadcast(
-        message=full_text,
+        message=text,
         whatsapp_chat_ids=wa_ids or None,
         web_chat_id=web_id,
     )
