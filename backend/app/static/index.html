@@ -4026,6 +4026,26 @@ async function hideRule(ruleText, btn) {
   } catch (e) { alert('Failed: ' + e.message); }
 }
 
+function _filterCategoryTiles(q) {
+  const lower = q.toLowerCase().trim();
+  const tiles = document.querySelectorAll('#category-grid .category-tile');
+  let visible = 0;
+  tiles.forEach(tile => {
+    const name = (tile.querySelector('.category-tile-name')?.textContent || '').toLowerCase();
+    const match = !lower || name.includes(lower);
+    tile.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  const grid = document.getElementById('category-grid');
+  let noMatch = grid.querySelector('.cat-no-match');
+  if (!visible && lower) {
+    if (!noMatch) { noMatch = document.createElement('div'); noMatch.className = 'empty-state cat-no-match'; grid.appendChild(noMatch); }
+    noMatch.textContent = `No categories matching "${q}"`;
+  } else if (noMatch) {
+    noMatch.remove();
+  }
+}
+
 function onMemorySearch(q) {
   clearTimeout(_searchDebounce);
   const resultsEl = document.getElementById('memory-search-results');
@@ -4033,8 +4053,11 @@ function onMemorySearch(q) {
   if (!q.trim()) {
     resultsEl.style.display = 'none';
     catsView.style.display = '';
+    _filterCategoryTiles('');
     return;
   }
+  // Immediately filter visible category tiles
+  _filterCategoryTiles(q);
   catsView.style.display = 'none';
   resultsEl.style.display = '';
   resultsEl.innerHTML = '<div class="empty-state">Searching…</div>';
