@@ -434,6 +434,19 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .system-msg { align-self: center; color: var(--text3); font-size: 12px; padding: 3px 0; margin: 4px 0; }
 .hidden { display: none !important; }
 
+/* ── Action toast ── */
+.app-toast {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(12px);
+  padding: 10px 18px; border-radius: 22px; font-size: 13px; font-weight: 500;
+  white-space: nowrap; z-index: 400; pointer-events: none;
+  opacity: 0; transition: opacity .2s, transform .2s;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+}
+.app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.app-toast.success { background: #22c55e; color: #fff; }
+.app-toast.error   { background: #ef4444; color: #fff; }
+.app-toast.info    { background: var(--bg2); color: var(--text); border: 1px solid var(--border2); }
+
 /* ── Update toast ── */
 #update-toast {
   position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
@@ -3039,6 +3052,24 @@ document.getElementById('device-grid').addEventListener('click', async e => {
   }
 });
 
+let _toastTimer = null;
+function showToast(msg, type = 'success') {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    el.className = 'app-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.className = `app-toast ${type}`;
+  clearTimeout(_toastTimer);
+  requestAnimationFrame(() => {
+    el.classList.add('show');
+    _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  });
+}
+
 function showUpdateToast(registration) {
   if (document.getElementById('update-toast')) return; // already shown
   const toast = document.createElement('div');
@@ -3604,6 +3635,7 @@ async function uploadNutritionImage(input) {
     if (!r.ok) throw new Error(await r.text());
     const res = await r.json();
     _renderNutritionToday(res.today);
+    showToast('✓ Meal logged from photo');
   } catch (e) {
     clearTimeout(timer);
     const msg = e.name === 'AbortError' ? 'Timed out — Gemini took too long. Try again.' : e.message;
@@ -3622,6 +3654,7 @@ async function submitNutritionText() {
   try {
     const res = await apiPost(`/api/nutrition/log-text?chat_id=${encodeURIComponent(currentChatId || 'web')}`, { text });
     _renderNutritionToday(res.today);
+    showToast('✓ Meal logged');
   } catch (e) {
     alert('Could not log meal: ' + e.message);
   } finally {
@@ -3633,6 +3666,7 @@ async function logWater(ml) {
   try {
     const res = await apiPost(`/api/nutrition/log-water?chat_id=${encodeURIComponent(currentChatId || 'web')}`, { amount_ml: ml });
     _renderNutritionToday(res.today);
+    showToast(`💧 +${ml} ml water logged`);
   } catch(e) {
     alert('Could not log water: ' + e.message);
   }
@@ -3920,6 +3954,7 @@ async function submitFact() {
   try {
     await apiPost('/api/memory/fact', { category: cat, entity, content });
     closeModal('modal-fact');
+    showToast('✓ Fact saved to memory');
     if (currentPage === 'memory') loadMemoryPage();
   } catch (e) { alert('Failed: ' + e.message); }
 }
@@ -3942,12 +3977,13 @@ async function submitReminder() {
     const chatId = currentChatId || 'web';
     const runAt = new Date(Date.now() + delay * 60000).toISOString();
     // Send via chat so the agent schedules it properly
+    closeModal('modal-reminder');
+    showToast(`⏰ Reminder set for ${delay} min`);
     switchPage('chat');
     setTimeout(() => {
       const inp = document.getElementById('message-input');
-      if (inp) { inp.value = `תזכיר לי בעוד ${delay} דקות: ${text}`; inp.focus(); }
+      if (inp) { inp.value = `תזכיר לי בעוד ${delay} דקות: ${text}`; inp.dispatchEvent(new Event('input')); inp.focus(); }
     }, 200);
-    closeModal('modal-reminder');
   } catch (e) { alert('Failed: ' + e.message); }
 }
 </script>
