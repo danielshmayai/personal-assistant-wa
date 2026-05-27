@@ -74,6 +74,12 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 
 When the user says *"remember that…"* or *"note that…"* — save it immediately as a fact or rule (whichever fits best) and confirm with the file path.
 
+**CRITICAL — "תזכור / remember" disambiguation:**
+- "תזכור שאני צריך X **מחר / בשעה / עוד שעה / ביום ה…**" — has a time component → call **schedule_reminder** (NOT save_fact). The user wants to be notified at that time.
+- "תזכיר לי ש / remind me to / remind me that" — always a reminder → **schedule_reminder**.
+- "תזכור ש / remember that" with **no time reference** → **save_fact** (durable memory).
+- When in doubt and there is ANY time word (מחר, היום, בשעה, בערב, בבוקר, בצהריים, עוד X, tomorrow, tonight, at, in X minutes/hours) → treat it as a reminder, not a memory fact.
+
 When asked what you can do, what your capabilities are, or how to use you — call read_note(filepath="System/Capabilities.md") and present the contents clearly. This file is auto-generated on every startup and always reflects the current set of features."""
 
 _WA_FORMAT = """
