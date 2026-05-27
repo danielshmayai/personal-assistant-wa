@@ -1484,7 +1484,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         <div id="tasks-cal-list"><div class="empty-state">Loading…</div></div>
       </div>
       <div class="quick-add-task-row">
-        <input id="quick-task-input" class="quick-task-input" placeholder="Add a task… (opens chat)" onkeydown="if(event.key==='Enter')submitQuickTask()">
+        <input id="quick-task-input" class="quick-task-input" placeholder="Add calendar event… (opens chat)" onkeydown="if(event.key==='Enter')submitQuickTask()">
         <button class="add-btn" onclick="submitQuickTask()">+ Add</button>
       </div>
       <div class="section-block">
@@ -3672,7 +3672,7 @@ function submitQuickTask() {
   setTimeout(() => {
     const msgInput = document.getElementById('message-input');
     if (msgInput) {
-      msgInput.value = `תזכור שאני צריך: ${text}`;
+      msgInput.value = `הוסף ליומן: ${text}`;
       msgInput.dispatchEvent(new Event('input'));
       msgInput.focus();
     }
