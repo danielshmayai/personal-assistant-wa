@@ -1099,6 +1099,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   text-transform: uppercase; letter-spacing: .05em;
 }
 .dash-macro-sub { font-size: 11px; color: var(--accent); margin-top: 2px; }
+.dash-ring-wrap { position: relative; width: 54px; height: 54px; margin: 0 auto 4px; }
+.dash-ring { width: 54px; height: 54px; transform: rotate(-90deg); }
+.dash-ring-bg { fill: none; stroke: var(--bg3); stroke-width: 3.5; }
+.dash-ring-fill { fill: none; stroke-width: 3.5; stroke-linecap: round; transition: stroke-dasharray .5s ease; }
+.dash-ring-fill.protein { stroke: var(--green); }
+.dash-ring-fill.water { stroke: #38bdf8; }
+.dash-ring-wrap .dash-macro-val { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 13px; line-height: 1; }
 .dash-action-btn {
   background: var(--accent-dim); color: var(--accent); border: none;
   border-radius: var(--radius-sm); padding: 12px 16px; font-size: 14px; font-weight: 600;
@@ -1262,7 +1269,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           </div>
           <div class="dash-macros">
             <div class="dash-macro">
-              <div class="dash-macro-val" id="dash-prot-val">—</div>
+              <div class="dash-ring-wrap">
+                <svg class="dash-ring" viewBox="0 0 36 36">
+                  <circle class="dash-ring-bg" cx="18" cy="18" r="15.9"/>
+                  <circle class="dash-ring-fill protein" id="dash-prot-ring" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/>
+                </svg>
+                <div class="dash-macro-val" id="dash-prot-val">—</div>
+              </div>
               <div class="dash-macro-label">Protein</div>
               <div class="dash-macro-sub" id="dash-prot-sub"></div>
             </div>
@@ -1272,7 +1285,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
               <div class="dash-macro-sub">g</div>
             </div>
             <div class="dash-macro">
-              <div class="dash-macro-val" id="dash-cals-val">—</div>
+              <div class="dash-ring-wrap">
+                <svg class="dash-ring" viewBox="0 0 36 36">
+                  <circle class="dash-ring-bg" cx="18" cy="18" r="15.9"/>
+                  <circle class="dash-ring-fill water" id="dash-water-ring" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/>
+                </svg>
+                <div class="dash-macro-val" id="dash-cals-val">—</div>
+              </div>
               <div class="dash-macro-label">Kcal</div>
             </div>
           </div>
@@ -3339,12 +3358,17 @@ function _updateDashNutrition(totals, target) {
   if (subEl)  subEl.textContent  = `/ ${tgt}g`;
   if (carbEl) carbEl.textContent = Math.round(t.carbs || 0);
   if (calEl)  calEl.textContent  = Math.round(t.calories || 0);
+  // Update progress rings (circumference = 2π × 15.9 ≈ 99.9, so pct maps directly)
+  const protRing  = document.getElementById('dash-prot-ring');
+  const waterRing = document.getElementById('dash-water-ring');
+  if (protRing)  { const pct = Math.min(100, Math.round((t.protein || 0) / tgt * 100)); protRing.setAttribute('stroke-dasharray', `${pct} 100`); }
+  if (waterRing) { const pct = Math.min(100, Math.round((t.water_ml || 0) / 2000 * 100)); waterRing.setAttribute('stroke-dasharray', `${pct} 100`); }
 }
 
 async function _dashLoadNutrition() {
   try {
     const data = await apiGet(`/api/nutrition/today?chat_id=${encodeURIComponent(currentChatId || 'web')}`);
-    _updateDashNutrition(data.totals, data.protein_target);
+    _updateDashNutrition({ ...(data.totals || {}), water_ml: data.water_ml || 0 }, data.protein_target);
 
     // Weather from /api/today
     try {
@@ -3651,7 +3675,7 @@ function _renderNutritionToday(data) {
   document.getElementById('val-protein').textContent = Math.round(t.protein);
   document.getElementById('val-carbs').textContent = Math.round(t.carbs);
   document.getElementById('val-cals').textContent = Math.round(t.calories);
-  _updateDashNutrition(t, target);
+  _updateDashNutrition({ ...t, water_ml: data.water_ml || 0 }, target);
   _setRing('ring-protein', t.protein / target);
   _setRing('ring-carbs', t.carbs / NUTRI_CARB_CEIL);
   _setRing('ring-cals', t.calories / NUTRI_CAL_CEIL);
