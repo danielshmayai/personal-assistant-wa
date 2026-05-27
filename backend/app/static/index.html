@@ -3770,8 +3770,9 @@ async function _loadCategories() {
     for (const cat of categories) {
       const div = document.createElement('div');
       div.className = 'category-tile';
-      div.innerHTML = `<span class="category-tile-icon">${CAT_ICON[cat.name] || '📁'}</span>
-        <span class="category-tile-name">${_esc(cat.name)}</span>
+      const displayName = cat.name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      div.innerHTML = `<span class="category-tile-icon">${CAT_ICON[cat.name] || CAT_ICON[displayName] || '📁'}</span>
+        <span class="category-tile-name">${_esc(displayName)}</span>
         <span class="category-tile-count">${cat.count} entries</span>`;
       div.addEventListener('click', () => openCategory(cat.name));
       grid.appendChild(div);
