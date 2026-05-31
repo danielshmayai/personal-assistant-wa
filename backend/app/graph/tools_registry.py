@@ -26,6 +26,7 @@ def _build(chat_id: str) -> list:
     from app.tts_tool import TTS_TOOLS
     from app.schedule_tool import get_schedule_tools
     from app.nutrition_tool import get_nutrition_tools
+    from app.fitness_tool import get_fitness_tools
     return (
         WEB_TOOLS
         + get_google_tools(chat_id)
@@ -34,4 +35,5 @@ def _build(chat_id: str) -> list:
         + TTS_TOOLS
         + get_schedule_tools(chat_id)
         + get_nutrition_tools(chat_id)
+        + get_fitness_tools(chat_id)
     )

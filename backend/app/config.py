@@ -93,3 +93,7 @@ LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
 # Max concurrent tool executions across asyncio.gather() in tool_node.
 # Prevents flooding external APIs (Google, Tuya, web) under high recursion.
 TOOL_CONCURRENCY = int(os.getenv("TOOL_CONCURRENCY", "10"))
+
+# ── Fitness ───────────────────────────────────────────────────────────────────────
+
+FITNESS_WEEKLY_SESSION_TARGET = int(os.getenv("FITNESS_WEEKLY_SESSION_TARGET", "4"))

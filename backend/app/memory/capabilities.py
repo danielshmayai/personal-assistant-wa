@@ -72,6 +72,14 @@ _BEST_PRACTICES = """\
 - Ask me to show a saved image: "show me the photo from last week" → it appears inline.
 - Browse Drive: "show me my PDFs", "list files in Photos/2026-05".
 
+### 🏋️ Fitness & training
+- Log workouts naturally: "עשיתי לג פרס 3×12 80קג RPE 7, 45 דקות". I parse exercises, compute volume, and give progressive-overload targets automatically.
+- Ask for a workout plan: "תציע לי אימון כוח של 30 דקות" → I design supersets adapted to your history.
+- Log body metrics: "שקלתי 71.5 קג" or "אחוז שומן 21%".
+- Ask for your weekly summary: "כמה אימנתי השבוע?" or use the morning fitness brief at 7:45.
+- Upload a Garmin/Apple Health screenshot and I'll extract the workout data via OCR.
+- Medical constraints (Gilbert's Syndrome + neck/scapula) are always respected — I never recommend contraindicated exercises.
+
 ### Web & research
 - I browse the web proactively — never say "I can't check that online", just ask.
 - For deep research: "search for X and summarise the key points".
@@ -189,6 +197,13 @@ def _build_tools_section() -> str:
     try:
         from app.nutrition_tool import get_nutrition_tools
         sections.append("### 🥗 Nutrition & Water Tracking\n" + _tool_rows(get_nutrition_tools("")))
+    except Exception:
+        pass
+
+    # Fitness tools
+    try:
+        from app.fitness_tool import get_fitness_tools
+        sections.append("### 🏋️ Fitness & Training\n" + _tool_rows(get_fitness_tools("")))
     except Exception:
         pass
 
