@@ -1828,7 +1828,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <div id="fit-profile-view" style="display:none">
         <div class="section-block">
           <div class="section-title">Clinical constraints &amp; goal</div>
-          <div class="fit-profile-block" id="fit-profile-text">Loading…</div>
+          <div class="fit-profile-block" id="fit-profile-text"></div>
         </div>
         <div class="section-block">
           <div class="section-title">Body metrics</div>
@@ -4490,7 +4490,22 @@ function showFitnessTab(tab) {
   });
   if (tab === 'today') refreshFitnessToday();
   if (tab === 'history') loadFitnessHistory();
-  if (tab === 'profile') loadBodyMetrics();
+  if (tab === 'profile') { _setProfileText(); loadBodyMetrics(); }
+}
+
+function _setProfileText() {
+  const el = document.getElementById('fit-profile-text');
+  if (!el) return;
+  el.textContent = [
+    'Male, 48y, 177cm | HbA1c 4.4% | High VO2 base | Skinny-fat phenotype',
+    '',
+    'Goal: Build lean mass, reduce BF%, preserve aerobic base.',
+    '',
+    'Clinical constraints (always enforced):',
+    '• Gilbert\'s Syndrome: constant hydration ≥2.5L/day, no extended fasting (>14h), no extreme caloric deficit.',
+    '• Right neck-to-scapula pain: avoid heavy barbell back squat, conventional deadlift, military/overhead press. Emphasize scapular stabilizers — face pulls, band pull-aparts, serratus wall slides, prone Y/T/W. Neutral neck throughout all exercises.',
+    '• Recovery: ≥48h between sessions targeting the same muscle group. Deload week if avg RPE ≥8.5 over 2+ consecutive sessions.',
+  ].join('\n');
 }
 
 async function refreshFitnessToday() {
@@ -4822,18 +4837,6 @@ async function loadBodyMetrics() {
         ${m.bf_pct ? `BF: <b>${m.bf_pct}%</b>` : ''}
         <span style="color:var(--text-muted);font-size:11px">(${m.log_date})</span>
       </div>`;
-    }
-    // Fill in clinical profile text
-    const profileEl = document.getElementById('fit-profile-text');
-    if (profileEl) {
-      profileEl.textContent = `Male, 48y, 177cm | HbA1c 4.4% | High VO2 base | Skinny-fat phenotype
-
-Goal: Build lean mass, reduce BF%, preserve aerobic base.
-
-Clinical constraints:
-• Gilbert's Syndrome: constant hydration (≥2.5L/day), no extended fasting, no extreme deficit.
-• Right neck-to-scapula pain: avoid heavy barbell back squat, conventional deadlift, military press. Emphasize scapular stabilizers (face pulls, band pull-aparts, serratus wall slides, prone Y/T/W). Neutral neck throughout.
-• Rest: ≥48h between same muscle groups. Deload if avg RPE ≥8.5 for 2+ sessions.`;
     }
   } catch(e) { /* ignore */ }
 }
