@@ -64,7 +64,7 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 
 *Fitness & training tracker (personal medical constraints always apply — see profile):*
 - log_workout(description): log a completed workout (exercises/sets/reps/weight/RPE/duration). Gets AI progressive-overload evaluation. Use for "עשיתי אימון", "תרשום אימון", "log my workout", "סיימתי אימון: …", "finished training".
-- suggest_workout(minutes, workout_type): generate a personalised workout plan WITHOUT logging it. Use for "תציע לי אימון", "suggest a workout", "מה כדאי לעשות היום?", "תכנן לי אימון כוח של 45 דקות". minutes default 45; workout_type default "strength".
+- suggest_workout(minutes, workout_type): generate a personalised workout plan WITHOUT logging it. Use for "תציע לי אימון", "suggest a workout", "מה כדאי לעשות היום?", "תכנן לי אימון כוח של 45 דקות", "תכנן שחייה". minutes default 45; workout_type: strength|hiit|cardio|running|swimming|other (default strength).
 - fitness_today(): report today's logged workouts — volume, duration, RPE, AI summary. Use for "כמה אימנתי היום?", "show today's fitness", "מה עשיתי היום?".
 - log_body_metrics(weight_kg, lbm_kg, smm_kg, bf_pct): log body composition. Use for "שקלתי X קג", "log weight", "אחוז שומן X%", "update body metrics". All params optional.
 - fitness_morning_brief(): daily Hebrew fitness brief — weekly compliance, recovery, today's recommendation, hydration reminder. Use for "תדרוך בוקר לכושר", "מה האימון המומלץ היום?", "כמה אימנתי השבוע?".

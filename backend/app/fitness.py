@@ -514,7 +514,7 @@ Respond with ONLY a single JSON object — no markdown, no code fences, no comme
 Schema:
 {
   "title": "<Hebrew workout title, e.g. 'אימון כוח פלג גוף עליון'>",
-  "workout_type": "<one of: strength | hiit | cardio | skiing | running | other>",
+  "workout_type": "<one of: strength | hiit | cardio | skiing | running | swimming | other>",
   "duration_min": <number>,
   "avg_rpe": <number 1-10, overall effort, 0 if unknown>,
   "exercises": [
@@ -539,7 +539,7 @@ Schema:
 
 Rules:
 - title must be in Hebrew.
-- workout_type: infer from context (gym exercises → strength; running/cycling → cardio/running; intervals → hiit; ski/snowboard → skiing).
+- workout_type: infer from context (gym exercises → strength; running/cycling → cardio/running; intervals → hiit; ski/snowboard → skiing; pool/swimming/laps → swimming).
 - avg_rpe: estimate from text, or 0 if not mentioned.
 - exercises: include all mentioned exercises. Omit unknown values (use 0).
 - metrics: populate from wearable screenshots or text. Use null for unknown fields.
@@ -590,7 +590,7 @@ async def parse_workout_image(image_bytes: bytes, mime_type: str = "image/jpeg",
 
 
 def _normalize_workout(parsed: dict) -> dict:
-    valid_types = {"strength", "hiit", "cardio", "skiing", "running", "other"}
+    valid_types = {"strength", "hiit", "cardio", "skiing", "running", "swimming", "other"}
     wtype = str(parsed.get("workout_type") or "strength").lower()
     if wtype not in valid_types:
         wtype = "other"
@@ -690,6 +690,7 @@ async def suggest_workout(
     suggest_instructions = f"""\
 You are a personal trainer AI. Design a {minutes}-minute {workout_type} workout.
 Respond with ONLY a single JSON object — no markdown, no code fences.
+For swimming workouts: exercises should be swim sets (e.g. "4×50m freestyle", "200m pull buoy"), weight_kg=0, duration_sec is the set time estimate. No scapular constraint applies in water; focus on stroke technique, breathing, distance targets. Still include hydration reminder.
 
 Schema:
 {{
