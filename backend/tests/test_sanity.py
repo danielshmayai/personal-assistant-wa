@@ -747,3 +747,33 @@ def test_media_cache_returns_none_for_missing_key():
     """retrieve must return None for unknown message IDs."""
     from app.media_cache import retrieve
     assert retrieve("nonexistent_msg_id_xyz") is None
+
+
+# ---------------------------------------------------------------------------
+# 13. Fitness tools
+# ---------------------------------------------------------------------------
+
+EXPECTED_FITNESS_TOOL_NAMES = {
+    "log_workout",
+    "suggest_workout",
+    "fitness_today",
+    "log_body_metrics",
+    "fitness_morning_brief",
+}
+
+
+def test_get_fitness_tools_returns_five_tools():
+    """get_fitness_tools must return exactly 5 tool objects."""
+    from app.fitness_tool import get_fitness_tools
+    tools = get_fitness_tools("test-chat-id")
+    assert len(tools) == 5, f"Expected 5 fitness tools, got {len(tools)}: {[t.name for t in tools]}"
+
+
+def test_get_fitness_tools_has_correct_names():
+    """Each of the 5 fitness tools must carry the exact expected name."""
+    from app.fitness_tool import get_fitness_tools
+    tools = get_fitness_tools("test-chat-id")
+    actual = {t.name for t in tools}
+    assert actual == EXPECTED_FITNESS_TOOL_NAMES, (
+        f"Fitness tool name mismatch.\n  Expected: {EXPECTED_FITNESS_TOOL_NAMES}\n  Got: {actual}"
+    )
