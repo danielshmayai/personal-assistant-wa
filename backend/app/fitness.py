@@ -574,7 +574,8 @@ async def parse_workout_text(text: str, chat_id: str = "") -> dict:
     ]
     resp = await llm.ainvoke(messages)
     raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
-    return _normalize_workout(raw)
+    parsed = _normalize_workout(raw)
+    return _apply_volume_fallback(parsed, text)
 
 
 async def parse_workout_image(image_bytes: bytes, mime_type: str = "image/jpeg", chat_id: str = "") -> dict:
@@ -598,7 +599,36 @@ async def parse_workout_image(image_bytes: bytes, mime_type: str = "image/jpeg",
     ]
     resp = await llm.ainvoke(messages)
     raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
-    return _normalize_workout(raw)
+    return _normalize_workout(raw)  # no text hint for image path
+
+
+def _apply_volume_fallback(parsed: dict, text: str = "") -> dict:
+    """Python-level fallback: if LLM returned 0 volume but a weight is detectable in the text,
+    synthesise a single Circuit/HIIT exercise row so the volume is never silently 0."""
+    if _total_volume(parsed["exercises"]) > 0 or parsed.get("is_estimated_volume"):
+        return parsed  # already handled
+
+    # Detect a primary weight anywhere in the original text (kg / קג / קילו)
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:kg|קג|קילו|kilo)", text, re.IGNORECASE)
+    if not m:
+        return parsed  # no weight hint — can't estimate
+
+    w = float(m.group(1))
+    parsed["exercises"] = [{
+        "name": "Circuit / HIIT",
+        "sets": 1,
+        "reps": 100,
+        "weight_kg": w,
+        "rpe": round(parsed.get("avg_rpe") or 0, 1),
+        "duration_sec": 0,
+        "notes": "estimated",
+    }]
+    parsed["is_estimated_volume"] = True
+    parsed["user_feedback"] = (
+        f"נרשם! 💡 הנפח חושב כהערכה ({w:.0f} קג × 100 חזרות = {w * 100:.0f} קג) "
+        "כיוון שלא צוינו תרגילים וסטים. לחישוב מדויק יותר להבא, כדאי לפרט אותם."
+    )
+    return parsed
 
 
 def _normalize_workout(parsed: dict) -> dict:
