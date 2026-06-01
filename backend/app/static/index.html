@@ -1737,6 +1737,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
               <option value="hiit">HIIT</option>
               <option value="cardio">Cardio</option>
               <option value="running">Running</option>
+              <option value="swimming">Swimming</option>
               <option value="other">Other</option>
             </select>
             <button class="add-btn" onclick="suggestFitnessWorkout()">Suggest →</button>
@@ -1778,6 +1779,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
               <option value="hiit">HIIT</option>
               <option value="cardio">Cardio</option>
               <option value="running">Running</option>
+              <option value="swimming">Swimming</option>
               <option value="other">Other</option>
             </select>
           </div>
@@ -1826,7 +1828,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       <div id="fit-profile-view" style="display:none">
         <div class="section-block">
           <div class="section-title">Clinical constraints &amp; goal</div>
-          <div class="fit-profile-block" id="fit-profile-text">Loading…</div>
+          <div class="fit-profile-block" id="fit-profile-text"></div>
         </div>
         <div class="section-block">
           <div class="section-title">Body metrics</div>
@@ -4470,6 +4472,8 @@ let _fitTab = 'today';
 let _fitMinutes = 30;
 let _fitHistDays = 30;
 
+const _fcid = () => `?chat_id=${encodeURIComponent(currentChatId || 'web')}`;
+
 function loadFitnessPage() {
   showFitnessTab(_fitTab);
   refreshFitnessToday();
@@ -4486,12 +4490,27 @@ function showFitnessTab(tab) {
   });
   if (tab === 'today') refreshFitnessToday();
   if (tab === 'history') loadFitnessHistory();
-  if (tab === 'profile') loadBodyMetrics();
+  if (tab === 'profile') { _setProfileText(); loadBodyMetrics(); }
+}
+
+function _setProfileText() {
+  const el = document.getElementById('fit-profile-text');
+  if (!el) return;
+  el.textContent = [
+    'Male, 48y, 177cm | HbA1c 4.4% | High VO2 base | Skinny-fat phenotype',
+    '',
+    'Goal: Build lean mass, reduce BF%, preserve aerobic base.',
+    '',
+    'Clinical constraints (always enforced):',
+    '• Gilbert\'s Syndrome: constant hydration ≥2.5L/day, no extended fasting (>14h), no extreme caloric deficit.',
+    '• Right neck-to-scapula pain: avoid heavy barbell back squat, conventional deadlift, military/overhead press. Emphasize scapular stabilizers — face pulls, band pull-aparts, serratus wall slides, prone Y/T/W. Neutral neck throughout all exercises.',
+    '• Recovery: ≥48h between sessions targeting the same muscle group. Deload week if avg RPE ≥8.5 over 2+ consecutive sessions.',
+  ].join('\n');
 }
 
 async function refreshFitnessToday() {
   try {
-    const data = await apiGet('/api/fitness/today');
+    const data = await apiGet('/api/fitness/today' + _fcid());
     _renderFitnessToday(data);
   } catch(e) { /* ignore */ }
 }
@@ -4553,7 +4572,7 @@ async function suggestFitnessWorkout() {
   const container = document.getElementById('fit-suggestion-container');
   container.innerHTML = '<div class="dash-empty">Generating… this may take a few seconds.</div>';
   try {
-    const plan = await apiPost('/api/fitness/suggest', { minutes: _fitMinutes, workout_type: type });
+    const plan = await apiPost('/api/fitness/suggest' + _fcid(), { minutes: _fitMinutes, workout_type: type });
     _renderSuggestion(plan);
   } catch(e) {
     container.innerHTML = `<div class="error-msg">${_esc(e.message || String(e))}</div>`;
@@ -4599,7 +4618,7 @@ async function saveFitnessSuggestion() {
     source: 'suggested',
   };
   try {
-    const r = await apiPost('/api/fitness/log-structured', body);
+    const r = await apiPost('/api/fitness/log-structured' + _fcid(), body);
     showToast('Workout saved! ✅');
     document.getElementById('fit-suggestion-container').innerHTML = '';
     _lastSuggestion = null;
@@ -4656,7 +4675,7 @@ async function submitFitnessWorkout() {
 
   const body = { title: title || workout_type, workout_type, duration_min, avg_rpe, exercises, metrics: {}, source: 'text' };
   try {
-    const r = await apiPost('/api/fitness/log-structured', body);
+    const r = await apiPost('/api/fitness/log-structured' + _fcid(), body);
     showToast('Workout logged! ✅');
     document.getElementById('fit-log-title').value = '';
     document.getElementById('fit-log-duration').value = '';
@@ -4678,7 +4697,11 @@ async function uploadFitnessImage(input) {
   const fd = new FormData();
   fd.append('file', file);
   try {
-    const r = await apiPost('/api/fitness/log-image', fd, true);
+    const resp = await fetch('/api/fitness/log-image' + _fcid(), {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd,
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const r = await resp.json();
     showToast('Workout extracted and logged! ✅');
     _renderFitnessToday(r.today);
     _renderAiSummary(r.evaluation);
@@ -4707,7 +4730,7 @@ async function loadFitnessHistory() {
   const listEl = document.getElementById('fit-history-list');
   listEl.innerHTML = '<div class="dash-empty">Loading…</div>';
   try {
-    const data = await apiGet(`/api/fitness/history?days=${_fitHistDays}`);
+    const data = await apiGet(`/api/fitness/history${_fcid()}&days=${_fitHistDays}`);
     _renderFitnessHistory(data.days || []);
     loadLbmChart();
   } catch(e) {
@@ -4741,7 +4764,7 @@ async function loadFitnessProgression() {
   const el = document.getElementById('fit-progression-chart');
   el.innerHTML = '<div class="chart-empty">Loading…</div>';
   try {
-    const data = await apiGet(`/api/fitness/progression?exercise=${encodeURIComponent(name)}&days=${_fitHistDays}`);
+    const data = await apiGet(`/api/fitness/progression${_fcid()}&exercise=${encodeURIComponent(name)}&days=${_fitHistDays}`);
     _renderProgressionChart(el, data.progression || [], name);
   } catch(e) {
     el.innerHTML = '<div class="chart-empty">Error loading data</div>';
@@ -4773,7 +4796,7 @@ function _renderProgressionChart(el, points, label) {
 async function loadLbmChart() {
   const el = document.getElementById('fit-lbm-chart');
   try {
-    const data = await apiGet('/api/fitness/body-metrics?days=180');
+    const data = await apiGet('/api/fitness/body-metrics' + _fcid() + '&days=180');
     _renderLbmChart(el, data.history || []);
   } catch(e) { /* ignore */ }
 }
@@ -4803,7 +4826,7 @@ function _renderLbmChart(el, points) {
 
 async function loadBodyMetrics() {
   try {
-    const data = await apiGet('/api/fitness/body-metrics?days=180');
+    const data = await apiGet('/api/fitness/body-metrics' + _fcid() + '&days=180');
     const el = document.getElementById('fit-latest-metrics');
     if (data.latest) {
       const m = data.latest;
@@ -4814,18 +4837,6 @@ async function loadBodyMetrics() {
         ${m.bf_pct ? `BF: <b>${m.bf_pct}%</b>` : ''}
         <span style="color:var(--text-muted);font-size:11px">(${m.log_date})</span>
       </div>`;
-    }
-    // Fill in clinical profile text
-    const profileEl = document.getElementById('fit-profile-text');
-    if (profileEl) {
-      profileEl.textContent = `Male, 48y, 177cm | HbA1c 4.4% | High VO2 base | Skinny-fat phenotype
-
-Goal: Build lean mass, reduce BF%, preserve aerobic base.
-
-Clinical constraints:
-• Gilbert's Syndrome: constant hydration (≥2.5L/day), no extended fasting, no extreme deficit.
-• Right neck-to-scapula pain: avoid heavy barbell back squat, conventional deadlift, military press. Emphasize scapular stabilizers (face pulls, band pull-aparts, serratus wall slides, prone Y/T/W). Neutral neck throughout.
-• Rest: ≥48h between same muscle groups. Deload if avg RPE ≥8.5 for 2+ sessions.`;
     }
   } catch(e) { /* ignore */ }
 }
@@ -4843,7 +4854,7 @@ async function saveBodyMetrics() {
     return;
   }
   try {
-    await apiPost('/api/fitness/body-metrics', body);
+    await apiPost('/api/fitness/body-metrics' + _fcid(), body);
     showToast('Body metrics saved! ✅');
     ['fit-m-weight','fit-m-lbm','fit-m-smm','fit-m-bf'].forEach(id => document.getElementById(id).value = '');
     loadBodyMetrics();
@@ -4856,7 +4867,7 @@ async function saveBodyMetrics() {
 async function deleteFitnessEntry(id) {
   if (!confirm('Delete this workout?')) return;
   try {
-    await apiDelete(`/api/fitness/${id}`);
+    await apiDelete(`/api/fitness/${id}` + _fcid());
     showToast('Workout deleted.');
     refreshFitnessToday();
   } catch(e) {
@@ -4866,7 +4877,7 @@ async function deleteFitnessEntry(id) {
 
 async function _dashLoadFitness() {
   try {
-    const data = await apiGet('/api/fitness/morning-brief');
+    const data = await apiGet('/api/fitness/morning-brief' + _fcid());
     const el = document.getElementById('dash-fitness-brief');
     if (el) {
       const text = data.brief || 'No fitness brief yet.';

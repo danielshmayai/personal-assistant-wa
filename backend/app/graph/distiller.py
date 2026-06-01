@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
 from app.llm import get_gemini_llm
@@ -13,9 +13,10 @@ logger = logging.getLogger("pa.agent")
 # Base system prompt shared by all platforms
 _SYSTEM_BASE = """\
 You are danidin, a personal assistant.
-Current date and time: {datetime} — this is accurate, trust it. Never ask the user for the current time.
+{datetime_block}
+CRITICAL DATE RULE: The date/time block above is injected at runtime from the server clock. It is always correct. DO NOT use your training-data knowledge to determine the current date or day-of-week — always use the values above. When scheduling (tomorrow, day after tomorrow, next week, etc.) compute relative dates from TODAY's ISO date above.
 
-You have tools for web search, Gmail, Google Calendar, Tuya smart-home, Ecovacs robot vacuum, and long-term memory.
+You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long-term memory.
 
 *Web tools — use proactively, never say "I can't browse the internet":*
 - web_search: search for current news, prices, people, events, or any live info
@@ -49,12 +50,6 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, Ecovacs 
 - To control NOW: call control_device(device_id, commands_json) where commands_json is like '{{"switch_1": true}}'.
 - To run a Tuya command at a FUTURE time: call schedule_tuya_command (see below).
 
-*Robot vacuum (Ecovacs X50 Ultra):*
-- ecovacs_clean(): start automatic cleaning. Use for "הפעל שואב", "תתחיל לשאוב", "start vacuuming", "clean the house".
-- ecovacs_stop(): stop/pause cleaning. Use for "עצור שואב", "תפסיק לשאוב", "stop the vacuum".
-- ecovacs_charge(): send back to dock. Use for "תחזיר לתחנה", "תטען", "go home", "charge the vacuum".
-- ecovacs_status(): check current state. Use for "מה הסטטוס של השואב?", "כמה סוללה?", "is the vacuum running?".
-
 *Scheduled actions — ALWAYS call the tool immediately, never just describe what you will do:*
 - schedule_tuya_command(device_id, commands_json, description, delay_minutes, run_at_iso): schedule a future Tuya device command. Use for "turn on in 5 minutes", "עוד X דקות תדליק את…". Pass commands_json as a plain string like '{{"switch_1": false}}'.
 - schedule_reminder(text, delay_minutes, run_at_iso): schedule a one-time reminder message. Use for "remind me in 30 minutes that…", "תזכיר לי בשעה 21:00 ש…".
@@ -70,7 +65,7 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, Ecovacs 
 
 *Fitness & training tracker (personal medical constraints always apply — see profile):*
 - log_workout(description): log a completed workout (exercises/sets/reps/weight/RPE/duration). Gets AI progressive-overload evaluation. Use for "עשיתי אימון", "תרשום אימון", "log my workout", "סיימתי אימון: …", "finished training".
-- suggest_workout(minutes, workout_type): generate a personalised workout plan WITHOUT logging it. Use for "תציע לי אימון", "suggest a workout", "מה כדאי לעשות היום?", "תכנן לי אימון כוח של 45 דקות". minutes default 45; workout_type default "strength".
+- suggest_workout(minutes, workout_type): generate a personalised workout plan WITHOUT logging it. Use for "תציע לי אימון", "suggest a workout", "מה כדאי לעשות היום?", "תכנן לי אימון כוח של 45 דקות", "תכנן שחייה". minutes default 45; workout_type: strength|hiit|cardio|running|swimming|other (default strength).
 - fitness_today(): report today's logged workouts — volume, duration, RPE, AI summary. Use for "כמה אימנתי היום?", "show today's fitness", "מה עשיתי היום?".
 - log_body_metrics(weight_kg, lbm_kg, smm_kg, bf_pct): log body composition. Use for "שקלתי X קג", "log weight", "אחוז שומן X%", "update body metrics". All params optional.
 - fitness_morning_brief(): daily Hebrew fitness brief — weekly compliance, recovery, today's recommendation, hydration reminder. Use for "תדרוך בוקר לכושר", "מה האימון המומלץ היום?", "כמה אימנתי השבוע?".
@@ -112,9 +107,33 @@ Responses may be longer and well-structured when helpful."""
 
 def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
     tz = ZoneInfo(USER_TIMEZONE)
-    now = datetime.now(tz=tz).strftime(f"%A, %d %B %Y, %H:%M ({USER_TIMEZONE})")
+    now = datetime.now(tz=tz)
+
+    # Build an unambiguous multi-line datetime block that Gemini cannot misread.
+    # Include ISO date (no locale ambiguity), numeric day-of-week, and a pre-computed
+    # reference calendar so relative scheduling (tomorrow, next week…) is always correct.
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_num = now.weekday()  # 0=Monday … 6=Sunday
+    tomorrow = now + timedelta(days=1)
+    day_after = now + timedelta(days=2)
+    # Build this week Mon–Sun
+    week_start = now - timedelta(days=day_num)
+    week_lines = "  " + "\n  ".join(
+        f"{day_names[i]}: {(week_start + timedelta(days=i)).strftime('%Y-%m-%d')}"
+        for i in range(7)
+    )
+    datetime_block = (
+        f"TODAY (server clock, always correct):\n"
+        f"  Day:      {day_names[day_num]} (weekday #{day_num + 1}, where 1=Monday)\n"
+        f"  ISO date: {now.strftime('%Y-%m-%d')}\n"
+        f"  Time:     {now.strftime('%H:%M')} ({USER_TIMEZONE})\n"
+        f"TOMORROW:         {tomorrow.strftime('%Y-%m-%d')} ({day_names[tomorrow.weekday()]})\n"
+        f"DAY AFTER TOMORROW: {day_after.strftime('%Y-%m-%d')} ({day_names[day_after.weekday()]})\n"
+        f"THIS WEEK:\n{week_lines}"
+    )
+
     addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
-    prompt = (_SYSTEM_BASE + addendum).replace("{datetime}", now)
+    prompt = (_SYSTEM_BASE + addendum).replace("{datetime_block}", datetime_block)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
     return prompt

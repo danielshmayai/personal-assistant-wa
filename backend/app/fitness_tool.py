@@ -70,7 +70,7 @@ def get_fitness_tools(chat_id: str) -> list:
         "what should I train today?", "תכנן לי אימון כוח".
 
         minutes: desired duration (default 45).
-        workout_type: strength | hiit | cardio | running | other (default strength).
+        workout_type: strength | hiit | cardio | running | swimming | other (default strength).
         """
         from app import fitness
 
