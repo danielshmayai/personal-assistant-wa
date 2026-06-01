@@ -534,7 +534,9 @@ Schema:
     "calories": <number or null>,
     "distance_km": <number or null>,
     "pace_min_km": <number or null>
-  }
+  },
+  "is_estimated_volume": <boolean — true only when fallback heuristic was applied>,
+  "user_feedback": "<Hebrew feedback message, or empty string>"
 }
 
 Rules:
@@ -544,7 +546,17 @@ Rules:
 - exercises: include all mentioned exercises. Omit unknown values (use 0).
 - metrics: populate from wearable screenshots or text. Use null for unknown fields.
 - If no exercises (pure cardio), exercises may be [].
-- Do NOT include body metrics (weight, BF%) in this response."""
+- Do NOT include body metrics (weight, BF%) in this response.
+
+CRITICAL FALLBACK — missing exercises/sets/reps with a known weight:
+If the user provides a workout type AND a primary weight (e.g. "HIIT עם 8 קג", "circuit 10kg") but omits
+specific exercises, sets, or reps, do NOT set total volume to 0. Instead:
+1. Record the primary weight as a single exercise row with name "Circuit / HIIT", sets=1, reps=100, weight_kg=<primary_weight>.
+2. This yields total_volume = primary_weight × 100 (represents ~30-min average circuit).
+3. Set is_estimated_volume=true.
+4. Set user_feedback to a friendly Hebrew message, e.g.:
+   "נרשם! 💡 הנפח חושב כהערכה (לפי ממוצע של 100 חזרות) כיוון שלא צוינו תרגילים וסטים. לחישוב מדויק יותר להבא, כדאי לפרט אותם."
+When exercises ARE specified, set is_estimated_volume=false and user_feedback=""."""
 
 
 async def parse_workout_text(text: str, chat_id: str = "") -> dict:
@@ -606,6 +618,8 @@ def _normalize_workout(parsed: dict) -> dict:
         "avg_rpe": _num(parsed.get("avg_rpe")),
         "exercises": _clean_exercises(parsed.get("exercises") or []),
         "metrics": metrics,
+        "is_estimated_volume": bool(parsed.get("is_estimated_volume", False)),
+        "user_feedback": str(parsed.get("user_feedback") or "").strip(),
     }
 
 

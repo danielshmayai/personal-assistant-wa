@@ -4722,7 +4722,7 @@ async function submitFitnessWorkout() {
     document.getElementById('fit-log-rpe').value = '';
     document.getElementById('fit-exercise-rows').innerHTML = '';
     _renderFitnessToday(r.today);
-    _renderAiSummary(r.evaluation);
+    _renderAiSummary(r.evaluation, r.entry);
     showFitnessTab('today');
   } catch(e) {
     showToast('Failed: ' + (e.message || e), true);
@@ -4744,7 +4744,7 @@ async function uploadFitnessImage(input) {
     const r = await resp.json();
     showToast('Workout extracted and logged! ✅');
     _renderFitnessToday(r.today);
-    _renderAiSummary(r.evaluation);
+    _renderAiSummary(r.evaluation, r.entry);
     showFitnessTab('today');
   } catch(e) {
     resultEl.innerHTML = `<div class="error-msg">OCR failed: ${_esc(e.message || String(e))}</div>`;
@@ -4752,14 +4752,20 @@ async function uploadFitnessImage(input) {
   input.value = '';
 }
 
-function _renderAiSummary(evaluation) {
+function _renderAiSummary(evaluation, entry) {
   const el = document.getElementById('fit-log-ai-result');
-  if (!evaluation || !evaluation.ai_summary) { el.innerHTML = ''; return; }
+  const feedbackHtml = (entry && entry.user_feedback)
+    ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px;direction:rtl;text-align:right">💡 ${_esc(entry.user_feedback)}</div>`
+    : '';
+  if (!evaluation || !evaluation.ai_summary) {
+    el.innerHTML = feedbackHtml || '';
+    return;
+  }
   const targets = (evaluation.ai_next_rec && evaluation.ai_next_rec.targets) || [];
   const tHtml = targets.length ? `<ul style="margin-top:8px">${targets.slice(0,4).map(t =>
     `<li>• ${_esc(t.name)}: ${t.target_weight_kg}kg × ${t.target_reps} — <em>${_esc(t.rationale || '')}</em></li>`
   ).join('')}</ul>` : '';
-  el.innerHTML = `
+  el.innerHTML = feedbackHtml + `
     <div class="fit-ai-card">
       <div class="fit-ai-title">🤖 AI Coach</div>
       <div class="fit-ai-body">${_esc(evaluation.ai_summary)}${tHtml}</div>

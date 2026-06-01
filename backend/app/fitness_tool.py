@@ -46,11 +46,15 @@ def get_fitness_tools(chat_id: str) -> list:
             logging.getLogger("pa.fitness").warning("evaluate_workout failed: %s", exc)
 
         today = fitness.list_today(chat_id)
+        volume = fitness._total_volume(parsed["exercises"])
+        vol_note = " *(הערכה)*" if parsed.get("is_estimated_volume") else ""
         lines = [
             f"✅ *{parsed['title']}* נרשם",
             f"• סוג: {parsed['workout_type']} | {parsed['duration_min']:.0f} דקות | RPE {parsed['avg_rpe']:.1f}",
-            f"• נפח: {parsed.get('total_volume', fitness._total_volume(parsed['exercises'])):.0f} קג",
+            f"• נפח: {volume:.0f} קג{vol_note}",
         ]
+        if parsed.get("user_feedback"):
+            lines.append(f"\n{parsed['user_feedback']}")
         if evaluation["ai_summary"]:
             lines.append(f"\n💡 {evaluation['ai_summary']}")
         targets = (evaluation.get("ai_next_rec") or {}).get("targets") or []
