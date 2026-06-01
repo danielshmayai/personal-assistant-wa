@@ -1165,7 +1165,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
   cursor: pointer; transition: background .15s; text-align: center; font-family: inherit; width: 100%;
 }
 .dash-action-btn:hover { background: rgba(99,102,241,.18); }
-#home-fab-container { position: absolute; bottom: 80px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 50; }
+#home-fab-container { position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 50; }
 #home-fab-btn { width: 52px; height: 52px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 26px; line-height: 1; cursor: pointer; box-shadow: 0 4px 16px rgba(99,102,241,.45); transition: transform .2s, background .15s; display: flex; align-items: center; justify-content: center; }
 #home-fab-btn:hover { background: #5558e6; transform: scale(1.08); }
 #home-fab-menu { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
@@ -1173,7 +1173,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .home-fab-option { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: var(--radius-sm); background: var(--bg2); border: 1px solid var(--border2); color: var(--text); font-size: 14px; font-family: inherit; cursor: pointer; box-shadow: var(--shadow-sm); white-space: nowrap; transition: background .15s; }
 .home-fab-option:hover { background: var(--accent-dim); }
 .home-fab-option span { font-size: 18px; }
-#page-home.active { position: relative; }
+#page-home.active { /* scrolling handled by .page { position:absolute; inset:0; overflow-y:auto } */ }
 .dash-cal-row {
   display: flex; align-items: baseline; gap: 10px; padding: 7px 0;
   border-bottom: 1px solid var(--border);
@@ -1386,6 +1386,15 @@ details[open].reasoning-block summary::before { content: "▼  "; }
           <button class="dash-action-btn" onclick="openNutritionToday()">+ Log a meal</button>
         </div>
 
+        <div class="dash-card" id="dash-fitness-card">
+          <div class="dash-card-header">
+            <span class="dash-card-icon">🏋️</span>
+            <span class="dash-card-title">המלצת אימון יומי</span>
+            <button class="dash-card-link" onclick="switchPage('fitness')">כל האימונים →</button>
+          </div>
+          <div id="dash-fitness-rec"><div class="dash-empty">Loading…</div></div>
+        </div>
+
         <div class="dash-card" id="dash-cal-card">
           <div class="dash-card-header">
             <span class="dash-card-icon">📅</span>
@@ -1410,15 +1419,6 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <span class="dash-card-title">Smart Home</span>
           </div>
           <button class="dash-action-btn" onclick="switchPage('smarthome')">Open controls →</button>
-        </div>
-
-        <div class="dash-card" id="dash-fitness-card">
-          <div class="dash-card-header">
-            <span class="dash-card-icon">🏋️</span>
-            <span class="dash-card-title">המלצת אימון יומי</span>
-            <button class="dash-card-link" onclick="switchPage('fitness')">כל האימונים →</button>
-          </div>
-          <div id="dash-fitness-rec"><div class="dash-empty">Loading…</div></div>
         </div>
       </div>
 
