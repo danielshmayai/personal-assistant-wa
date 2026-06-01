@@ -1190,6 +1190,10 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .dash-job-desc { flex: 1; font-size: 13px; color: var(--text); }
 .dash-job-time { font-size: 12px; color: var(--text2); white-space: nowrap; }
 .dash-empty { font-size: 13px; color: var(--text3); text-align: center; padding: 8px 0; }
+.dash-fit-row { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.dash-fit-row:last-of-type { border-bottom: none; }
+.dash-fit-title { font-size: 14px; font-weight: 600; color: var(--text); direction: rtl; text-align: right; }
+.dash-fit-meta { font-size: 12px; color: var(--text2); direction: rtl; text-align: right; }
 
 /* ── Daily fitness rec card ── */
 .fit-rec-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -1389,10 +1393,11 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         <div class="dash-card" id="dash-fitness-card">
           <div class="dash-card-header">
             <span class="dash-card-icon">🏋️</span>
-            <span class="dash-card-title">המלצת אימון יומי</span>
+            <span class="dash-card-title">אימוני היום</span>
             <button class="dash-card-link" onclick="switchPage('fitness')">כל האימונים →</button>
           </div>
-          <div id="dash-fitness-rec"><div class="dash-empty">Loading…</div></div>
+          <div id="dash-fitness-today"><div class="dash-empty">Loading…</div></div>
+          <button class="dash-action-btn" onclick="switchPage('fitness');showFitnessTab('log')">+ רשום אימון</button>
         </div>
 
         <div class="dash-card" id="dash-cal-card">
@@ -4911,42 +4916,33 @@ async function deleteFitnessEntry(id) {
 }
 
 async function _dashLoadFitness() {
-  const el = document.getElementById('dash-fitness-rec');
+  const el = document.getElementById('dash-fitness-today');
   try {
-    const rec = await apiGet('/api/fitness/daily-rec' + _fcid());
+    const data = await apiGet('/api/fitness/today' + _fcid());
     if (!el) return;
-    const badge = rec.readiness || 'ready';
-    const pct = rec.weekly_target > 0 ? Math.min(100, Math.round((rec.weekly_done / rec.weekly_target) * 100)) : 0;
-    const typeIcon = { strength:'🏋️', cardio:'🏃', swimming:'🏊', rest:'😴' }[rec.workout_type] || '🏋️';
-    const lastStr = rec.days_since_last < 0
-      ? 'לא אומן עדיין'
-      : rec.days_since_last === 0 ? 'אומן היום'
-      : rec.days_since_last === 1 ? 'אתמול'
-      : `לפני ${rec.days_since_last} ימים`;
-    const rpeStr = rec.last_avg_rpe ? ` · RPE ${Number(rec.last_avg_rpe).toFixed(1)}` : '';
-    const exHtml = (rec.key_exercises || []).map(e => {
-      const wStr = e.weight_kg > 0 ? ` @ ${e.weight_kg} קג` : '';
-      return `<div class="fit-rec-ex">${_esc(e.name)}: ${e.sets}×${e.reps}${wStr}</div>`;
+    const workouts = data.workouts || [];
+    if (!workouts.length) {
+      el.innerHTML = '<div class="dash-empty">לא אומנת היום עדיין 💪</div>';
+      return;
+    }
+    const rows = workouts.map(w => {
+      const vol = w.total_volume > 0 ? ` · ${Math.round(w.total_volume)} קג` : '';
+      const summary = w.ai_summary
+        ? `<div style="font-size:12px;color:var(--text2);margin-top:2px;direction:rtl;text-align:right">💡 ${_esc(w.ai_summary)}</div>`
+        : '';
+      return `<div class="dash-fit-row">
+        <div class="dash-fit-title">${_esc(w.title)}</div>
+        <div class="dash-fit-meta">${Math.round(w.duration_min)} דק' · RPE ${Number(w.avg_rpe).toFixed(1)}${vol}</div>
+        ${summary}
+      </div>`;
     }).join('');
-    el.innerHTML = `
-      <div class="fit-rec-row">
-        <span class="fit-rec-badge ${badge}">${_esc(rec.readiness_he || badge)}</span>
-        <span style="font-size:18px">${typeIcon}</span>
-        <span class="fit-rec-title">${_esc(rec.title)}</span>
-      </div>
-      <div class="fit-rec-meta">${_esc(lastStr)}${rpeStr} · ${rec.duration_min} דק'</div>
-      <div class="fit-rec-rationale">${_esc(rec.rationale)}</div>
-      <div class="fit-rec-week">
-        <div class="fit-rec-week-label">${rec.weekly_done}/${rec.weekly_target} אימונים השבוע</div>
-        <div class="fit-rec-week-track"><div class="fit-rec-week-fill" style="width:${pct}%"></div></div>
-      </div>
-      ${exHtml ? `<div class="fit-rec-exercises">${exHtml}</div>` : ''}
-      <div class="fit-rec-actions">
-        <button class="fit-rec-btn primary" onclick="switchPage('fitness')">${badge === 'rest' ? '😴 מנוחה היום' : '🏋️ התחל אימון'}</button>
-        <button class="fit-rec-btn secondary" onclick="switchPage('fitness');showFitnessTab('today');setTimeout(()=>suggestFitnessWorkout(${rec.duration_min}),300)">💡 הצג תכנית</button>
+    const totVol = data.total_volume > 0 ? ` · ${Math.round(data.total_volume)} קג נפח` : '';
+    el.innerHTML = rows +
+      `<div style="font-size:12px;color:var(--text2);margin-top:6px;font-weight:600">
+        סה"כ: ${Math.round(data.total_duration_min)} דק'${totVol}
       </div>`;
   } catch(e) {
-    if (el) el.innerHTML = '<div class="dash-empty">רשום אימונים כדי לקבל המלצה יומית</div>';
+    if (el) el.innerHTML = '<div class="dash-empty">לא ניתן לטעון נתוני אימון</div>';
   }
 }
 </script>
