@@ -225,6 +225,16 @@ async def morning_brief(chat_id: str = Query(...), _: str = Depends(_require_tok
     return {"brief": brief}
 
 
+@router.get("/api/fitness/daily-rec")
+async def daily_recommendation(chat_id: str = Query(...), _: str = Depends(_require_token)):
+    try:
+        rec = await fitness.generate_daily_recommendation(chat_id)
+    except Exception as exc:
+        logger.exception("fitness daily-rec failed")
+        raise HTTPException(status_code=502, detail=f"Could not generate recommendation: {exc}")
+    return rec
+
+
 @router.get("/api/fitness/body-metrics")
 async def get_body_metrics(
     chat_id: str = Query(...),

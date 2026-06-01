@@ -781,3 +781,132 @@ Format: WhatsApp-friendly (*bold* for headers, • for bullets, no # headers).""
     ]
     resp = await llm.ainvoke(messages)
     return str(resp.content if hasattr(resp, "content") else str(resp)).strip()
+
+
+# Per-process cache keyed by (chat_id, YYYY-MM-DD) so we pay the LLM cost once per day.
+_daily_rec_cache: dict = {}
+
+
+async def generate_daily_recommendation(chat_id: str) -> dict:
+    """Return a structured daily workout recommendation, cached per calendar day.
+
+    The returned dict always has:
+      readiness        : "ready" | "light" | "rest"
+      readiness_he     : Hebrew label
+      workout_type     : strength | cardio | swimming | rest
+      title            : Hebrew workout title
+      duration_min     : int
+      rationale        : Hebrew 1-2 sentence rationale
+      weekly_done      : int sessions this week
+      weekly_target    : int
+      key_exercises    : [{name, sets, reps, weight_kg}]  (empty for rest)
+      days_since_last  : int (-1 if never)
+      last_avg_rpe     : float | null
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from app.llm import get_gemini_llm
+    from app.fitness_profile import render_profile_block
+    from app.config import FITNESS_WEEKLY_SESSION_TARGET
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(USER_TIMEZONE)
+    today_str = datetime.now(tz=tz).strftime("%Y-%m-%d")
+    cache_key = (_fitness_key(chat_id), today_str)
+    if cache_key in _daily_rec_cache:
+        return _daily_rec_cache[cache_key]
+
+    fkey = _fitness_key(chat_id)
+    recent = history(fkey, days=14)
+    metrics = latest_body_metrics(fkey)
+    profile = render_profile_block(metrics)
+
+    # Compute stats the LLM doesn't need to guess
+    today_date = _user_today()
+    days_since_last = -1
+    last_avg_rpe = None
+    weekly_done = 0
+    last_next_rec: dict = {}
+
+    for day in recent:
+        day_date = date.fromisoformat(day["date"]) if isinstance(day.get("date"), str) else None
+        if day_date:
+            days_ago = (today_date - day_date).days
+            if day.get("count", 0) > 0:
+                if days_since_last == -1:
+                    days_since_last = days_ago
+                    last_avg_rpe = day.get("avg_rpe")
+                    sessions = day.get("sessions") or []
+                    if sessions:
+                        last_next_rec = sessions[-1].get("ai_next_rec") or {}
+                if days_ago < 7:
+                    weekly_done += day.get("count", 0)
+
+    history_summary = json.dumps(recent[:7], ensure_ascii=False, indent=2) if recent else "No history yet."
+    last_rec_json = json.dumps(last_next_rec, ensure_ascii=False, indent=2) if last_next_rec else "None"
+
+    instructions = f"""\
+You are a personal trainer AI. Today is {today_str}.
+Days since last workout: {days_since_last if days_since_last >= 0 else 'never'}.
+Last session avg RPE: {last_avg_rpe if last_avg_rpe is not None else 'unknown'}.
+This week: {weekly_done}/{FITNESS_WEEKLY_SESSION_TARGET} sessions done.
+Last session next-rec targets: {last_rec_json}
+
+Return ONLY a JSON object (no markdown fences) with these exact keys:
+{{
+  "readiness": "ready" | "light" | "rest",
+  "readiness_he": "<Hebrew 2-3 words, e.g. מוכן לאימון / אימון קל / מנוחה>",
+  "workout_type": "strength" | "cardio" | "swimming" | "rest",
+  "title": "<Hebrew workout title, e.g. אימון כוח עליון>",
+  "duration_min": <int>,
+  "rationale": "<Hebrew 1-2 sentences — why this workout today, mentioning recovery + hydration>",
+  "weekly_done": {weekly_done},
+  "weekly_target": {FITNESS_WEEKLY_SESSION_TARGET},
+  "key_exercises": [
+    {{"name": "<name>", "sets": <int>, "reps": <int>, "weight_kg": <number>}}
+  ],
+  "days_since_last": {days_since_last},
+  "last_avg_rpe": {last_avg_rpe if last_avg_rpe is not None else "null"}
+}}
+
+Rules:
+- readiness="rest" if days_since_last==0 AND last_avg_rpe>=8, OR days_since_last==0 AND today is the 3rd consecutive day.
+- readiness="light" if days_since_last==0 OR last_avg_rpe>=8.
+- readiness="ready" otherwise (including never trained before).
+- key_exercises: exactly 3 exercises from last_next_rec targets when available, otherwise suggest appropriate ones.
+- NEVER include heavy barbell back squat, conventional deadlift, or military press.
+- ALWAYS include at least one scapular stabilizer in key_exercises for strength workouts.
+- If readiness="rest", return empty key_exercises and workout_type="rest"."""
+
+    llm = get_gemini_llm()
+    messages = [
+        SystemMessage(content=f"{profile}\n\n{instructions}"),
+        HumanMessage(content=f"Training history (last 7 days):\n{history_summary}"),
+    ]
+    resp = await llm.ainvoke(messages)
+    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+
+    result: dict = {
+        "readiness": str(raw.get("readiness") or "ready"),
+        "readiness_he": str(raw.get("readiness_he") or ""),
+        "workout_type": str(raw.get("workout_type") or "strength"),
+        "title": str(raw.get("title") or "אימון מוצע"),
+        "duration_min": int(_num(raw.get("duration_min") or 45)),
+        "rationale": str(raw.get("rationale") or ""),
+        "weekly_done": weekly_done,
+        "weekly_target": FITNESS_WEEKLY_SESSION_TARGET,
+        "key_exercises": [
+            {
+                "name": str(e.get("name") or ""),
+                "sets": int(_num(e.get("sets") or 3)),
+                "reps": int(_num(e.get("reps") or 10)),
+                "weight_kg": round(_num(e.get("weight_kg") or 0), 1),
+            }
+            for e in (raw.get("key_exercises") or [])[:3]
+            if e.get("name")
+        ],
+        "days_since_last": days_since_last,
+        "last_avg_rpe": last_avg_rpe,
+        "cached_at": today_str,
+    }
+    _daily_rec_cache[cache_key] = result
+    return result

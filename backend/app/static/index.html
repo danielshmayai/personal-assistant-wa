@@ -1191,6 +1191,41 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .dash-job-time { font-size: 12px; color: var(--text2); white-space: nowrap; }
 .dash-empty { font-size: 13px; color: var(--text3); text-align: center; padding: 8px 0; }
 
+/* ── Daily fitness rec card ── */
+.fit-rec-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fit-rec-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 20px;
+  font-size: 12px; font-weight: 600; letter-spacing: .3px;
+}
+.fit-rec-badge.ready  { background: #d4f7d4; color: #1a7a1a; }
+.fit-rec-badge.light  { background: #fff3cd; color: #7a5500; }
+.fit-rec-badge.rest   { background: #ffe5e5; color: #8a0000; }
+@media (prefers-color-scheme: dark) {
+  .fit-rec-badge.ready  { background: #1a3a1a; color: #6ddd6d; }
+  .fit-rec-badge.light  { background: #3a2e00; color: #ffd060; }
+  .fit-rec-badge.rest   { background: #3a1a1a; color: #ff8080; }
+}
+.fit-rec-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.fit-rec-meta  { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+.fit-rec-rationale { font-size: 13px; color: var(--text); line-height: 1.5; margin-bottom: 8px; direction: rtl; text-align: right; }
+.fit-rec-week { margin-bottom: 8px; }
+.fit-rec-week-label { font-size: 12px; color: var(--text2); margin-bottom: 3px; }
+.fit-rec-week-track {
+  height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+}
+.fit-rec-week-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
+.fit-rec-exercises { margin-bottom: 10px; }
+.fit-rec-ex { font-size: 12px; color: var(--text); padding: 3px 0; direction: rtl; text-align: right; }
+.fit-rec-ex::before { content: '• '; color: var(--accent); }
+.fit-rec-actions { display: flex; gap: 8px; }
+.fit-rec-btn {
+  flex: 1; padding: 7px 0; border: none; border-radius: 8px; font-size: 13px;
+  font-weight: 600; cursor: pointer; transition: opacity .15s;
+}
+.fit-rec-btn:hover { opacity: .85; }
+.fit-rec-btn.primary { background: var(--accent); color: #fff; }
+.fit-rec-btn.secondary { background: var(--bg2); color: var(--text); }
+
 /* ── More drawer ── */
 .more-overlay {
   display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4);
@@ -1380,10 +1415,10 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         <div class="dash-card" id="dash-fitness-card">
           <div class="dash-card-header">
             <span class="dash-card-icon">🏋️</span>
-            <span class="dash-card-title">Fitness Brief</span>
-            <button class="dash-card-link" onclick="switchPage('fitness')">View all →</button>
+            <span class="dash-card-title">המלצת אימון יומי</span>
+            <button class="dash-card-link" onclick="switchPage('fitness')">כל האימונים →</button>
           </div>
-          <div id="dash-fitness-brief"><div class="dash-empty">Loading…</div></div>
+          <div id="dash-fitness-rec"><div class="dash-empty">Loading…</div></div>
         </div>
       </div>
 
@@ -4876,16 +4911,42 @@ async function deleteFitnessEntry(id) {
 }
 
 async function _dashLoadFitness() {
+  const el = document.getElementById('dash-fitness-rec');
   try {
-    const data = await apiGet('/api/fitness/morning-brief' + _fcid());
-    const el = document.getElementById('dash-fitness-brief');
-    if (el) {
-      const text = data.brief || 'No fitness brief yet.';
-      el.innerHTML = `<div style="font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.5">${_esc(text).slice(0,300)}${text.length>300?'…':''}</div>`;
-    }
+    const rec = await apiGet('/api/fitness/daily-rec' + _fcid());
+    if (!el) return;
+    const badge = rec.readiness || 'ready';
+    const pct = rec.weekly_target > 0 ? Math.min(100, Math.round((rec.weekly_done / rec.weekly_target) * 100)) : 0;
+    const typeIcon = { strength:'🏋️', cardio:'🏃', swimming:'🏊', rest:'😴' }[rec.workout_type] || '🏋️';
+    const lastStr = rec.days_since_last < 0
+      ? 'לא אומן עדיין'
+      : rec.days_since_last === 0 ? 'אומן היום'
+      : rec.days_since_last === 1 ? 'אתמול'
+      : `לפני ${rec.days_since_last} ימים`;
+    const rpeStr = rec.last_avg_rpe ? ` · RPE ${Number(rec.last_avg_rpe).toFixed(1)}` : '';
+    const exHtml = (rec.key_exercises || []).map(e => {
+      const wStr = e.weight_kg > 0 ? ` @ ${e.weight_kg} קג` : '';
+      return `<div class="fit-rec-ex">${_esc(e.name)}: ${e.sets}×${e.reps}${wStr}</div>`;
+    }).join('');
+    el.innerHTML = `
+      <div class="fit-rec-row">
+        <span class="fit-rec-badge ${badge}">${_esc(rec.readiness_he || badge)}</span>
+        <span style="font-size:18px">${typeIcon}</span>
+        <span class="fit-rec-title">${_esc(rec.title)}</span>
+      </div>
+      <div class="fit-rec-meta">${_esc(lastStr)}${rpeStr} · ${rec.duration_min} דק'</div>
+      <div class="fit-rec-rationale">${_esc(rec.rationale)}</div>
+      <div class="fit-rec-week">
+        <div class="fit-rec-week-label">${rec.weekly_done}/${rec.weekly_target} אימונים השבוע</div>
+        <div class="fit-rec-week-track"><div class="fit-rec-week-fill" style="width:${pct}%"></div></div>
+      </div>
+      ${exHtml ? `<div class="fit-rec-exercises">${exHtml}</div>` : ''}
+      <div class="fit-rec-actions">
+        <button class="fit-rec-btn primary" onclick="switchPage('fitness')">${badge === 'rest' ? '😴 מנוחה היום' : '🏋️ התחל אימון'}</button>
+        <button class="fit-rec-btn secondary" onclick="switchPage('fitness');showFitnessTab('today');setTimeout(()=>suggestFitnessWorkout(${rec.duration_min}),300)">💡 הצג תכנית</button>
+      </div>`;
   } catch(e) {
-    const el = document.getElementById('dash-fitness-brief');
-    if (el) el.innerHTML = '<div class="dash-empty">Log workouts to get your daily brief.</div>';
+    if (el) el.innerHTML = '<div class="dash-empty">רשום אימונים כדי לקבל המלצה יומית</div>';
   }
 }
 </script>
