@@ -14,10 +14,32 @@ Cover: (1) the main topic or request, (2) what was resolved or produced, (3) any
 
 {transcript}"""
 
+# Minimum substance before an exchange is worth an LLM summary + a row in the
+# episode index. Trivial turns ("thanks", "ok") produce useless, noisy episodes.
+_MIN_TRANSCRIPT_CHARS = 240
+_TRIVIAL_USER_MSGS = {
+    "thanks", "thank you", "ok", "okay", "k", "got it", "cool", "nice", "great",
+    "perfect", "yes", "no", "yep", "nope", "sure", "👍", "תודה", "אוקיי", "אוקי",
+    "כן", "לא", "מעולה", "סבבה", "אחלה", "טוב", "יופי",
+}
+
+
+def _is_trivial(transcript: str) -> bool:
+    """True when the exchange carries too little substance to be worth indexing."""
+    if len(transcript.strip()) < _MIN_TRANSCRIPT_CHARS:
+        # Short overall — only keep it if the user clearly said something non-trivial.
+        for line in transcript.splitlines():
+            if line.startswith("User:"):
+                user = line[len("User:"):].strip().lower().rstrip(".!?")
+                if user and user not in _TRIVIAL_USER_MSGS and len(user) >= 12:
+                    return False
+        return True
+    return False
+
 
 async def create_episode(chat_id: str, transcript: str) -> None:
     """Background task: LLM-summarize conversation and store as a searchable episode."""
-    if not transcript.strip():
+    if not transcript.strip() or _is_trivial(transcript):
         return
     try:
         from app.memory.embeddings import embed_text, vec_str

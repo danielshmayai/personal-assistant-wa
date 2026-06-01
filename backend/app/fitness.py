@@ -870,38 +870,66 @@ MANDATORY CONSTRAINTS (always enforce):
 async def generate_morning_brief(chat_id: str) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
     from app.llm import get_gemini_llm
-    from app.fitness_profile import render_profile_block, PHYSIO_BASELINE
+    from app.fitness_profile import render_profile_block
     from app.config import FITNESS_WEEKLY_SESSION_TARGET
 
-    recent = history(chat_id, days=7)
+    # Reuse the deterministic (and per-day cached) recommendation rather than
+    # dumping raw 7-day JSON and asking the LLM to count sessions itself.
+    rec = await generate_daily_recommendation(chat_id)
     metrics = latest_body_metrics(chat_id)
     profile = render_profile_block(metrics)
 
-    last_rec = ""
-    if recent and recent[0].get("sessions"):
-        last_session = recent[0]["sessions"][-1]
-        rec = last_session.get("ai_next_rec") or {}
-        last_rec = f"\nLast session recommendation:\n{json.dumps(rec, ensure_ascii=False, indent=2)}"
+    last_str = (
+        "מעולם לא תועד אימון" if rec["days_since_last"] < 0
+        else "אומן היום" if rec["days_since_last"] == 0
+        else "אתמול" if rec["days_since_last"] == 1
+        else f"לפני {rec['days_since_last']} ימים"
+    )
+    facts = {
+        "weekly_done": rec["weekly_done"],
+        "weekly_target": FITNESS_WEEKLY_SESSION_TARGET,
+        "days_since_last_workout": last_str,
+        "last_avg_rpe": rec["last_avg_rpe"],
+        "today_readiness": rec["readiness_he"],
+        "today_workout_type": rec["workout_type"],
+        "today_title": rec["title"],
+        "today_duration_min": rec["duration_min"],
+        "today_key_exercises": rec["key_exercises"],
+    }
 
-    instructions = f"""\
+    instructions = """\
 You are a personal trainer AI giving a daily morning fitness brief in Hebrew.
-Weekly session target: {FITNESS_WEEKLY_SESSION_TARGET} sessions.
-Be concise (WhatsApp-friendly, use • bullets, max 200 words).
-Include:
-1. Weekly compliance (sessions done / target)
-2. Recovery status (avg RPE trend, days since last session)
-3. Today's recommendation (what type of workout, duration, key focus)
-4. Hydration reminder (Gilbert's Syndrome — min 2.5L today)
-5. Neck/scapula reminder if strength session is recommended
-Format: WhatsApp-friendly (*bold* for headers, • for bullets, no # headers)."""
+All stats below are ALREADY COMPUTED — do NOT change the numbers or the readiness decision.
+Write a concise WhatsApp-friendly brief (max 150 words) that covers, in this order:
+1. Weekly compliance (sessions done / target).
+2. Recovery status (days since last session + last avg RPE).
+3. Today's recommendation (readiness, type, duration, key exercises).
+4. Hydration reminder (Gilbert's Syndrome — min 2.5L today).
+5. Neck/scapula reminder if today is a strength session.
+Format: *bold* for headers, • for bullets, no # headers."""
 
-    llm = get_gemini_llm()
-    messages = [
-        SystemMessage(content=f"{profile}\n\n{instructions}"),
-        HumanMessage(content=f"Last 7 days training:\n{json.dumps(recent, ensure_ascii=False, indent=2)}{last_rec}"),
+    try:
+        llm = get_gemini_llm()
+        messages = [
+            SystemMessage(content=f"{profile}\n\n{instructions}"),
+            HumanMessage(content=f"Computed facts:\n{json.dumps(facts, ensure_ascii=False, indent=2)}"),
+        ]
+        resp = await llm.ainvoke(messages)
+        text = str(resp.content if hasattr(resp, "content") else str(resp)).strip()
+        if text:
+            return text
+    except Exception as exc:
+        logger.warning("morning brief narrative failed, using template: %s", exc)
+
+    # Deterministic fallback — never leaves the user without a brief.
+    lines = [
+        f"*כושר בוקר* 🏋️",
+        f"• השבוע: {rec['weekly_done']}/{FITNESS_WEEKLY_SESSION_TARGET} אימונים",
+        f"• אימון אחרון: {last_str}" + (f" (RPE {rec['last_avg_rpe']})" if rec['last_avg_rpe'] else ""),
+        f"• היום: {rec['readiness_he']} — {rec['title']} ({rec['duration_min']} דק')",
+        "• הידרציה: לפחות 2.5 ליטר מים היום 💧",
     ]
-    resp = await llm.ainvoke(messages)
-    return str(resp.content if hasattr(resp, "content") else str(resp)).strip()
+    return "\n".join(lines)
 
 
 # Per-process cache keyed by (chat_id, YYYY-MM-DD) so we pay the LLM cost once per day.

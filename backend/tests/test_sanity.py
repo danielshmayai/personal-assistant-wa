@@ -808,3 +808,14 @@ def test_progression_focus_recovery_on_high_rpe():
         {"avg_rpe": 9, "exercises": [{"name": "Squat", "sets": 3, "reps": 5, "weight_kg": 80, "rpe": 9}]}
     )
     assert focus == "recovery"
+
+
+def test_episode_gate_skips_trivial_exchanges():
+    """Trivial acknowledgements must not trigger an LLM summary / episode row."""
+    from app.memory.episodes import _is_trivial
+    assert _is_trivial("User: thanks\nAssistant: You're welcome!") is True
+    assert _is_trivial("User: תודה\nAssistant: בשמחה") is True
+    assert _is_trivial("User: ok\nAssistant: 👍") is True
+    # Substantive short exchanges and long transcripts are kept.
+    assert _is_trivial("User: remind me to call the bank tomorrow at 9\nAssistant: Done.") is False
+    assert _is_trivial("User: " + "x" * 300) is False
