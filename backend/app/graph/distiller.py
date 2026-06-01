@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
 from app.llm import get_gemini_llm
@@ -13,7 +13,8 @@ logger = logging.getLogger("pa.agent")
 # Base system prompt shared by all platforms
 _SYSTEM_BASE = """\
 You are danidin, a personal assistant.
-Current date and time: {datetime} — this is accurate, trust it. Never ask the user for the current time.
+{datetime_block}
+CRITICAL DATE RULE: The date/time block above is injected at runtime from the server clock. It is always correct. DO NOT use your training-data knowledge to determine the current date or day-of-week — always use the values above. When scheduling (tomorrow, day after tomorrow, next week, etc.) compute relative dates from TODAY's ISO date above.
 
 You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long-term memory.
 
@@ -106,9 +107,33 @@ Responses may be longer and well-structured when helpful."""
 
 def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
     tz = ZoneInfo(USER_TIMEZONE)
-    now = datetime.now(tz=tz).strftime(f"%A, %d %B %Y, %H:%M ({USER_TIMEZONE})")
+    now = datetime.now(tz=tz)
+
+    # Build an unambiguous multi-line datetime block that Gemini cannot misread.
+    # Include ISO date (no locale ambiguity), numeric day-of-week, and a pre-computed
+    # reference calendar so relative scheduling (tomorrow, next week…) is always correct.
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_num = now.weekday()  # 0=Monday … 6=Sunday
+    tomorrow = now + timedelta(days=1)
+    day_after = now + timedelta(days=2)
+    # Build this week Mon–Sun
+    week_start = now - timedelta(days=day_num)
+    week_lines = "  " + "\n  ".join(
+        f"{day_names[i]}: {(week_start + timedelta(days=i)).strftime('%Y-%m-%d')}"
+        for i in range(7)
+    )
+    datetime_block = (
+        f"TODAY (server clock, always correct):\n"
+        f"  Day:      {day_names[day_num]} (weekday #{day_num + 1}, where 1=Monday)\n"
+        f"  ISO date: {now.strftime('%Y-%m-%d')}\n"
+        f"  Time:     {now.strftime('%H:%M')} ({USER_TIMEZONE})\n"
+        f"TOMORROW:         {tomorrow.strftime('%Y-%m-%d')} ({day_names[tomorrow.weekday()]})\n"
+        f"DAY AFTER TOMORROW: {day_after.strftime('%Y-%m-%d')} ({day_names[day_after.weekday()]})\n"
+        f"THIS WEEK:\n{week_lines}"
+    )
+
     addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
-    prompt = (_SYSTEM_BASE + addendum).replace("{datetime}", now)
+    prompt = (_SYSTEM_BASE + addendum).replace("{datetime_block}", datetime_block)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
     return prompt
