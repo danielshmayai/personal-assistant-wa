@@ -777,3 +777,34 @@ def test_get_fitness_tools_has_correct_names():
     assert actual == EXPECTED_FITNESS_TOOL_NAMES, (
         f"Fitness tool name mismatch.\n  Expected: {EXPECTED_FITNESS_TOOL_NAMES}\n  Got: {actual}"
     )
+
+
+def test_progression_targets_rpe_based_increments():
+    """Progressive-overload math is deterministic — verify each RPE band."""
+    from app.fitness import _compute_progression_targets
+    workout = {
+        "avg_rpe": 7,
+        "exercises": [
+            {"name": "Leg Press", "sets": 3, "reps": 12, "weight_kg": 100, "rpe": 5},   # ≤6 → +5%
+            {"name": "Chest Press", "sets": 3, "reps": 10, "weight_kg": 40, "rpe": 7},   # 7-8 → +2.5%
+            {"name": "Row", "sets": 3, "reps": 8, "weight_kg": 60, "rpe": 9},            # 9 → hold
+            {"name": "Curl", "sets": 3, "reps": 10, "weight_kg": 20, "rpe": 10},         # 10 → deload 10%
+            {"name": "Plank", "sets": 3, "reps": 0, "weight_kg": 0, "rpe": 6},           # bodyweight
+        ],
+    }
+    targets, focus = _compute_progression_targets(workout)
+    by_name = {t["name"]: t for t in targets}
+    assert by_name["Leg Press"]["target_weight_kg"] == 105.0
+    assert by_name["Chest Press"]["target_weight_kg"] == 41.0
+    assert by_name["Row"]["target_weight_kg"] == 60.0
+    assert by_name["Curl"]["target_weight_kg"] == 18.0
+    assert by_name["Plank"]["target_weight_kg"] == 0.0
+
+
+def test_progression_focus_recovery_on_high_rpe():
+    """avg_rpe >= 9 must force recovery focus."""
+    from app.fitness import _compute_progression_targets
+    _, focus = _compute_progression_targets(
+        {"avg_rpe": 9, "exercises": [{"name": "Squat", "sets": 3, "reps": 5, "weight_kg": 80, "rpe": 9}]}
+    )
+    assert focus == "recovery"

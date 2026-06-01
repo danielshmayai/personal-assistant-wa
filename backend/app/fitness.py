@@ -653,40 +653,92 @@ def _normalize_workout(parsed: dict) -> dict:
     }
 
 
+def _compute_progression_targets(workout: dict) -> tuple[list, str]:
+    """Deterministically compute next-session targets from per-exercise RPE.
+
+    Progressive-overload rules (no LLM — pure arithmetic):
+      RPE ≤ 6      → weight +5%
+      RPE 7-8      → weight +2.5%
+      RPE = 9      → hold weight, focus on form
+      RPE ≥ 10     → deload 10%
+      bodyweight   → +1-2 reps
+    Returns (targets, focus) where focus ∈ progressive_overload|maintain|deload|recovery.
+    """
+    targets: list = []
+    deload_any = False
+    increase_any = False
+    hold_any = False
+
+    for ex in workout.get("exercises") or []:
+        name = str(ex.get("name") or "").strip()
+        if not name:
+            continue
+        rpe = _num(ex.get("rpe")) or _num(workout.get("avg_rpe"))
+        weight = _num(ex.get("weight_kg"))
+        reps = int(_num(ex.get("reps")))
+
+        if weight <= 0:
+            # Bodyweight / cardio — progress by reps
+            target_reps = reps + 2 if reps > 0 else 0
+            targets.append({
+                "name": name,
+                "target_weight_kg": 0.0,
+                "target_reps": target_reps,
+                "rationale": "תרגיל משקל גוף — הוסף 1-2 חזרות בכל סט." if target_reps else "המשך באותו נפח.",
+            })
+            if target_reps > reps:
+                increase_any = True
+            continue
+
+        if rpe and rpe >= 10:
+            new_w = round(weight * 0.90, 1)
+            targets.append({"name": name, "target_weight_kg": new_w, "target_reps": reps,
+                            "rationale": f"RPE 10 — הורדת משקל ל-{new_w} קג להתאוששות."})
+            deload_any = True
+        elif rpe and rpe >= 9:
+            targets.append({"name": name, "target_weight_kg": weight, "target_reps": reps,
+                            "rationale": "RPE 9 — שמור משקל, התמקד בטכניקה."})
+            hold_any = True
+        elif rpe and rpe >= 7:
+            new_w = round(weight * 1.025, 1)
+            targets.append({"name": name, "target_weight_kg": new_w, "target_reps": reps,
+                            "rationale": f"RPE {rpe:.0f} — העלה ל-{new_w} קג (+2.5%)."})
+            increase_any = True
+        else:
+            # RPE ≤ 6 (or unknown but with weight) → +5%
+            new_w = round(weight * 1.05, 1)
+            targets.append({"name": name, "target_weight_kg": new_w, "target_reps": reps,
+                            "rationale": f"RPE נמוך — העלה ל-{new_w} קג (+5%)."})
+            increase_any = True
+
+    avg_rpe = _num(workout.get("avg_rpe"))
+    if avg_rpe >= 9 or deload_any:
+        focus = "recovery" if avg_rpe >= 9 else "deload"
+    elif increase_any:
+        focus = "progressive_overload"
+    elif hold_any:
+        focus = "maintain"
+    else:
+        focus = "maintain"
+    return targets, focus
+
+
 _EVALUATE_INSTRUCTIONS = """\
-You are a personal trainer AI. Evaluate the completed workout and give progressive-overload recommendations.
+You are a personal trainer AI. Write a short Hebrew evaluation of the completed workout.
+The progressive-overload targets are ALREADY COMPUTED for you — do NOT recompute weights or reps.
 Respond with ONLY a single JSON object — no markdown, no code fences.
 
 Schema:
 {
   "ai_summary": "<1-2 sentence Hebrew summary of the workout and key observations>",
-  "ai_next_rec": {
-    "summary": "<1-2 sentence Hebrew recommendation for next session>",
-    "focus": "<one of: progressive_overload | deload | maintain | recovery>",
-    "targets": [
-      {
-        "name": "<exercise name>",
-        "target_weight_kg": <number>,
-        "target_reps": <int>,
-        "rationale": "<Hebrew, one sentence>"
-      }
-    ]
-  }
+  "next_summary": "<1-2 sentence Hebrew recommendation for the next session>"
 }
 
-Progressive-overload rules (apply per exercise based on RPE):
-- RPE ≤ 6: increase weight by 5% next session.
-- RPE 7-8: increase weight by 2.5% next session.
-- RPE ≥ 9: hold weight, focus on form; if RPE=10 suggest deload.
-- Bodyweight exercises (weight_kg=0): increase reps by 1-2.
-- Cardio: increase distance by 5% or reduce pace by 5 sec/km.
-
-MANDATORY CONSTRAINTS (always enforce):
-- NEVER recommend heavy barbell back squat, conventional deadlift, or military press.
-- ALWAYS emphasize scapular stabilizer exercises (face pulls, band pull-aparts, serratus wall slides, prone Y/T/W) if this is a strength session.
-- Include a hydration reminder (Gilbert's Syndrome) in ai_summary.
-- If avg_rpe ≥ 9, recommend recovery focus in ai_next_rec.focus.
-- If neck/shoulder exercises are present, add a neutral-neck form cue."""
+MANDATORY (always include in ai_summary):
+- A hydration reminder (Gilbert's Syndrome).
+- If avg_rpe ≥ 9, mention recovery/rest is the priority.
+- If neck/shoulder exercises are present, add a neutral-neck form cue.
+- If this is a strength session, encourage scapular stabilizer work (face pulls, band pull-aparts, prone Y/T/W)."""
 
 
 async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
@@ -694,19 +746,44 @@ async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
     from app.llm import get_gemini_llm
     from app.fitness_profile import render_profile_block
 
+    # Deterministic math — never delegated to the LLM.
+    targets, focus = _compute_progression_targets(workout)
+
     metrics = latest_body_metrics(chat_id)
     profile = render_profile_block(metrics)
 
-    llm = get_gemini_llm()
-    messages = [
-        SystemMessage(content=f"{profile}\n\n{_EVALUATE_INSTRUCTIONS}"),
-        HumanMessage(content=f"Completed workout:\n{json.dumps(workout, ensure_ascii=False, indent=2)}"),
-    ]
-    resp = await llm.ainvoke(messages)
-    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    # Hand the computed targets to the LLM so its prose matches the numbers.
+    context = {
+        "title": workout.get("title"),
+        "workout_type": workout.get("workout_type"),
+        "avg_rpe": workout.get("avg_rpe"),
+        "exercises": workout.get("exercises"),
+        "computed_targets": targets,
+        "focus": focus,
+    }
+
+    ai_summary = ""
+    next_summary = ""
+    try:
+        llm = get_gemini_llm()
+        messages = [
+            SystemMessage(content=f"{profile}\n\n{_EVALUATE_INSTRUCTIONS}"),
+            HumanMessage(content=f"Completed workout (targets already computed):\n{json.dumps(context, ensure_ascii=False, indent=2)}"),
+        ]
+        resp = await llm.ainvoke(messages)
+        raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+        ai_summary = str(raw.get("ai_summary") or "")
+        next_summary = str(raw.get("next_summary") or "")
+    except Exception as exc:
+        logger.warning("evaluate_workout narrative failed, using targets only: %s", exc)
+
     return {
-        "ai_summary": str(raw.get("ai_summary") or ""),
-        "ai_next_rec": raw.get("ai_next_rec") or {},
+        "ai_summary": ai_summary,
+        "ai_next_rec": {
+            "summary": next_summary,
+            "focus": focus,
+            "targets": targets,
+        },
     }
 
 
@@ -864,90 +941,110 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
     metrics = latest_body_metrics(fkey)
     profile = render_profile_block(metrics)
 
-    # Compute stats the LLM doesn't need to guess
+    # ── Deterministic stats (never guessed by the LLM) ──
     today_date = _user_today()
     days_since_last = -1
     last_avg_rpe = None
     weekly_done = 0
     last_next_rec: dict = {}
+    trained_dates: set = set()
 
     for day in recent:
         day_date = date.fromisoformat(day["date"]) if isinstance(day.get("date"), str) else None
-        if day_date:
+        if day_date and day.get("count", 0) > 0:
+            trained_dates.add(day_date)
             days_ago = (today_date - day_date).days
-            if day.get("count", 0) > 0:
-                if days_since_last == -1:
-                    days_since_last = days_ago
-                    last_avg_rpe = day.get("avg_rpe")
-                    sessions = day.get("sessions") or []
-                    if sessions:
-                        last_next_rec = sessions[-1].get("ai_next_rec") or {}
-                if days_ago < 7:
-                    weekly_done += day.get("count", 0)
+            if days_since_last == -1:
+                days_since_last = days_ago
+                last_avg_rpe = day.get("avg_rpe")
+                sessions = day.get("sessions") or []
+                if sessions:
+                    last_next_rec = sessions[-1].get("ai_next_rec") or {}
+            if days_ago < 7:
+                weekly_done += day.get("count", 0)
 
-    history_summary = json.dumps(recent[:7], ensure_ascii=False, indent=2) if recent else "No history yet."
-    last_rec_json = json.dumps(last_next_rec, ensure_ascii=False, indent=2) if last_next_rec else "None"
+    # Consecutive training days ending today (for the 3-in-a-row rest rule)
+    consecutive = 0
+    cursor = today_date
+    while cursor in trained_dates:
+        consecutive += 1
+        cursor = cursor - timedelta(days=1)
 
+    # ── Deterministic readiness decision ──
+    rpe = last_avg_rpe if last_avg_rpe is not None else 0
+    if days_since_last == 0 and (rpe >= 8 or consecutive >= 3):
+        readiness, readiness_he, workout_type = "rest", "מנוחה", "rest"
+    elif days_since_last == 0 or rpe >= 8:
+        readiness, readiness_he, workout_type = "light", "אימון קל", "cardio"
+    else:
+        readiness, readiness_he, workout_type = "ready", "מוכן לאימון", "strength"
+
+    # ── Deterministic key_exercises from last session's computed targets ──
+    key_exercises: list = []
+    if readiness != "rest":
+        for t in (last_next_rec.get("targets") or [])[:3]:
+            if t.get("name"):
+                key_exercises.append({
+                    "name": str(t["name"]),
+                    "sets": 3,
+                    "reps": int(_num(t.get("target_reps") or 10)),
+                    "weight_kg": round(_num(t.get("target_weight_kg") or 0), 1),
+                })
+
+    # ── LLM writes ONLY the narrative (title + rationale), and fills exercises
+    #    only when we have no prior targets to carry forward. ──
+    need_exercises = readiness != "rest" and not key_exercises
     instructions = f"""\
-You are a personal trainer AI. Today is {today_str}.
-Days since last workout: {days_since_last if days_since_last >= 0 else 'never'}.
-Last session avg RPE: {last_avg_rpe if last_avg_rpe is not None else 'unknown'}.
-This week: {weekly_done}/{FITNESS_WEEKLY_SESSION_TARGET} sessions done.
-Last session next-rec targets: {last_rec_json}
+You are a personal trainer AI writing today's recommendation in Hebrew.
+The readiness decision and weekly stats are ALREADY DECIDED — do NOT change them.
+Today's readiness: {readiness} ({readiness_he}). Workout type: {workout_type}.
+This week: {weekly_done}/{FITNESS_WEEKLY_SESSION_TARGET} sessions. Days since last: {days_since_last if days_since_last >= 0 else 'never'}. Last avg RPE: {rpe or 'unknown'}.
 
-Return ONLY a JSON object (no markdown fences) with these exact keys:
+Return ONLY a JSON object (no markdown fences):
 {{
-  "readiness": "ready" | "light" | "rest",
-  "readiness_he": "<Hebrew 2-3 words, e.g. מוכן לאימון / אימון קל / מנוחה>",
-  "workout_type": "strength" | "cardio" | "swimming" | "rest",
-  "title": "<Hebrew workout title, e.g. אימון כוח עליון>",
-  "duration_min": <int>,
-  "rationale": "<Hebrew 1-2 sentences — why this workout today, mentioning recovery + hydration>",
-  "weekly_done": {weekly_done},
-  "weekly_target": {FITNESS_WEEKLY_SESSION_TARGET},
-  "key_exercises": [
-    {{"name": "<name>", "sets": <int>, "reps": <int>, "weight_kg": <number>}}
-  ],
-  "days_since_last": {days_since_last},
-  "last_avg_rpe": {last_avg_rpe if last_avg_rpe is not None else "null"}
+  "title": "<Hebrew workout title matching the readiness, e.g. אימון כוח עליון / מנוחה אקטיבית>",
+  "duration_min": <int, 0 if rest>,
+  "rationale": "<Hebrew 1-2 sentences — why this fits today, mention recovery + hydration>"{(''',
+  "key_exercises": [{"name": "<name>", "sets": <int>, "reps": <int>, "weight_kg": <number>}]''') if need_exercises else ''}
 }}
+{('''Rules for key_exercises (3 items): NEVER heavy back squat/deadlift/military press; ALWAYS include one scapular stabilizer (face pulls / band pull-aparts / prone Y-T-W).''') if need_exercises else ''}"""
 
-Rules:
-- readiness="rest" if days_since_last==0 AND last_avg_rpe>=8, OR days_since_last==0 AND today is the 3rd consecutive day.
-- readiness="light" if days_since_last==0 OR last_avg_rpe>=8.
-- readiness="ready" otherwise (including never trained before).
-- key_exercises: exactly 3 exercises from last_next_rec targets when available, otherwise suggest appropriate ones.
-- NEVER include heavy barbell back squat, conventional deadlift, or military press.
-- ALWAYS include at least one scapular stabilizer in key_exercises for strength workouts.
-- If readiness="rest", return empty key_exercises and workout_type="rest"."""
-
-    llm = get_gemini_llm()
-    messages = [
-        SystemMessage(content=f"{profile}\n\n{instructions}"),
-        HumanMessage(content=f"Training history (last 7 days):\n{history_summary}"),
-    ]
-    resp = await llm.ainvoke(messages)
-    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    title = "מנוחה" if readiness == "rest" else "אימון מוצע"
+    duration_min = 0 if readiness == "rest" else 45
+    rationale = ""
+    try:
+        llm = get_gemini_llm()
+        messages = [
+            SystemMessage(content=f"{profile}\n\n{instructions}"),
+            HumanMessage(content="Generate today's recommendation."),
+        ]
+        resp = await llm.ainvoke(messages)
+        raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+        title = str(raw.get("title") or title)
+        duration_min = int(_num(raw.get("duration_min"))) if raw.get("duration_min") is not None else duration_min
+        rationale = str(raw.get("rationale") or "")
+        if need_exercises:
+            for e in (raw.get("key_exercises") or [])[:3]:
+                if e.get("name"):
+                    key_exercises.append({
+                        "name": str(e["name"]),
+                        "sets": int(_num(e.get("sets") or 3)),
+                        "reps": int(_num(e.get("reps") or 10)),
+                        "weight_kg": round(_num(e.get("weight_kg") or 0), 1),
+                    })
+    except Exception as exc:
+        logger.warning("daily-rec narrative failed, using deterministic core: %s", exc)
 
     result: dict = {
-        "readiness": str(raw.get("readiness") or "ready"),
-        "readiness_he": str(raw.get("readiness_he") or ""),
-        "workout_type": str(raw.get("workout_type") or "strength"),
-        "title": str(raw.get("title") or "אימון מוצע"),
-        "duration_min": int(_num(raw.get("duration_min") or 45)),
-        "rationale": str(raw.get("rationale") or ""),
+        "readiness": readiness,
+        "readiness_he": readiness_he,
+        "workout_type": workout_type,
+        "title": title,
+        "duration_min": duration_min,
+        "rationale": rationale,
         "weekly_done": weekly_done,
         "weekly_target": FITNESS_WEEKLY_SESSION_TARGET,
-        "key_exercises": [
-            {
-                "name": str(e.get("name") or ""),
-                "sets": int(_num(e.get("sets") or 3)),
-                "reps": int(_num(e.get("reps") or 10)),
-                "weight_kg": round(_num(e.get("weight_kg") or 0), 1),
-            }
-            for e in (raw.get("key_exercises") or [])[:3]
-            if e.get("name")
-        ],
+        "key_exercises": key_exercises,
         "days_since_last": days_since_last,
         "last_avg_rpe": last_avg_rpe,
         "cached_at": today_str,
