@@ -1023,6 +1023,25 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .nutri-upload .up-hint { font-size: 12px; color: var(--text3); }
 .nutri-text-row { display: flex; gap: 8px; align-items: center; }
 .nutri-busy { font-size: 13px; color: var(--accent); padding: 6px 2px; }
+.meal-suggest-btn {
+  width: 100%; padding: 12px; border: 1.5px dashed var(--accent); border-radius: var(--radius-sm);
+  background: var(--accent-dim); color: var(--accent); font-size: 14px; font-weight: 600;
+  font-family: inherit; cursor: pointer; transition: background .15s, opacity .15s;
+  direction: rtl;
+}
+.meal-suggest-btn:hover { background: var(--accent); color: #fff; }
+.meal-suggest-btn:disabled { opacity: .55; cursor: default; }
+.meal-suggest-card {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 14px; margin-top: 10px; background: var(--bg2);
+}
+.meal-suggest-intro { font-size: 13px; color: var(--text2); margin-bottom: 10px; direction: rtl; text-align: right; }
+.meal-suggest-item { padding: 10px 0; border-top: 1px solid var(--border); }
+.meal-suggest-item:first-of-type { border-top: none; padding-top: 0; }
+.meal-suggest-name { font-size: 14px; font-weight: 700; color: var(--text); direction: rtl; text-align: right; }
+.meal-suggest-desc { font-size: 13px; color: var(--text2); margin: 3px 0 6px; direction: rtl; text-align: right; line-height: 1.5; }
+.meal-suggest-macros { display: flex; gap: 10px; flex-wrap: wrap; }
+.meal-suggest-macro { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: var(--bg3); color: var(--text2); }
 
 .meal-item {
   display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border);
@@ -1678,6 +1697,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <button class="add-btn" onclick="submitNutritionText()">+ Log</button>
           </div>
           <div id="nutri-busy" class="nutri-busy" style="display:none">Analyzing meal…</div>
+        </div>
+
+        <div class="section-block">
+          <button class="meal-suggest-btn" id="meal-suggest-btn" onclick="loadMealSuggestion()">
+            🍽️ המלץ על ארוחה להשלמת היעד
+          </button>
+          <div id="meal-suggest-result" style="display:none"></div>
         </div>
 
         <div class="section-block">
@@ -4175,6 +4201,43 @@ function setHistoryRange(days) {
   _historyDays = days;
   document.querySelectorAll('.hist-range-btn').forEach(b => b.classList.toggle('active', +b.dataset.days === days));
   loadNutritionHistory();
+}
+
+async function loadMealSuggestion() {
+  const btn = document.getElementById('meal-suggest-btn');
+  const resultEl = document.getElementById('meal-suggest-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ מחשב המלצות…';
+  resultEl.style.display = 'none';
+  try {
+    const cid = encodeURIComponent(currentChatId || 'web');
+    const data = await apiGet(`/api/nutrition/meal-suggestion?chat_id=${cid}`);
+    const suggestions = data.suggestions || [];
+    if (!suggestions.length) {
+      resultEl.innerHTML = '<div class="dash-empty">לא נמצאו המלצות כרגע.</div>';
+    } else {
+      const introHtml = data.intro
+        ? `<div class="meal-suggest-intro">${_esc(data.intro)}</div>` : '';
+      const itemsHtml = suggestions.map(s => `
+        <div class="meal-suggest-item">
+          <div class="meal-suggest-name">${_esc(s.name)}</div>
+          <div class="meal-suggest-desc">${_esc(s.description)}</div>
+          <div class="meal-suggest-macros">
+            <span class="meal-suggest-macro">🥩 ${s.est_protein_g}g חלבון</span>
+            <span class="meal-suggest-macro">🍞 ${s.est_carbs_g}g פחמימות</span>
+            <span class="meal-suggest-macro">🔥 ${s.est_calories_kcal} kcal</span>
+          </div>
+        </div>`).join('');
+      resultEl.innerHTML = `<div class="meal-suggest-card">${introHtml}${itemsHtml}</div>`;
+    }
+    resultEl.style.display = 'block';
+    btn.textContent = '🔄 המלצה חדשה';
+  } catch(e) {
+    resultEl.innerHTML = `<div class="dash-empty" style="color:var(--error)">שגיאה: ${_esc(e.message || String(e))}</div>`;
+    resultEl.style.display = 'block';
+    btn.textContent = '🍽️ המלץ על ארוחה להשלמת היעד';
+  }
+  btn.disabled = false;
 }
 
 async function loadNutritionHistory() {

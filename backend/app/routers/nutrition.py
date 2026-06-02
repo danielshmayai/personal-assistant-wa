@@ -104,6 +104,16 @@ async def get_history(
     return {"days": nutrition.history(chat_id, days)}
 
 
+@router.get("/api/nutrition/meal-suggestion")
+async def meal_suggestion(chat_id: str = Query(...), _: str = Depends(_require_token)):
+    try:
+        result = await nutrition.suggest_meals(chat_id)
+    except Exception as exc:
+        logger.exception("meal-suggestion failed")
+        raise HTTPException(status_code=502, detail=f"Could not generate suggestion: {exc}")
+    return result
+
+
 @router.delete("/api/nutrition/{log_id}")
 async def delete_entry(
     log_id: int,

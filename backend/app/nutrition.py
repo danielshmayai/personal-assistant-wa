@@ -372,3 +372,105 @@ async def parse_meal_image(image_bytes: bytes, mime_type: str = "image/jpeg") ->
     ]
     resp = await llm.ainvoke(messages)
     return _normalize(_extract_json(resp.content if hasattr(resp, "content") else str(resp)))
+
+
+async def suggest_meals(chat_id: str) -> dict:
+    """Return 2-3 meal suggestions to close today's remaining nutritional gap.
+
+    Factors in: current time-of-day (meal type), protein still needed,
+    carbs already eaten (goal: keep low), and total calories so far.
+    Returns structured JSON so the UI can render it as cards.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from app.llm import get_gemini_llm
+    from app.config import USER_TIMEZONE
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+
+    tz = ZoneInfo(USER_TIMEZONE)
+    now = datetime.now(tz=tz)
+    hour = now.hour
+    time_str = now.strftime("%H:%M")
+
+    if hour < 10:
+        meal_context = "בוקר"
+    elif hour < 13:
+        meal_context = "ארוחת ביניים בוקר / צהריים מוקדם"
+    elif hour < 16:
+        meal_context = "צהריים"
+    elif hour < 19:
+        meal_context = "ארוחת ביניים אחה\"צ"
+    else:
+        meal_context = "ערב"
+
+    today = list_today(chat_id)
+    totals = today["totals"]
+    protein_done = round(totals["protein"], 1)
+    carbs_done = round(totals["carbs"], 1)
+    cals_done = round(totals["calories"], 1)
+    protein_left = max(0, PROTEIN_TARGET_G - protein_done)
+    meals_eaten = [m["meal_description"] for m in today["meals"]]
+
+    facts = {
+        "current_time": time_str,
+        "meal_occasion": meal_context,
+        "protein_eaten_g": protein_done,
+        "protein_target_g": PROTEIN_TARGET_G,
+        "protein_still_needed_g": protein_left,
+        "carbs_eaten_g": carbs_done,
+        "calories_eaten_kcal": cals_done,
+        "meals_eaten_today": meals_eaten,
+    }
+
+    instructions = """\
+You are a personal nutrition coach. Based on the daily intake so far and the current time,
+suggest 2-3 specific meals or snacks (appropriate for the meal occasion) to help reach
+the daily protein target while keeping carbs low.
+
+Respond with ONLY a valid JSON object — no markdown, no code fences.
+
+Schema:
+{
+  "intro": "<1 sentence Hebrew intro summarising the gap, e.g. 'נשאר לך 25 גרם חלבון להשלים — הנה הצעות לארוחת ערב:'>",
+  "suggestions": [
+    {
+      "name": "<meal name in Hebrew>",
+      "description": "<Hebrew, 1-2 sentences: what it contains and why it fits>",
+      "est_protein_g": <number>,
+      "est_carbs_g": <number>,
+      "est_calories_kcal": <number>
+    }
+  ]
+}
+
+Rules:
+- Exactly 2-3 suggestions.
+- Prioritise high-protein, low-carb options (lean meat, eggs, cottage, Greek yogurt, tuna, tofu).
+- Portion sizes and content must be realistic and practical.
+- If protein_still_needed_g < 10, suggest light protein-rich snacks only.
+- If it is late evening (after 21:00), suggest lighter options.
+- All text (name, description, intro) must be in Hebrew."""
+
+    llm = get_gemini_llm()
+    messages = [
+        SystemMessage(content=instructions),
+        HumanMessage(content=f"Today's intake so far:\n{json.dumps(facts, ensure_ascii=False, indent=2)}"),
+    ]
+    resp = await llm.ainvoke(messages)
+    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    return {
+        "intro": str(raw.get("intro") or ""),
+        "suggestions": [
+            {
+                "name": str(s.get("name") or ""),
+                "description": str(s.get("description") or ""),
+                "est_protein_g": _num(s.get("est_protein_g")),
+                "est_carbs_g": _num(s.get("est_carbs_g")),
+                "est_calories_kcal": _num(s.get("est_calories_kcal")),
+            }
+            for s in (raw.get("suggestions") or [])[:3]
+            if s.get("name")
+        ],
+        "protein_left": protein_left,
+        "meal_occasion": meal_context,
+    }
