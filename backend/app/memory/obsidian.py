@@ -90,6 +90,7 @@ def _frontmatter_block(category: str, entity: str) -> str:
         f"entity: {entity}\n"
         f"created: {datetime.now(timezone.utc).isoformat()}\n"
         "hidden: false\n"
+        f"tags: [{category}]\n"
         "---\n\n"
         f"# {entity}\n\n"
     )
@@ -133,6 +134,37 @@ def _is_hidden(path: Path) -> bool:
 
 # ── Public API ─────────────────────────────────────────────────────────────
 
+def _vault_entity_names() -> list[str]:
+    """Return all entity names (stem of every .md file) currently in the vault,
+    longest first so multi-word names match before their substrings."""
+    if not VAULT_ROOT.exists():
+        return []
+    names = [p.stem for p in VAULT_ROOT.rglob("*.md") if not p.stem.startswith(".")]
+    # Longest first to avoid partial replacements (e.g. "Tel Aviv" before "Aviv")
+    return sorted(set(names), key=len, reverse=True)
+
+
+def _auto_link_content(content: str, skip_entity: str) -> str:
+    """Inject [[wikilinks]] for any vault entity name mentioned in content.
+
+    Skips the note's own entity name (avoid self-referencing link).
+    Only replaces bare mentions — already-linked [[...]] text is left untouched.
+    Uses whole-word, case-insensitive matching (respects Hebrew words too).
+    """
+    for name in _vault_entity_names():
+        if name == skip_entity or len(name) < 3:
+            continue
+        # Skip names that are already wikilinked anywhere in the content
+        if f"[[{name}]]" in content or f"[[{name}|" in content:
+            continue
+        # Whole-word boundary — works for both Latin and Hebrew characters
+        pattern = rf"(?<!\[)(?<!\w){re.escape(name)}(?!\w)(?!\])"
+        replaced = re.sub(pattern, f"[[{name}]]", content, count=1, flags=re.IGNORECASE)
+        if replaced != content:
+            content = replaced
+    return content
+
+
 def save_fact(category: str, entity: str, content: str) -> str:
     """Append a timestamped fact section to `{category}/{entity}.md`.
 
@@ -144,7 +176,8 @@ def save_fact(category: str, entity: str, content: str) -> str:
     except ValueError as e:
         return f"Could not save: {e}"
 
-    section = f"## {_now_iso()}\n{content.strip()}\n\n"
+    linked_content = _auto_link_content(content.strip(), skip_entity=path.stem)
+    section = f"## {_now_iso()}\n{linked_content}\n\n"
 
     with _lock_for(path):
         _ensure_parent(path)
