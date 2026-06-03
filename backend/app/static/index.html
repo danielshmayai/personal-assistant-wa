@@ -3893,8 +3893,13 @@ async function loadCalendarEvents() {
       const dt = new Date(dateStr + 'T00:00:00');
       const isToday = dateStr === today;
       const label = isToday ? 'Today' : dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-      const hdr = document.createElement('div');
-      hdr.style.cssText = 'font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:10px 0 4px;';
+      const [gcYear, gcMonth, gcDay] = dateStr.split('-').map(Number);
+      const gcalUrl = `https://calendar.google.com/calendar/r/day/${gcYear}/${gcMonth}/${gcDay}`;
+      const hdr = document.createElement('a');
+      hdr.href = gcalUrl;
+      hdr.target = '_blank';
+      hdr.rel = 'noopener noreferrer';
+      hdr.style.cssText = 'display:block;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:10px 0 4px;text-decoration:none;';
       hdr.textContent = label;
       calList.appendChild(hdr);
       byDate[dateStr].forEach(ev => {
