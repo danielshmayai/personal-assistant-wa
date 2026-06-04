@@ -182,6 +182,15 @@ def _extract_chat_id(body: dict) -> str:
     return payload.get("from", "") or to
 
 
+async def _restart_backend(chat_id: str) -> None:
+    """Send an ACK via WhatsApp then exit — Docker restart: always brings the container back."""
+    import sys
+    await send_whatsapp_message(chat_id, "[ *danidin* ] 🔄 Restarting backend...")
+    await asyncio.sleep(1)
+    logger.info("!restart command received — exiting for Docker restart")
+    sys.exit(0)
+
+
 @router.post("/webhook/waha")
 async def waha_webhook(request: Request, secret: str = Query(default="")):
     """
@@ -234,6 +243,9 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
 
     # --- SELF-CHAT: enqueue for async processing ---
     if _is_self_chat(body):
+        if text.strip().lower() == "!restart":
+            asyncio.create_task(_restart_backend(chat_id))
+            return Response(status_code=202)
         logger.info("Self-chat: %.80s...", full_text)
         enqueue(message_id, chat_id, full_text)
         return Response(status_code=202)

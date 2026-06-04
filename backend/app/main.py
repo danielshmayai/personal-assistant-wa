@@ -163,6 +163,25 @@ def _log_security_warnings() -> None:
         )
 
 
+async def _nightly_restart_loop() -> None:
+    """Sleep until 04:00 local time, then exit so Docker restarts the backend fresh."""
+    import sys
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from app.config import USER_TIMEZONE
+    tz = ZoneInfo(USER_TIMEZONE)
+    while True:
+        now = datetime.now(tz)
+        target = now.replace(hour=4, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        delay = (target - now).total_seconds()
+        logger.info("Nightly restart scheduled in %.0f s (at %s)", delay, target.isoformat())
+        await asyncio.sleep(delay)
+        logger.info("Nightly restart: exiting for Docker restart")
+        sys.exit(0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _setup_langsmith()
@@ -207,7 +226,9 @@ async def lifespan(app: FastAPI):
     await recover_jobs()
     from app.scheduled_jobs import start as start_scheduler, stop as stop_scheduler
     await start_scheduler()
+    nightly_task = asyncio.create_task(_nightly_restart_loop(), name="nightly_restart")
     yield
+    nightly_task.cancel()
     await stop_scheduler()
     await stop_worker()
 
