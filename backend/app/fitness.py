@@ -79,13 +79,18 @@ def _clean_exercises(raw) -> list:
 
 
 def _total_volume(exercises: list) -> float:
-    """Σ sets × reps × weight_kg for all exercises."""
+    """Σ sets × reps × weight_kg (rep-based) or sets × (duration_sec/30) × weight_kg (timed)."""
     total = 0.0
     for ex in exercises:
         s = _num(ex.get("sets"))
         r = _num(ex.get("reps"))
         w = _num(ex.get("weight_kg"))
-        total += s * r * w
+        d = _num(ex.get("duration_sec"))
+        if r > 0:
+            total += s * r * w
+        elif d > 0 and w > 0:
+            # Timed + weighted: treat 30 sec as 1 rep equivalent
+            total += s * (d / 30.0) * w
     return round(total, 1)
 
 
@@ -607,6 +612,9 @@ def _apply_volume_fallback(parsed: dict, text: str = "") -> dict:
     synthesise a single Circuit/HIIT exercise row so the volume is never silently 0."""
     if _total_volume(parsed["exercises"]) > 0 or parsed.get("is_estimated_volume"):
         return parsed  # already handled
+    # If exercises have duration_sec > 0 but no weight, don't overwrite them with a synthetic row
+    if any(_num(ex.get("duration_sec")) > 0 for ex in parsed.get("exercises") or []):
+        return parsed
 
     # Detect a primary weight anywhere in the original text (kg / קג / קילו)
     m = re.search(r"(\d+(?:\.\d+)?)\s*(?:kg|קג|קילו|kilo)", text, re.IGNORECASE)
@@ -676,6 +684,32 @@ def _compute_progression_targets(workout: dict) -> tuple[list, str]:
         rpe = _num(ex.get("rpe")) or _num(workout.get("avg_rpe"))
         weight = _num(ex.get("weight_kg"))
         reps = int(_num(ex.get("reps")))
+        duration_sec = int(_num(ex.get("duration_sec")))
+
+        # Timed exercise (duration_sec > 0, reps = 0) — progress by time or weight
+        if reps == 0 and duration_sec > 0:
+            if weight <= 0:
+                new_dur = duration_sec + 5
+                targets.append({
+                    "name": name,
+                    "target_weight_kg": 0.0,
+                    "target_reps": 0,
+                    "target_duration_sec": new_dur,
+                    "rationale": f"תרגיל מתוזמן — הוסף 5 שניות ({duration_sec}s → {new_dur}s).",
+                })
+            else:
+                if rpe and rpe >= 9:
+                    targets.append({"name": name, "target_weight_kg": weight, "target_reps": 0,
+                                    "target_duration_sec": duration_sec,
+                                    "rationale": "RPE גבוה — שמור משקל וזמן."})
+                    hold_any = True
+                else:
+                    new_dur = duration_sec + 5
+                    targets.append({"name": name, "target_weight_kg": weight, "target_reps": 0,
+                                    "target_duration_sec": new_dur,
+                                    "rationale": f"הוסף 5 שניות ({duration_sec}s → {new_dur}s), שמור משקל {weight}kg."})
+                    increase_any = True
+            continue
 
         if weight <= 0:
             # Bodyweight / cardio — progress by reps

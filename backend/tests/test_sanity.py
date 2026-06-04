@@ -810,6 +810,32 @@ def test_progression_focus_recovery_on_high_rpe():
     assert focus == "recovery"
 
 
+def test_timed_exercises_volume_and_progression():
+    """Timed HIIT exercises (reps=0, duration_sec>0) must produce non-zero volume
+    and duration-based progression targets."""
+    from app.fitness import _total_volume, _compute_progression_targets, _apply_volume_fallback
+
+    timed = [
+        {"name": "Lat Pulldown", "sets": 4, "reps": 0, "weight_kg": 20.0, "duration_sec": 40, "rpe": 8.0, "notes": ""},
+        {"name": "Mountain Climbers", "sets": 4, "reps": 0, "weight_kg": 0.0, "duration_sec": 40, "rpe": 9.0, "notes": ""},
+    ]
+    # Volume: 4*(40/30)*20 + 0 = ~106.7
+    vol = _total_volume(timed)
+    assert vol > 0, f"Expected timed volume > 0, got {vol}"
+
+    # Progression targets should use target_duration_sec not target_reps
+    workout = {"avg_rpe": 8.0, "exercises": timed}
+    targets, focus = _compute_progression_targets(workout)
+    by_name = {t["name"]: t for t in targets}
+    assert by_name["Lat Pulldown"]["target_duration_sec"] == 45
+    assert by_name["Mountain Climbers"]["target_duration_sec"] == 45
+
+    # Fallback should NOT replace timed exercises with synthetic row
+    parsed = {"exercises": timed, "is_estimated_volume": False}
+    result = _apply_volume_fallback(parsed, "HIIT workout")
+    assert len(result["exercises"]) == 2, "Timed exercises should not be replaced by fallback"
+
+
 def test_episode_gate_skips_trivial_exchanges():
     """Trivial acknowledgements must not trigger an LLM summary / episode row."""
     from app.memory.episodes import _is_trivial

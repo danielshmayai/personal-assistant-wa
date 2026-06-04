@@ -4666,7 +4666,12 @@ function _renderFitnessToday(data) {
       ${w.ai_summary ? `<div class="fit-item-summary">💡 ${_esc(w.ai_summary)}</div>` : ''}
       ${(w.ai_next_rec && w.ai_next_rec.targets && w.ai_next_rec.targets.length) ? `
         <div class="fit-item-targets"><b style="font-size:11px">Next targets:</b><ul>
-          ${w.ai_next_rec.targets.slice(0,3).map(t => `<li>• ${_esc(t.name)}: ${t.target_weight_kg}kg × ${t.target_reps}</li>`).join('')}
+          ${w.ai_next_rec.targets.slice(0,3).map(t => {
+            const vol = t.target_duration_sec > 0
+              ? `${t.target_weight_kg > 0 ? t.target_weight_kg + 'kg ' : ''}${t.target_duration_sec}s`
+              : `${t.target_weight_kg}kg × ${t.target_reps}`;
+            return `<li>• ${_esc(t.name)}: ${vol}</li>`;
+          }).join('')}
         </ul></div>` : ''}
       <button class="del-btn" style="margin-top:8px;font-size:11px" onclick="deleteFitnessEntry(${w.id})">Delete</button>
     </div>
@@ -4833,9 +4838,12 @@ function _renderAiSummary(evaluation, entry) {
     return;
   }
   const targets = (evaluation.ai_next_rec && evaluation.ai_next_rec.targets) || [];
-  const tHtml = targets.length ? `<ul style="margin-top:8px">${targets.slice(0,4).map(t =>
-    `<li>• ${_esc(t.name)}: ${t.target_weight_kg}kg × ${t.target_reps} — <em>${_esc(t.rationale || '')}</em></li>`
-  ).join('')}</ul>` : '';
+  const tHtml = targets.length ? `<ul style="margin-top:8px">${targets.slice(0,4).map(t => {
+    const vol = t.target_duration_sec > 0
+      ? `${t.target_weight_kg > 0 ? t.target_weight_kg + 'kg ' : ''}${t.target_duration_sec}s`
+      : `${t.target_weight_kg}kg × ${t.target_reps}`;
+    return `<li>• ${_esc(t.name)}: ${vol} — <em>${_esc(t.rationale || '')}</em></li>`;
+  }).join('')}</ul>` : '';
   el.innerHTML = feedbackHtml + `
     <div class="fit-ai-card">
       <div class="fit-ai-title">🤖 AI Coach</div>
