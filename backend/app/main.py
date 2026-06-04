@@ -227,7 +227,11 @@ async def lifespan(app: FastAPI):
     from app.scheduled_jobs import start as start_scheduler, stop as stop_scheduler
     await start_scheduler()
     nightly_task = asyncio.create_task(_nightly_restart_loop(), name="nightly_restart")
+    from app.proactive.flows import start_flows, stop_flows
+    wa_chat_ids = [MY_WHATSAPP_ID] if MY_WHATSAPP_ID else []
+    await start_flows(wa_chat_ids)
     yield
+    await stop_flows()
     nightly_task.cancel()
     await stop_scheduler()
     await stop_worker()
