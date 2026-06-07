@@ -17,7 +17,7 @@ Log "Runner restart watcher started (polling every 10s for $triggerFile)"
 while ($true) {
     if (Test-Path $triggerFile) {
         Remove-Item $triggerFile -Force -ErrorAction SilentlyContinue
-        Log "Trigger detected — restarting $taskName ..."
+        Log "Trigger detected -- restarting $taskName ..."
         Stop-ScheduledTask  -TaskName $taskName -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 5
         Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
