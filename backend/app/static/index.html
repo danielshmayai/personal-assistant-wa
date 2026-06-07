@@ -1112,6 +1112,22 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-ex-list li { font-size:13px; margin-bottom:4px; list-style:none; padding-left:4px; }
 .fit-ex-list .fit-superset-label { font-size:10px; background:var(--accent); color:#fff; border-radius:4px; padding:1px 5px; margin-left:4px; }
 .fit-save-btn { margin-top:12px; width:100%; padding:10px; background:var(--green); color:#fff; border:none; border-radius:8px; font-size:14px; cursor:pointer; }
+/* Visual exercise cards */
+.fit-ex-cards { display:flex; flex-direction:column; gap:8px; margin:10px 0 4px; }
+.fit-ex-card { display:flex; align-items:flex-start; gap:10px; background:var(--bg); border-radius:10px; padding:10px 12px; border-left:3px solid var(--text3); }
+.fit-ex-card.ss0 { border-left-color:#6366f1; }
+.fit-ex-card.ss1 { border-left-color:#10b981; }
+.fit-ex-card.ss2 { border-left-color:#f59e0b; }
+.fit-ex-card.ss3 { border-left-color:#ef4444; }
+.fit-ex-icon { font-size:22px; line-height:1.1; min-width:28px; text-align:center; }
+.fit-ex-body { flex:1; min-width:0; }
+.fit-ex-name { font-weight:600; font-size:13px; display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+.fit-ex-detail { font-size:12px; color:var(--text2); margin-top:3px; }
+.fit-ex-notes { font-size:11px; color:var(--text3); margin-top:3px; direction:rtl; text-align:right; line-height:1.4; }
+.fit-ss-badge { font-size:10px; font-weight:700; color:#fff; border-radius:4px; padding:1px 5px; white-space:nowrap; }
+.fit-rpe-chip { font-size:10px; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:1px 6px; color:var(--text2); white-space:nowrap; }
+.fit-show-ex-btn { font-size:12px; color:var(--accent); background:none; border:none; cursor:pointer; padding:4px 0; text-decoration:underline; display:block; margin-top:6px; }
+
 .fit-duration-row { display:flex; gap:8px; margin-bottom:8px; }
 .fit-duration-row input, .fit-duration-row select { flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:13px; }
 .fit-minutes-row { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
@@ -4633,6 +4649,52 @@ function _rpeColor(rpe) {
   return '#e55';
 }
 
+const _SS_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444'];
+function _exIcon(name) {
+  const n = (name || '').toLowerCase();
+  if (/press|bench|chest|dip|fly/.test(n)) return '🏋️';
+  if (/pull|lat|row|chin/.test(n)) return '🎽';
+  if (/leg|squat|lunge|hamstring|glute|hip|calf|quad/.test(n)) return '🦵';
+  if (/curl|bicep/.test(n)) return '💪';
+  if (/plank|crunch|sit.?up|abs|core/.test(n)) return '🏅';
+  if (/run|bike|climb|mountain|jump|cardio/.test(n)) return '🏃';
+  if (/farmer|carry|walk/.test(n)) return '🤲';
+  if (/shoulder|lateral|raise|overhead/.test(n)) return '🔝';
+  if (/face.?pull|cable/.test(n)) return '🔗';
+  return '⚡';
+}
+function _renderExCards(exercises, supersets) {
+  if (!exercises || !exercises.length) return '';
+  const ssMap = {};
+  (supersets || []).forEach((pair, i) => pair.forEach(n => { ssMap[n.toLowerCase()] = i; }));
+  return `<div class="fit-ex-cards">${exercises.map(ex => {
+    const ssIdx = ssMap[ex.name.toLowerCase()];
+    const hasSS = ssIdx !== undefined;
+    const ssClass = hasSS ? ` ss${ssIdx}` : '';
+    const ssColor = hasSS ? _SS_COLORS[ssIdx] : null;
+    const ssBadge = hasSS ? `<span class="fit-ss-badge" style="background:${ssColor}">S${ssIdx+1}</span>` : '';
+    const borderStyle = ssColor ? `border-left-color:${ssColor}` : '';
+    const rpeLabel = ex.rpe > 0 ? `<span class="fit-rpe-chip">RPE ${ex.rpe}</span>` : '';
+    const detail = ex.duration_sec > 0
+      ? `${ex.sets} × ${ex.duration_sec}s${ex.weight_kg > 0 ? ' @ ' + ex.weight_kg + ' kg' : ''}`
+      : `${ex.sets} × ${ex.reps} reps${ex.weight_kg > 0 ? ' @ ' + ex.weight_kg + ' kg' : ''}`;
+    return `<div class="fit-ex-card${ssClass}" style="${borderStyle}">
+      <div class="fit-ex-icon">${_exIcon(ex.name)}</div>
+      <div class="fit-ex-body">
+        <div class="fit-ex-name">${_esc(ex.name)} ${ssBadge} ${rpeLabel}</div>
+        <div class="fit-ex-detail">${detail}</div>
+        ${ex.notes && ex.notes !== 'estimated' ? `<div class="fit-ex-notes">${_esc(ex.notes)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+function toggleFitExercises(btn) {
+  const el = btn.nextElementSibling;
+  const shown = el.style.display !== 'none';
+  el.style.display = shown ? 'none' : 'block';
+  btn.textContent = shown ? '📋 פרט תרגילים' : '🔼 הסתר תרגילים';
+}
+
 function _renderFitnessToday(data) {
   const R = 34, C = 2 * Math.PI * R;
   const MAX_VOL = 5000, MAX_DUR = 120;
@@ -4656,26 +4718,29 @@ function _renderFitnessToday(data) {
     list.innerHTML = '<div class="fit-today-empty">No workouts logged today. 💪</div>';
     return;
   }
-  list.innerHTML = data.workouts.map(w => `
-    <div class="fit-item">
+  list.innerHTML = data.workouts.map(w => {
+    const exCards = w.exercises && w.exercises.length ? _renderExCards(w.exercises) : '';
+    const targetsHtml = (w.ai_next_rec && w.ai_next_rec.targets && w.ai_next_rec.targets.length) ? `
+      <div class="fit-item-targets"><b style="font-size:11px">Next targets:</b><ul>
+        ${w.ai_next_rec.targets.slice(0,3).map(t => {
+          const v = (t.target_duration_sec || 0) > 0
+            ? `${t.target_weight_kg > 0 ? t.target_weight_kg + 'kg ' : ''}${t.target_duration_sec}s`
+            : `${t.target_weight_kg}kg × ${t.target_reps}`;
+          return `<li>• ${_esc(t.name)}: ${v}</li>`;
+        }).join('')}
+      </ul></div>` : '';
+    return `<div class="fit-item">
       <div class="fit-item-header">
         <span class="fit-item-title">${_esc(w.title || w.workout_type)}</span>
         <span class="fit-rpe-badge" style="background:${_rpeColor(w.avg_rpe)}">RPE ${w.avg_rpe.toFixed(1)}</span>
       </div>
       <div class="fit-item-meta">${w.workout_type} · ${Math.round(w.duration_min)} min · ${Math.round(w.total_volume)} kg vol</div>
       ${w.ai_summary ? `<div class="fit-item-summary">💡 ${_esc(w.ai_summary)}</div>` : ''}
-      ${(w.ai_next_rec && w.ai_next_rec.targets && w.ai_next_rec.targets.length) ? `
-        <div class="fit-item-targets"><b style="font-size:11px">Next targets:</b><ul>
-          ${w.ai_next_rec.targets.slice(0,3).map(t => {
-            const vol = t.target_duration_sec > 0
-              ? `${t.target_weight_kg > 0 ? t.target_weight_kg + 'kg ' : ''}${t.target_duration_sec}s`
-              : `${t.target_weight_kg}kg × ${t.target_reps}`;
-            return `<li>• ${_esc(t.name)}: ${vol}</li>`;
-          }).join('')}
-        </ul></div>` : ''}
+      ${exCards ? `<button class="fit-show-ex-btn" onclick="toggleFitExercises(this)">📋 פרט תרגילים</button><div style="display:none">${exCards}</div>` : ''}
+      ${targetsHtml}
       <button class="del-btn" style="margin-top:8px;font-size:11px" onclick="deleteFitnessEntry(${w.id})">Delete</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function _selectFitMinutes(m) {
@@ -4699,25 +4764,14 @@ let _lastSuggestion = null;
 function _renderSuggestion(plan) {
   _lastSuggestion = plan;
   const container = document.getElementById('fit-suggestion-container');
-  const supersetMap = {};
-  (plan.supersets || []).forEach((pair, i) => pair.forEach(n => supersetMap[n.toLowerCase()] = `S${i+1}`));
-  const exHtml = (plan.exercises || []).map(ex => {
-    const ss = supersetMap[ex.name.toLowerCase()];
-    const ssTag = ss ? `<span class="fit-superset-label">${ss}</span>` : '';
-    const detail = ex.duration_sec > 0
-      ? `${ex.sets}×${ex.duration_sec}s`
-      : `${ex.sets}×${ex.reps}${ex.weight_kg ? ' ' + ex.weight_kg + 'kg' : ''}`;
-    return `<li>• ${_esc(ex.name)}${ssTag} — ${detail} @ RPE ${ex.rpe}${ex.notes ? ' <em>('+_esc(ex.notes)+')</em>' : ''}</li>`;
-  }).join('');
-
   container.innerHTML = `
     <div class="fit-suggestion-card">
       <div class="fit-suggestion-header">
         <span class="fit-suggestion-title">${_esc(plan.title)}</span>
-        <span class="fit-suggestion-meta">${plan.duration_min} min · ${Math.round(plan.total_volume)} kg</span>
+        <span class="fit-suggestion-meta">${plan.duration_min} min · ${Math.round(plan.total_volume || 0)} kg</span>
       </div>
       ${plan.rationale ? `<div class="fit-suggestion-rationale">${_esc(plan.rationale)}</div>` : ''}
-      <ul class="fit-ex-list">${exHtml}</ul>
+      ${_renderExCards(plan.exercises, plan.supersets)}
       <button class="fit-save-btn" onclick="saveFitnessSuggestion()">✅ Start & Save this workout</button>
     </div>`;
 }
