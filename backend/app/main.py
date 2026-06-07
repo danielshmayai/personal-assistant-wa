@@ -163,6 +163,25 @@ def _log_security_warnings() -> None:
         )
 
 
+async def _notify_restart_done() -> None:
+    """After startup, if a restart was triggered send a WhatsApp confirmation."""
+    import pathlib
+    sentinel = pathlib.Path("/app/restart/restarted.flag")
+    if not sentinel.exists():
+        sentinel.touch()
+        return  # first-ever start, not a restart
+    # Flag already existed — this is a restart
+    if not MY_WHATSAPP_ID:
+        return
+    await asyncio.sleep(3)  # let the worker warm up
+    from app.whatsapp import send_whatsapp_message
+    try:
+        await send_whatsapp_message(MY_WHATSAPP_ID, "[ *danidin* ] Backend back online")
+        logger.info("Restart notification sent to %s", MY_WHATSAPP_ID)
+    except Exception:
+        logger.exception("Failed to send restart notification")
+
+
 async def _nightly_restart_loop() -> None:
     """Sleep until 04:00 local time, then exit so Docker restarts the backend fresh."""
     import sys
@@ -232,6 +251,7 @@ async def lifespan(app: FastAPI):
     from app.proactive.flows import start_flows, stop_flows
     wa_chat_ids = [MY_WHATSAPP_ID] if MY_WHATSAPP_ID else []
     await start_flows(wa_chat_ids)
+    asyncio.create_task(_notify_restart_done(), name="restart_notify")
     yield
     await stop_flows()
     nightly_task.cancel()
