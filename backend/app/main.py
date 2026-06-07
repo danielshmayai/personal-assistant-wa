@@ -178,7 +178,9 @@ async def _nightly_restart_loop() -> None:
         delay = (target - now).total_seconds()
         logger.info("Nightly restart scheduled in %.0f s (at %s)", delay, target.isoformat())
         await asyncio.sleep(delay)
-        logger.info("Nightly restart: exiting for Docker restart")
+        logger.info("Nightly restart: signalling runner watcher and exiting")
+        import pathlib
+        pathlib.Path("/app/restart/runner.trigger").touch()
         sys.exit(0)
 
 

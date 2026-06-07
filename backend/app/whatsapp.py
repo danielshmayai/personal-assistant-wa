@@ -183,10 +183,12 @@ def _extract_chat_id(body: dict) -> str:
 
 
 async def _restart_backend(chat_id: str) -> None:
-    """Send an ACK via WhatsApp then exit — Docker restart: always brings the container back."""
+    """Send an ACK via WhatsApp, signal the runner watcher, then exit for Docker restart."""
     import sys
-    await send_whatsapp_message(chat_id, "[ *danidin* ] 🔄 Restarting backend...")
+    import pathlib
+    await send_whatsapp_message(chat_id, "[ *danidin* ] 🔄 Restarting backend + runner...")
     await asyncio.sleep(1)
+    pathlib.Path("/app/restart/runner.trigger").touch()
     logger.info("!restart command received — exiting for Docker restart")
     sys.exit(0)
 
