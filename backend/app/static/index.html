@@ -1229,6 +1229,18 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-exec-nav-btn { background:none; border:none; color:#6b7280; font-size:13px; cursor:pointer; padding:6px 4px; }
 .fit-exec-nav-btn:disabled { opacity:.3; }
 
+/* viz tabs (muscles / equipment toggle) */
+.fit-exec-viz-tabs { display:flex; gap:6px; margin-bottom:4px; }
+.fit-exec-viz-tab { flex:1; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#6b7280; border-radius:10px; padding:7px; font-size:11px; font-weight:700; cursor:pointer; text-transform:uppercase; letter-spacing:.05em; font-family:inherit; transition:background .15s; }
+.fit-exec-viz-tab.active { background:rgba(163,230,53,.12); border-color:rgba(163,230,53,.35); color:#a3e635; }
+.fit-exec-equip-panel { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; min-height:0; padding:4px 0; }
+.fit-exec-equip-svg-wrap { display:flex; align-items:center; justify-content:center; }
+.fit-exec-equip-meta { width:100%; max-width:320px; }
+.fit-exec-equip-type-label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#a3e635; margin-bottom:6px; }
+.fit-exec-equip-cue { font-size:12px; color:#9ca3af; line-height:1.5; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.04); display:flex; gap:7px; }
+.fit-exec-equip-cue:last-child { border-bottom:none; }
+.fit-exec-equip-cue-dot { color:#a3e635; font-size:9px; flex-shrink:0; margin-top:3px; }
+
 /* rest timer */
 .fit-exec-rest { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; }
 .fit-exec-rest-title { font-size:14px; color:#9ca3af; text-transform:uppercase; letter-spacing:.08em; }
@@ -4825,6 +4837,7 @@ function toggleFitExercises(btn) {
 let _exec = null;          // whole session; null when overlay closed
 let _execTimer = null;     // rest-countdown setInterval handle
 let _execAudioCtx = null;  // lazily-created AudioContext
+let _guidedLoading = false; // prevents multi-click during API load
 const EXEC_MIN_WATER = 500;
 const EXEC_REST_DEFAULT = 60;
 
@@ -4849,15 +4862,69 @@ function _execNeedsBreathCue(name) {
   return /squat|press|bench|deadlift|overhead|ohp|thrust|lunge/i.test(name || '');
 }
 
+const _EQUIP_DATA = [
+  { re: /cable|face.?pull|pulldown|cable.?row|cable.?fly|pushdown|tricep.*cable|cable.*curl|crossover|lat.*cable/i,
+    type: 'Cable Machine',
+    svg: `<svg viewBox="0 0 54 92" width="54" height="92"><rect x="17" y="2" width="20" height="80" rx="4" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><circle cx="27" cy="12" r="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><circle cx="27" cy="12" r="2.5" fill="rgba(255,255,255,.4)"/><line x1="27" y1="20" x2="27" y2="68" stroke="#a3e635" stroke-width="1.5" stroke-dasharray="4,3" opacity=".75"/><rect x="17" y="66" width="20" height="7" rx="3.5" fill="rgba(255,255,255,.1)" stroke="#a3e635" stroke-width="1.5" opacity=".85"/><line x1="20" y1="32" x2="34" y2="32" stroke="rgba(255,255,255,.2)" stroke-width="1"/><line x1="20" y1="42" x2="34" y2="42" stroke="rgba(255,255,255,.2)" stroke-width="1"/><line x1="20" y1="52" x2="34" y2="52" stroke="rgba(255,255,255,.2)" stroke-width="1"/><rect x="4" y="82" width="46" height="8" rx="3" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/></svg>`,
+    cues: ['Set the pin weight before gripping — check both sides match', 'Brace core and keep a neutral spine; no rotation under load', 'Control the return on every rep — don\'t let the stack crash'] },
+  { re: /pull.?up|chin.?up|hanging.*raise|bar.?hang/i,
+    type: 'Pull-up Bar',
+    svg: `<svg viewBox="0 0 72 52" width="72" height="52"><rect x="2" y="4" width="68" height="10" rx="5" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/><rect x="4" y="14" width="8" height="34" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="60" y="14" width="8" height="34" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><line x1="18" y1="5" x2="18" y2="13" stroke="rgba(255,255,255,.35)" stroke-width="2"/><line x1="54" y1="5" x2="54" y2="13" stroke="rgba(255,255,255,.35)" stroke-width="2"/></svg>`,
+    cues: ['Grip just outside shoulder-width; neutral or supinated for chin-up', 'Depress scapulae before each rep — don\'t start shrugged', 'Full hang at the bottom; stop short of elbow lock at the top'] },
+  { re: /barbell|back.?squat|conventional.?dead|bent.?over.?row|barbell.?row|incline.*bar|flat.*bar/i,
+    type: 'Barbell',
+    svg: `<svg viewBox="0 0 110 32" width="110" height="32"><rect x="0" y="2" width="12" height="28" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="14" y="7" width="7" height="18" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="22" y="13" width="66" height="6" rx="3" fill="rgba(255,255,255,.18)" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/><rect x="89" y="7" width="7" height="18" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="98" y="2" width="12" height="28" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/></svg>`,
+    cues: ['Load plates evenly; collar both ends before unracking', 'Grip tight — squeeze the bar to activate lats and upper back', 'Exhale on the concentric phase; never Valsalva under submaximal load'] },
+  { re: /dumbbell|db |d\.b\.|lateral.?raise|dumbbell.?curl|dumbbell.?fly|dumbbell.?row|hammer.?curl|db.?press/i,
+    type: 'Dumbbells',
+    svg: `<svg viewBox="0 0 76 30" width="76" height="30"><rect x="0" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="13" y="10" width="12" height="10" rx="3" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><rect x="26" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="40" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="53" y="10" width="12" height="10" rx="3" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><rect x="66" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="0" y1="28" x2="78" y2="28" stroke="rgba(255,255,255,.12)" stroke-width="1"/></svg>`,
+    cues: ['Pick matching weights; stand them on the rack before sitting', 'Neutral wrist throughout — don\'t let the handle roll in your palm', 'Start lighter on isolation moves; form > load every time'] },
+  { re: /kettlebell|kb.?swing|kb.?clean|turkish.?get/i,
+    type: 'Kettlebell',
+    svg: `<svg viewBox="0 0 52 62" width="52" height="62"><path d="M12 32 Q12 6 26 6 Q40 6 40 32" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="3" stroke-linecap="round"/><rect x="9" y="28" width="8" height="10" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="35" y="28" width="8" height="10" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><ellipse cx="26" cy="48" rx="19" ry="13" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><ellipse cx="26" cy="48" rx="7" ry="5" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.2)" stroke-width="1"/></svg>`,
+    cues: ['Grip the horn firmly — wrist straight, bell on the back of forearm for cleans', 'Hip hinge drives swings — knees soft, not a squat', 'Keep the bell close to the body on the backswing'] },
+  { re: /band.?pull|banded|resistance.?band|pull.?apart|monster.?walk|face.*band/i,
+    type: 'Resistance Band',
+    svg: `<svg viewBox="0 0 80 40" width="80" height="40"><circle cx="7" cy="20" r="5" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><circle cx="73" cy="20" r="5" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><path d="M12 20 Q40 3 68 20" fill="none" stroke="#a3e635" stroke-width="2.5" opacity=".6"/><path d="M12 20 Q40 37 68 20" fill="none" stroke="#a3e635" stroke-width="2.5" opacity=".6"/></svg>`,
+    cues: ['Anchor point must be secure — test with light pull before loading', 'Keep constant tension throughout the full range of motion', 'Bands offload at the shortened position; slow the concentric down'] },
+  { re: /machine|leg.?press|leg.?extension|leg.?curl|seated.*press|chest.*press.*mach|hip.?abduct|adduct|pec.?deck|hack.?squat/i,
+    type: 'Machine',
+    svg: `<svg viewBox="0 0 68 80" width="52" height="62"><rect x="6" y="2" width="56" height="72" rx="6" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><rect x="14" y="56" width="32" height="10" rx="4" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.35)" stroke-width="1"/><rect x="46" y="24" width="10" height="28" rx="3" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.3)" stroke-width="1"/><rect x="12" y="14" width="28" height="8" rx="4" fill="rgba(163,230,53,.15)" stroke="rgba(163,230,53,.4)" stroke-width="1.5"/><line x1="58" y1="14" x2="58" y2="50" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/><circle cx="58" cy="22" r="3.5" fill="rgba(163,230,53,.5)"/></svg>`,
+    cues: ['Adjust seat height and pad position before the first rep', 'Set the weight conservatively — machines concentrate load', 'Full ROM: don\'t short-stroke to move more weight on the stack'] },
+  { re: /push.?up|dip|plank|crunch|sit.?up|mountain.?clim|burpee|bodyweight|bw |floor|hollow|superman/i,
+    type: 'Bodyweight',
+    svg: `<svg viewBox="0 0 50 60" width="40" height="48"><circle cx="25" cy="8" r="7" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><line x1="25" y1="15" x2="25" y2="38" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="22" x2="9" y2="32" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="22" x2="41" y2="32" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="38" x2="14" y2="54" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="38" x2="36" y2="54" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/></svg>`,
+    cues: ['No equipment needed — focus entirely on movement quality', 'Try a 3-1-1 tempo (3s lower, 1s pause, 1s up) to maximise time under tension', 'Core braced at all times; breathe out on the effort'] },
+  { re: /serratus|wall.?slide|foam.?roll|y.?t.?w|prone.?y|face.?down|scapul/i,
+    type: 'Floor / Wall',
+    svg: `<svg viewBox="0 0 80 38" width="80" height="38"><rect x="0" y="26" width="80" height="8" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="0" y="2" width="8" height="24" rx="2" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><rect x="14" y="20" width="52" height="6" rx="2" fill="rgba(163,230,53,.1)" stroke="rgba(163,230,53,.3)" stroke-width="1.5"/></svg>`,
+    cues: ['Clear a 2 m² area; use a mat for floor work', 'Move slowly and deliberately — feel every degree of shoulder movement', 'These are corrective/activation drills: RPE should feel easy, quality is the goal'] },
+];
+function _execEquipInfo(name) {
+  const n = (name || '').toLowerCase();
+  for (const e of _EQUIP_DATA) { if (e.re.test(n)) return e; }
+  return { type: 'Free Weight', svg: _EQUIP_DATA[3].svg,
+    cues: ['Set up before the set — no rushing once you pick up the weight', 'Control both phases: concentric and eccentric', 'Quality reps beat heavy sloppy reps every time'] };
+}
+function _execSetVizTab(tab) {
+  if (!_exec) return;
+  _exec.vizTab = tab;
+  const mEl = document.getElementById('fit-exec-viz-muscle');
+  const eEl = document.getElementById('fit-exec-viz-equip');
+  const tM  = document.getElementById('fit-exec-tab-muscle');
+  const tE  = document.getElementById('fit-exec-tab-equip');
+  if (mEl) mEl.style.display = tab === 'equip' ? 'none' : '';
+  if (eEl) eEl.style.display = tab === 'equip' ? '' : 'none';
+  if (tM) tM.classList.toggle('active', tab !== 'equip');
+  if (tE) tE.classList.toggle('active', tab === 'equip');
+}
+
 function startGuidedWorkout(minutes) {
-  if (!minutes) {
-    _showGuidedPicker();
-    return;
-  }
+  if (_guidedLoading) return;
+  if (!minutes) { _showGuidedPicker(); return; }
+  _guidedLoading = true;
   const area = document.getElementById('fit-guided-area');
-  if (area) {
-    area.innerHTML = `<div class="fit-guided-loading"><div class="fit-guided-spinner"></div><span>Building your ${minutes}-min AI session…</span></div>`;
-  }
+  if (area) area.innerHTML = `<div class="fit-guided-loading"><div class="fit-guided-spinner"></div><span>Building your ${minutes}-min AI session…</span></div>`;
   _doStartGuidedWorkout(minutes);
 }
 
@@ -4875,36 +4942,39 @@ function _showGuidedPicker() {
 }
 
 async function _doStartGuidedWorkout(minutes) {
-  let dailyRec = {}, plan = null, prevVolume = 0;
-  try { dailyRec = await apiGet('/api/fitness/daily-rec' + _fcid()); } catch (e) {}
-  const selType = document.getElementById('fit-suggest-type');
-  const wtype = (dailyRec.workout_type && dailyRec.workout_type !== 'rest')
-    ? dailyRec.workout_type : (selType ? selType.value : 'strength');
   try {
-    plan = await apiPost('/api/fitness/suggest' + _fcid(), { minutes: minutes, workout_type: wtype });
-  } catch (e) {}
-  if (!plan || !(plan.exercises || []).length) {
-    if (dailyRec.key_exercises && dailyRec.key_exercises.length) {
-      plan = {
-        title: dailyRec.title || 'Today\'s workout', workout_type: wtype, duration_min: minutes,
-        rationale: dailyRec.rationale || '',
-        exercises: dailyRec.key_exercises.map(e => ({ ...e, rpe: 8, duration_sec: 0, notes: '' })),
-        supersets: [],
-      };
-    } else {
-      showToast('Could not build a workout right now.', true);
-      _restoreGuidedBtn();
-      return;
+    let dailyRec = {}, plan = null, prevVolume = 0;
+    try { dailyRec = await apiGet('/api/fitness/daily-rec' + _fcid()); } catch (e) {}
+    const selType = document.getElementById('fit-suggest-type');
+    const wtype = (dailyRec.workout_type && dailyRec.workout_type !== 'rest')
+      ? dailyRec.workout_type : (selType ? selType.value : 'strength');
+    try {
+      plan = await apiPost('/api/fitness/suggest' + _fcid(), { minutes: minutes, workout_type: wtype });
+    } catch (e) {}
+    if (!plan || !(plan.exercises || []).length) {
+      if (dailyRec.key_exercises && dailyRec.key_exercises.length) {
+        plan = {
+          title: dailyRec.title || 'Today\'s workout', workout_type: wtype, duration_min: minutes,
+          rationale: dailyRec.rationale || '',
+          exercises: dailyRec.key_exercises.map(e => ({ ...e, rpe: 8, duration_sec: 0, notes: '' })),
+          supersets: [],
+        };
+      } else {
+        showToast('Could not build a workout right now.', true);
+        return;
+      }
     }
+    try {
+      const h = await apiGet('/api/fitness/history' + _fcid() + '&days=30');
+      const today = new Date().toISOString().slice(0, 10);
+      const past = (h.days || []).find(d => d.date < today);
+      prevVolume = past ? past.total_volume : 0;
+    } catch (e) {}
+    _restoreGuidedBtn();
+    launchExec(plan, dailyRec, prevVolume);
+  } finally {
+    _guidedLoading = false;
   }
-  try {
-    const h = await apiGet('/api/fitness/history' + _fcid() + '&days=30');
-    const today = new Date().toISOString().slice(0, 10);
-    const past = (h.days || []).find(d => d.date < today);
-    prevVolume = past ? past.total_volume : 0;
-  } catch (e) {}
-  _restoreGuidedBtn();
-  launchExec(plan, dailyRec, prevVolume);
 }
 
 function _restoreGuidedBtn() {
@@ -4939,7 +5009,7 @@ function launchExec(plan, dailyRec, prevVolume) {
     state: 'intro', plan, dailyRec: dailyRec || {}, exercises: exs,
     exIdx: 0, curWeight: exs[0] ? exs[0].weight_kg : 0, curReps: exs[0] ? exs[0].reps : 0,
     restTotal: 0, restLeft: 0, waterMl: 0, startedAt: Date.now(),
-    prevVolume: prevVolume || 0, pendingIdx: null,
+    prevVolume: prevVolume || 0, pendingIdx: null, vizTab: 'muscle',
   };
   let el = document.getElementById('fit-exec');
   if (!el) { el = document.createElement('div'); el.id = 'fit-exec'; el.className = 'fit-exec'; document.body.appendChild(el); }
@@ -5073,7 +5143,18 @@ function _execActiveHTML() {
       </div>
       <div class="fit-ex-icon" style="font-size:30px">${_exIcon(ex.name)}</div>
     </div>
-    <div class="fit-exec-body-svg-wrap">${_execBodyHTML(ex.muscles)}</div>
+    <div class="fit-exec-viz-tabs">
+      <button class="fit-exec-viz-tab${_exec.vizTab !== 'equip' ? ' active' : ''}" id="fit-exec-tab-muscle" onclick="_execSetVizTab('muscle')">💪 Muscles</button>
+      <button class="fit-exec-viz-tab${_exec.vizTab === 'equip' ? ' active' : ''}" id="fit-exec-tab-equip" onclick="_execSetVizTab('equip')">🏋️ Equipment</button>
+    </div>
+    <div class="fit-exec-body-svg-wrap" id="fit-exec-viz-muscle"${_exec.vizTab === 'equip' ? ' style="display:none"' : ''}>${_execBodyHTML(ex.muscles)}</div>
+    <div class="fit-exec-equip-panel" id="fit-exec-viz-equip"${_exec.vizTab !== 'equip' ? ' style="display:none"' : ''}>
+      <div class="fit-exec-equip-svg-wrap">${_execEquipInfo(ex.name).svg}</div>
+      <div class="fit-exec-equip-meta">
+        <div class="fit-exec-equip-type-label">${_esc(_execEquipInfo(ex.name).type)}</div>
+        ${_execEquipInfo(ex.name).cues.map(c => `<div class="fit-exec-equip-cue"><span class="fit-exec-equip-cue-dot">▸</span><span>${_esc(c)}</span></div>`).join('')}
+      </div>
+    </div>
     <div class="fit-exec-dots">${dots}</div>
     <div class="fit-exec-steppers">
       <div class="fit-exec-stepper"><div class="fit-exec-stepper-label">Weight kg</div><div class="fit-exec-stepper-val" id="fit-exec-weight">${_exec.curWeight}</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-2.5)">−2.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-0.5)">−.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',0.5)">+.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',2.5)">+2.5</button></div></div>
