@@ -1202,7 +1202,9 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 /* active card */
 .fit-exec-active { flex:1; display:flex; flex-direction:column; min-height:0; }
 .fit-exec-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:4px; }
-.fit-exec-exname { font-size:20px; font-weight:700; color:#f9fafb; line-height:1.2; }
+.fit-exec-card-head > div:first-child { flex:1; min-width:0; }
+.fit-exec-card-head .fit-ex-icon { flex-shrink:0; }
+.fit-exec-exname { font-size:18px; font-weight:700; color:#f9fafb; line-height:1.2; overflow-wrap:anywhere; word-break:break-word; }
 .fit-exec-exsub { font-size:12px; color:#6b7280; margin-top:2px; }
 .fit-exec-ss-badge { font-size:11px; font-weight:800; color:#030712; border-radius:6px; padding:3px 8px; white-space:nowrap; }
 .fit-exec-breath-badge { display:inline-flex; align-items:center; gap:4px; margin-top:6px; font-size:11px; color:#facc15; background:rgba(250,204,21,.12); border-radius:8px; padding:3px 8px; }
@@ -1233,14 +1235,15 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-exec-viz-tabs { display:flex; gap:6px; margin-bottom:4px; }
 .fit-exec-viz-tab { flex:1; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#6b7280; border-radius:10px; padding:7px; font-size:11px; font-weight:700; cursor:pointer; text-transform:uppercase; letter-spacing:.05em; font-family:inherit; transition:background .15s; }
 .fit-exec-viz-tab.active { background:rgba(163,230,53,.12); border-color:rgba(163,230,53,.35); color:#a3e635; }
-.fit-exec-equip-panel { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; min-height:0; padding:4px 0; }
-.fit-exec-equip-svg-wrap { display:flex; align-items:center; justify-content:center; }
-.fit-exec-equip-meta { width:100%; max-width:320px; }
+.fit-exec-equip-panel { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:0; padding:4px 0; }
+.fit-exec-equip-svg-wrap { flex:1; min-height:0; width:100%; display:flex; align-items:center; justify-content:center; }
+.fit-exec-equip-loading { display:flex; flex-direction:column; align-items:center; gap:10px; color:#6b7280; font-size:12px; }
+.fit-exec-equip-meta { width:100%; max-width:340px; flex-shrink:0; }
 .fit-exec-equip-type-label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#a3e635; margin-bottom:6px; }
 .fit-exec-equip-cue { font-size:12px; color:#9ca3af; line-height:1.5; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.04); display:flex; gap:7px; }
 .fit-exec-equip-cue:last-child { border-bottom:none; }
 .fit-exec-equip-cue-dot { color:#a3e635; font-size:9px; flex-shrink:0; margin-top:3px; }
-.fit-exec-equip-gif { max-width:100%; max-height:190px; border-radius:12px; object-fit:cover; display:block; }
+.fit-exec-equip-gif { max-width:100%; max-height:100%; width:auto; height:auto; border-radius:14px; object-fit:contain; display:block; background:rgba(255,255,255,.96); }
 .fit-exec-equip-img-loading { font-size:11px; color:#6b7280; text-align:center; padding:16px 0; }
 
 /* rest timer */
@@ -4906,7 +4909,7 @@ function _execEquipInfo(name) {
   const n = (name || '').toLowerCase();
   for (const e of _EQUIP_DATA) { if (e.re.test(n)) return e; }
   return { type: 'משקל חופשי', svg: _EQUIP_DATA[3].svg,
-    cues: ['Set up before the set — no rushing once you pick up the weight', 'Control both phases: concentric and eccentric', 'Quality reps beat heavy sloppy reps every time'] };
+    cues: ['התארגן לפני הסט — אל תמהר ברגע שאתה אוחז במשקל', 'שלוט בשני השלבים: הריכוזי והאקסצנטרי', 'חזרות איכותיות עדיפות על משקל כבד ורשלני'] };
 }
 function _execSetVizTab(tab) {
   if (!_exec) return;
@@ -4924,24 +4927,52 @@ function _execSetVizTab(tab) {
     if (ex && ex._gifUrl === undefined) _execFetchEquipImage(_exec.exIdx);
   }
 }
+const _EQUIP_NOISE_EN = ['machine','barbell','dumbbell','cable','smith','kettlebell','band','bodyweight','lever','weighted','assisted'];
 function _extractEnglishName(name) {
-  const m = (name || '').match(/\(([^)]+)\)/);
-  return m ? m[1] : (name || '');
+  // Collect every parenthetical, e.g. "לג פרס (Leg Press) (Machine)" -> ["Leg Press","Machine"].
+  const parts = [...(name || '').matchAll(/\(([^)]+)\)/g)].map(m => m[1].trim());
+  if (parts.length) {
+    // Prefer the longest group that isn't just an equipment qualifier.
+    const meaningful = parts.filter(p => !_EQUIP_NOISE_EN.includes(p.toLowerCase()));
+    const pool = meaningful.length ? meaningful : parts;
+    return pool.sort((a, b) => b.length - a.length)[0];
+  }
+  // No parentheses: keep only latin letters (drop Hebrew) if any are present.
+  const latin = (name || '').replace(/[^A-Za-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  return latin || (name || '');
+}
+function _execEquipImgHTML(ex) {
+  if (ex._gifUrl) {
+    return '<img src="' + _esc(ex._gifUrl) + '" class="fit-exec-equip-gif" alt="" ' +
+           'onerror="this.parentNode.innerHTML=_execEquipInfo(_exec.exercises[' + _exec.exIdx + '].name).svg"/>';
+  }
+  if (ex._gifUrl === null) { // fetch in progress
+    return '<div class="fit-exec-equip-loading"><div class="fit-guided-spinner"></div><span>טוען תמונת מכשיר…</span></div>';
+  }
+  return _execEquipInfo(ex.name).svg; // not fetched yet
 }
 async function _execFetchEquipImage(exIdx) {
   if (!_exec) return;
   const ex = _exec.exercises[exIdx];
   if (!ex || ex._gifUrl !== undefined) return;
-  ex._gifUrl = null;
+  ex._gifUrl = null; // mark in-progress
+  // If this exercise is on-screen and its panel is showing the placeholder, swap in a spinner.
+  if (exIdx === _exec.exIdx) {
+    const w = document.getElementById('fit-exec-equip-img-wrap');
+    if (w) w.innerHTML = _execEquipImgHTML(ex);
+  }
   const eng = _extractEnglishName(ex.name) || ex.name;
   try {
     const res = await apiGet('/api/fitness/exercise-gif' + _fcid() + '&name=' + encodeURIComponent(eng));
-    if (res && res.gifUrl) {
-      ex._gifUrl = res.gifUrl;
-      const wrap = document.getElementById('fit-exec-equip-img-wrap');
-      if (wrap) wrap.innerHTML = '<img src="' + ex._gifUrl + '" class="fit-exec-equip-gif" alt=""/>';
-    }
-  } catch (e) {}
+    ex._gifUrl = (res && res.gifUrl) ? res.gifUrl : false; // false = looked up, none found
+  } catch (e) {
+    ex._gifUrl = false;
+  }
+  // Repaint the panel in place if this exercise is still the one on screen.
+  if (exIdx === _exec.exIdx) {
+    const w = document.getElementById('fit-exec-equip-img-wrap');
+    if (w) w.innerHTML = _execEquipImgHTML(ex);
+  }
 }
 
 function startGuidedWorkout(minutes) {
@@ -5175,7 +5206,7 @@ function _execActiveHTML() {
     </div>
     <div class="fit-exec-body-svg-wrap" id="fit-exec-viz-muscle"${_exec.vizTab === 'equip' ? ' style="display:none"' : ''}>${_execBodyHTML(ex.muscles)}</div>
     <div class="fit-exec-equip-panel" id="fit-exec-viz-equip"${_exec.vizTab !== 'equip' ? ' style="display:none"' : ''}>
-      <div class="fit-exec-equip-svg-wrap" id="fit-exec-equip-img-wrap">${ex._gifUrl ? \`<img src="\${ex._gifUrl}" class="fit-exec-equip-gif" alt=""/>\` : _execEquipInfo(ex.name).svg}</div>
+      <div class="fit-exec-equip-svg-wrap" id="fit-exec-equip-img-wrap">${_execEquipImgHTML(ex)}</div>
       <div class="fit-exec-equip-meta">
         <div class="fit-exec-equip-type-label">${_esc(_execEquipInfo(ex.name).type)}</div>
         ${_execEquipInfo(ex.name).cues.map(c => `<div class="fit-exec-equip-cue"><span class="fit-exec-equip-cue-dot">▸</span><span>${_esc(c)}</span></div>`).join('')}
@@ -5215,6 +5246,10 @@ function _execGotoEx(i) {
   const last = ex.logged.length ? ex.logged[ex.logged.length - 1] : null;
   _exec.curWeight = last ? last.weight : ex.weight_kg;
   _exec.curReps = last ? last.reps : ex.reps;
+  // Eagerly fetch the real demonstration GIF so it's ready the moment the user opens the Equipment tab.
+  if (ex._gifUrl === undefined) _execFetchEquipImage(i);
+  const nx = _exec.exercises[i + 1];
+  if (nx && nx._gifUrl === undefined) _execFetchEquipImage(i + 1); // prefetch next too
 }
 function _execNextEx() { if (_exec.exIdx < _exec.exercises.length - 1) { _execGotoEx(_exec.exIdx + 1); renderExec(); } }
 function _execPrevEx() { if (_exec.exIdx > 0) { _execGotoEx(_exec.exIdx - 1); renderExec(); } }

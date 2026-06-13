@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import urllib.parse
 import urllib.request
 
@@ -303,18 +304,73 @@ async def delete_entry(
     return {"ok": True}
 
 
+# Cache resolved exercise -> gif URL for the process lifetime (these are static assets).
+_GIF_CACHE: dict[str, str | None] = {}
+# Equipment qualifier words to strip from a search term so "leg press (machine)" -> "leg press".
+_EQUIP_NOISE = {"machine", "barbell", "dumbbell", "cable", "smith", "kettlebell",
+                "band", "bodyweight", "lever", "weighted", "assisted"}
+
+
+def _norm_exercise_term(name: str) -> str:
+    """Lowercase and keep only latin words (the English exercise name often sits inside
+    parentheses, e.g. 'לג פרס (Leg Press) (Machine)'); parentheses become spaces, Hebrew
+    is dropped, and equipment qualifier words like 'machine' are removed."""
+    n = re.sub(r"[^a-z0-9\s-]", " ", name.lower())  # parens/punct/Hebrew -> spaces
+    words = [w for w in n.split() if w]
+    core = [w for w in words if w not in _EQUIP_NOISE]  # drop equipment qualifiers
+    return " ".join(core if core else words).strip()
+
+
+def _gif_of(item: dict) -> str | None:
+    for k in ("gifUrl", "imageUrl", "image", "gif"):
+        v = item.get(k)
+        if isinstance(v, str) and v.startswith("http"):
+            return v
+    eid = item.get("exerciseId") or item.get("id")
+    if eid:
+        return f"https://static.exercisedb.dev/media/{eid}.gif"
+    return None
+
+
+def _pick_best(items: list[dict], term: str) -> dict | None:
+    """Prefer an exact/startswith name match over the first arbitrary result."""
+    if not items:
+        return None
+    t = term.lower()
+    for it in items:
+        if str(it.get("name", "")).lower() == t:
+            return it
+    for it in items:
+        if str(it.get("name", "")).lower().startswith(t):
+            return it
+    for it in items:
+        if t in str(it.get("name", "")).lower():
+            return it
+    return items[0]
+
+
 @router.get("/api/fitness/exercise-gif")
 async def exercise_gif(name: str = Query(""), _: str = Depends(_require_token)):
-    """Server-side proxy: fetch a GIF URL for an exercise from ExerciseDB (avoids browser CORS)."""
-    if not name.strip():
+    """Server-side proxy: fetch a real demonstration GIF for an exercise from the
+    free open-source ExerciseDB V1 API (avoids browser CORS). Results are cached."""
+    term = _norm_exercise_term(name or "")
+    if not term:
         return {"gifUrl": None}
-    q = urllib.parse.quote(name.strip().lower())
+    if term in _GIF_CACHE:
+        return {"gifUrl": _GIF_CACHE[term]}
+
+    q = urllib.parse.quote(term)
+    # V1 API wraps results as {"success": true, "data": [...]}; try several known shapes.
     urls_to_try = [
-        f"https://oss.exercisedb.dev/exercises/name/{q}?limit=3",
-        f"https://exercisedb.io/api/v1/exercises/name/{q}?limit=3",
+        f"https://oss.exercisedb.dev/api/v1/exercises/search?q={q}&limit=5",
+        f"https://oss.exercisedb.dev/api/v1/exercises/search?search={q}&limit=5",
+        f"https://exercisedb.dev/api/v1/exercises/search?q={q}&limit=5",
     ]
+
     def _fetch(url: str):
-        req = urllib.request.Request(url, headers={"User-Agent": "danidin-fitness/1.0", "Accept": "application/json"})
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "danidin-fitness/1.0", "Accept": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=6) as r:
             return json.loads(r.read().decode())
 
@@ -322,8 +378,18 @@ async def exercise_gif(name: str = Query(""), _: str = Depends(_require_token)):
     for url in urls_to_try:
         try:
             data = await loop.run_in_executor(None, _fetch, url)
-            if isinstance(data, list) and data and data[0].get("gifUrl"):
-                return {"gifUrl": data[0]["gifUrl"]}
+            items = (
+                data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), list)
+                else data if isinstance(data, list) else []
+            )
+            best = _pick_best([i for i in items if isinstance(i, dict)], term)
+            gif = _gif_of(best) if best else None
+            if gif:
+                _GIF_CACHE[term] = gif
+                return {"gifUrl": gif}
         except Exception:
+            logger.debug("exercise-gif lookup failed for %s via %s", term, url, exc_info=True)
             continue
+
+    _GIF_CACHE[term] = None  # negative-cache to avoid hammering a missing exercise
     return {"gifUrl": None}
