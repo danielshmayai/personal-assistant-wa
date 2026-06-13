@@ -1240,6 +1240,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-exec-equip-cue { font-size:12px; color:#9ca3af; line-height:1.5; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.04); display:flex; gap:7px; }
 .fit-exec-equip-cue:last-child { border-bottom:none; }
 .fit-exec-equip-cue-dot { color:#a3e635; font-size:9px; flex-shrink:0; margin-top:3px; }
+.fit-exec-equip-gif { max-width:100%; max-height:190px; border-radius:12px; object-fit:cover; display:block; }
+.fit-exec-equip-img-loading { font-size:11px; color:#6b7280; text-align:center; padding:16px 0; }
 
 /* rest timer */
 .fit-exec-rest { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; }
@@ -1941,8 +1943,8 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         <div id="fit-guided-area">
           <button class="fit-start-guided-btn" onclick="startGuidedWorkout()">
             <span class="fit-start-guided-icon">▶</span>
-            <span class="fit-start-guided-text">Start guided workout</span>
-            <span class="fit-start-guided-sub">AI coach · drill-by-drill</span>
+            <span class="fit-start-guided-text">התחל אימון מודרך</span>
+            <span class="fit-start-guided-sub">מאמן AI · תרגיל אחר תרגיל</span>
           </button>
         </div>
 
@@ -4864,46 +4866,46 @@ function _execNeedsBreathCue(name) {
 
 const _EQUIP_DATA = [
   { re: /cable|face.?pull|pulldown|cable.?row|cable.?fly|pushdown|tricep.*cable|cable.*curl|crossover|lat.*cable/i,
-    type: 'Cable Machine',
+    type: 'מכונת כבל',
     svg: `<svg viewBox="0 0 54 92" width="54" height="92"><rect x="17" y="2" width="20" height="80" rx="4" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><circle cx="27" cy="12" r="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><circle cx="27" cy="12" r="2.5" fill="rgba(255,255,255,.4)"/><line x1="27" y1="20" x2="27" y2="68" stroke="#a3e635" stroke-width="1.5" stroke-dasharray="4,3" opacity=".75"/><rect x="17" y="66" width="20" height="7" rx="3.5" fill="rgba(255,255,255,.1)" stroke="#a3e635" stroke-width="1.5" opacity=".85"/><line x1="20" y1="32" x2="34" y2="32" stroke="rgba(255,255,255,.2)" stroke-width="1"/><line x1="20" y1="42" x2="34" y2="42" stroke="rgba(255,255,255,.2)" stroke-width="1"/><line x1="20" y1="52" x2="34" y2="52" stroke="rgba(255,255,255,.2)" stroke-width="1"/><rect x="4" y="82" width="46" height="8" rx="3" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/></svg>`,
-    cues: ['Set the pin weight before gripping — check both sides match', 'Brace core and keep a neutral spine; no rotation under load', 'Control the return on every rep — don\'t let the stack crash'] },
+    cues: ['כוון משקל סיכה לפני אחיזה — בדוק ששני הצדדים שווים', 'מתח ליבה ועמוד שדרה ניטרלי — ללא סיבוב תחת עומס', 'שלוט בחזרה בכל חזרה — אל תתן לסטק ליפול'] },
   { re: /pull.?up|chin.?up|hanging.*raise|bar.?hang/i,
-    type: 'Pull-up Bar',
+    type: 'מוט מתח',
     svg: `<svg viewBox="0 0 72 52" width="72" height="52"><rect x="2" y="4" width="68" height="10" rx="5" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/><rect x="4" y="14" width="8" height="34" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="60" y="14" width="8" height="34" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><line x1="18" y1="5" x2="18" y2="13" stroke="rgba(255,255,255,.35)" stroke-width="2"/><line x1="54" y1="5" x2="54" y2="13" stroke="rgba(255,255,255,.35)" stroke-width="2"/></svg>`,
-    cues: ['Grip just outside shoulder-width; neutral or supinated for chin-up', 'Depress scapulae before each rep — don\'t start shrugged', 'Full hang at the bottom; stop short of elbow lock at the top'] },
+    cues: ['אחיזה מעט מחוץ לרוחב הכתפיים; לסנטר — אחיזה הפוכה', 'הורד ואחה שכמות לפני כל משיכה — אל תתחיל עם כתפיים מורמות', 'תליה מלאה בתחתית; עצור לפני נעילת המרפקים בראש'] },
   { re: /barbell|back.?squat|conventional.?dead|bent.?over.?row|barbell.?row|incline.*bar|flat.*bar/i,
-    type: 'Barbell',
+    type: 'מוט ישר',
     svg: `<svg viewBox="0 0 110 32" width="110" height="32"><rect x="0" y="2" width="12" height="28" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="14" y="7" width="7" height="18" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="22" y="13" width="66" height="6" rx="3" fill="rgba(255,255,255,.18)" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/><rect x="89" y="7" width="7" height="18" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="98" y="2" width="12" height="28" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/></svg>`,
-    cues: ['Load plates evenly; collar both ends before unracking', 'Grip tight — squeeze the bar to activate lats and upper back', 'Exhale on the concentric phase; never Valsalva under submaximal load'] },
+    cues: ['טען צלחות באופן שווה; נעל שני קצוות לפני הרמה', 'אחיזה חזקה — לחץ על המוט להפעיל גב עליון ורחב', 'נשוף בשלב הריכוזי — הימנע מוולסלבה תחת עומס תת-מקסימלי'] },
   { re: /dumbbell|db |d\.b\.|lateral.?raise|dumbbell.?curl|dumbbell.?fly|dumbbell.?row|hammer.?curl|db.?press/i,
-    type: 'Dumbbells',
+    type: 'משקולות',
     svg: `<svg viewBox="0 0 76 30" width="76" height="30"><rect x="0" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="13" y="10" width="12" height="10" rx="3" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><rect x="26" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="40" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><rect x="53" y="10" width="12" height="10" rx="3" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><rect x="66" y="3" width="12" height="24" rx="3" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="0" y1="28" x2="78" y2="28" stroke="rgba(255,255,255,.12)" stroke-width="1"/></svg>`,
-    cues: ['Pick matching weights; stand them on the rack before sitting', 'Neutral wrist throughout — don\'t let the handle roll in your palm', 'Start lighter on isolation moves; form > load every time'] },
+    cues: ['בחר זוג תואם; הצב ליד הספסל לפני ישיבה', 'שמור על שורש יד ניטרלי לאורך כל התנועה', 'התחל עם פחות — בתרגילי בידוד איכות קודמת למשקל'] },
   { re: /kettlebell|kb.?swing|kb.?clean|turkish.?get/i,
-    type: 'Kettlebell',
+    type: 'קטלבל',
     svg: `<svg viewBox="0 0 52 62" width="52" height="62"><path d="M12 32 Q12 6 26 6 Q40 6 40 32" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="3" stroke-linecap="round"/><rect x="9" y="28" width="8" height="10" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="35" y="28" width="8" height="10" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><ellipse cx="26" cy="48" rx="19" ry="13" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><ellipse cx="26" cy="48" rx="7" ry="5" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.2)" stroke-width="1"/></svg>`,
-    cues: ['Grip the horn firmly — wrist straight, bell on the back of forearm for cleans', 'Hip hinge drives swings — knees soft, not a squat', 'Keep the bell close to the body on the backswing'] },
+    cues: ['אחז חזק בידית — שורש יד ישר; קטלבל על אמת היד בניקוי', 'כיפוף מותניים (לא כריעה) מניע את ה-swing', 'שמור על הכלי קרוב לגוף במהלך ה-backswing'] },
   { re: /band.?pull|banded|resistance.?band|pull.?apart|monster.?walk|face.*band/i,
-    type: 'Resistance Band',
+    type: 'גומי התנגדות',
     svg: `<svg viewBox="0 0 80 40" width="80" height="40"><circle cx="7" cy="20" r="5" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><circle cx="73" cy="20" r="5" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><path d="M12 20 Q40 3 68 20" fill="none" stroke="#a3e635" stroke-width="2.5" opacity=".6"/><path d="M12 20 Q40 37 68 20" fill="none" stroke="#a3e635" stroke-width="2.5" opacity=".6"/></svg>`,
-    cues: ['Anchor point must be secure — test with light pull before loading', 'Keep constant tension throughout the full range of motion', 'Bands offload at the shortened position; slow the concentric down'] },
+    cues: ['ודא שנקודת עיגון יציבה — בדוק בעדינות לפני טעינה', 'שמור על מתח אחיד לאורך כל טווח התנועה', 'הגומי מקל בעמדה המקוצרת; האט את השלב הריכוזי'] },
   { re: /machine|leg.?press|leg.?extension|leg.?curl|seated.*press|chest.*press.*mach|hip.?abduct|adduct|pec.?deck|hack.?squat/i,
-    type: 'Machine',
+    type: 'מכונה',
     svg: `<svg viewBox="0 0 68 80" width="52" height="62"><rect x="6" y="2" width="56" height="72" rx="6" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><rect x="14" y="56" width="32" height="10" rx="4" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.35)" stroke-width="1"/><rect x="46" y="24" width="10" height="28" rx="3" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.3)" stroke-width="1"/><rect x="12" y="14" width="28" height="8" rx="4" fill="rgba(163,230,53,.15)" stroke="rgba(163,230,53,.4)" stroke-width="1.5"/><line x1="58" y1="14" x2="58" y2="50" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/><circle cx="58" cy="22" r="3.5" fill="rgba(163,230,53,.5)"/></svg>`,
-    cues: ['Adjust seat height and pad position before the first rep', 'Set the weight conservatively — machines concentrate load', 'Full ROM: don\'t short-stroke to move more weight on the stack'] },
+    cues: ['כוון גובה מושב ומיקום כרית לפני הסט הראשון', 'בחר משקל שמרני — מכונות מרכזות עומס על השריר', 'טווח תנועה מלא: אל תקצר כדי לזוז יותר בסטק'] },
   { re: /push.?up|dip|plank|crunch|sit.?up|mountain.?clim|burpee|bodyweight|bw |floor|hollow|superman/i,
-    type: 'Bodyweight',
+    type: 'משקל גוף',
     svg: `<svg viewBox="0 0 50 60" width="40" height="48"><circle cx="25" cy="8" r="7" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/><line x1="25" y1="15" x2="25" y2="38" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="22" x2="9" y2="32" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="22" x2="41" y2="32" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="38" x2="14" y2="54" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/><line x1="25" y1="38" x2="36" y2="54" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/></svg>`,
-    cues: ['No equipment needed — focus entirely on movement quality', 'Try a 3-1-1 tempo (3s lower, 1s pause, 1s up) to maximise time under tension', 'Core braced at all times; breathe out on the effort'] },
+    cues: ['ללא ציוד — התמקד לחלוטין באיכות התנועה', 'נסה טמפו 3-1-1: 3 שניות ירידה, 1 עצירה, 1 עלייה', 'ליבה מכווצת כל הזמן; נשוף בזמן המאמץ'] },
   { re: /serratus|wall.?slide|foam.?roll|y.?t.?w|prone.?y|face.?down|scapul/i,
-    type: 'Floor / Wall',
+    type: 'רצפה / קיר',
     svg: `<svg viewBox="0 0 80 38" width="80" height="38"><rect x="0" y="26" width="80" height="8" rx="2" fill="rgba(255,255,255,.1)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="0" y="2" width="8" height="24" rx="2" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><rect x="14" y="20" width="52" height="6" rx="2" fill="rgba(163,230,53,.1)" stroke="rgba(163,230,53,.3)" stroke-width="1.5"/></svg>`,
-    cues: ['Clear a 2 m² area; use a mat for floor work', 'Move slowly and deliberately — feel every degree of shoulder movement', 'These are corrective/activation drills: RPE should feel easy, quality is the goal'] },
+    cues: ['פנה שטח של 2 מטר; השתמש במזרון לתרגילי רצפה', 'תנועה איטית ומחושבת — הרגש כל מעלה של תנועת הכתף', 'תרגילי תיקון/הפעלה: RPE נמוך — האיכות היא המטרה'] },
 ];
 function _execEquipInfo(name) {
   const n = (name || '').toLowerCase();
   for (const e of _EQUIP_DATA) { if (e.re.test(n)) return e; }
-  return { type: 'Free Weight', svg: _EQUIP_DATA[3].svg,
+  return { type: 'משקל חופשי', svg: _EQUIP_DATA[3].svg,
     cues: ['Set up before the set — no rushing once you pick up the weight', 'Control both phases: concentric and eccentric', 'Quality reps beat heavy sloppy reps every time'] };
 }
 function _execSetVizTab(tab) {
@@ -4917,6 +4919,29 @@ function _execSetVizTab(tab) {
   if (eEl) eEl.style.display = tab === 'equip' ? '' : 'none';
   if (tM) tM.classList.toggle('active', tab !== 'equip');
   if (tE) tE.classList.toggle('active', tab === 'equip');
+  if (tab === 'equip') {
+    const ex = _exec.exercises[_exec.exIdx];
+    if (ex && ex._gifUrl === undefined) _execFetchEquipImage(_exec.exIdx);
+  }
+}
+function _extractEnglishName(name) {
+  const m = (name || '').match(/\(([^)]+)\)/);
+  return m ? m[1] : (name || '');
+}
+async function _execFetchEquipImage(exIdx) {
+  if (!_exec) return;
+  const ex = _exec.exercises[exIdx];
+  if (!ex || ex._gifUrl !== undefined) return;
+  ex._gifUrl = null;
+  const eng = _extractEnglishName(ex.name) || ex.name;
+  try {
+    const res = await apiGet('/api/fitness/exercise-gif' + _fcid() + '&name=' + encodeURIComponent(eng));
+    if (res && res.gifUrl) {
+      ex._gifUrl = res.gifUrl;
+      const wrap = document.getElementById('fit-exec-equip-img-wrap');
+      if (wrap) wrap.innerHTML = '<img src="' + ex._gifUrl + '" class="fit-exec-equip-gif" alt=""/>';
+    }
+  } catch (e) {}
 }
 
 function startGuidedWorkout(minutes) {
@@ -4924,7 +4949,7 @@ function startGuidedWorkout(minutes) {
   if (!minutes) { _showGuidedPicker(); return; }
   _guidedLoading = true;
   const area = document.getElementById('fit-guided-area');
-  if (area) area.innerHTML = `<div class="fit-guided-loading"><div class="fit-guided-spinner"></div><span>Building your ${minutes}-min AI session…</span></div>`;
+  if (area) area.innerHTML = `<div class="fit-guided-loading"><div class="fit-guided-spinner"></div><span>בונה אימון AI של ${minutes} דקות…</span></div>`;
   _doStartGuidedWorkout(minutes);
 }
 
@@ -4932,7 +4957,7 @@ function _showGuidedPicker() {
   const area = document.getElementById('fit-guided-area');
   if (!area) return;
   area.innerHTML = `<div class="fit-guided-picker">
-    <div class="fit-guided-picker-title">⏱ Choose workout duration</div>
+    <div class="fit-guided-picker-title">⏱ בחר משך אימון</div>
     <div class="fit-guided-picker-row">
       <button class="fit-guided-picker-btn" onclick="startGuidedWorkout(30)">30 min</button>
       <button class="fit-guided-picker-btn" onclick="startGuidedWorkout(45)">45 min</button>
@@ -4954,7 +4979,7 @@ async function _doStartGuidedWorkout(minutes) {
     if (!plan || !(plan.exercises || []).length) {
       if (dailyRec.key_exercises && dailyRec.key_exercises.length) {
         plan = {
-          title: dailyRec.title || 'Today\'s workout', workout_type: wtype, duration_min: minutes,
+          title: dailyRec.title || 'אימון היום', workout_type: wtype, duration_min: minutes,
           rationale: dailyRec.rationale || '',
           exercises: dailyRec.key_exercises.map(e => ({ ...e, rpe: 8, duration_sec: 0, notes: '' })),
           supersets: [],
@@ -4981,8 +5006,8 @@ function _restoreGuidedBtn() {
   const area = document.getElementById('fit-guided-area');
   if (area) area.innerHTML = `<button class="fit-start-guided-btn" onclick="startGuidedWorkout()">
     <span class="fit-start-guided-icon">▶</span>
-    <span class="fit-start-guided-text">Start guided workout</span>
-    <span class="fit-start-guided-sub">AI coach · drill-by-drill</span>
+    <span class="fit-start-guided-text">התחל אימון מודרך</span>
+    <span class="fit-start-guided-sub">מאמן AI · תרגיל אחר תרגיל</span>
   </button>`;
 }
 
@@ -5013,6 +5038,7 @@ function launchExec(plan, dailyRec, prevVolume) {
   };
   let el = document.getElementById('fit-exec');
   if (!el) { el = document.createElement('div'); el.id = 'fit-exec'; el.className = 'fit-exec'; document.body.appendChild(el); }
+  el.dir = 'rtl';
   el.innerHTML = '<button class="fit-exec-close" onclick="closeExec()">✕</button><div class="fit-exec-body" id="fit-exec-body"></div>';
   renderExec();
 }
@@ -5079,24 +5105,24 @@ function _execBodyHTML(muscles) {
 function _execIntroHTML() {
   const d = _exec.dailyRec || {};
   const readiness = d.readiness || 'ready';
-  const rLabel = readiness === 'rest' ? 'Rest recommended' : (readiness === 'light' ? 'Light session' : 'Ready to train');
+  const rLabel = readiness === 'rest' ? 'מנוחה מומלצת' : (readiness === 'light' ? 'אימון קל' : 'מוכן לאימון');
   const rIcon = readiness === 'rest' ? '🌙' : (readiness === 'light' ? '🌤️' : '⚡');
   const days = d.days_since_last;
-  const daysTxt = (days === 0) ? 'today' : ((days || days === 0) ? days + 'd ago' : '—');
+  const daysTxt = (days === 0) ? 'היום' : ((days || days === 0) ? 'לפני ' + days + ' ימים' : '—');
   const exNames = _exec.exercises.slice(0, 4).map(e => e.name).join(' · ');
   return `<div class="fit-exec-intro">
-    <div class="fit-exec-intro-hi">Hi Daniel 👋</div>
+    <div class="fit-exec-intro-hi">היי דניאל 👋</div>
     <div class="fit-exec-intro-routine">${_esc(_exec.plan.title || 'Today\'s workout')}</div>
     <div class="fit-exec-readiness ${readiness}">${rIcon} ${rLabel}</div>
     <div class="fit-exec-intro-stats">
-      <div class="fit-exec-intro-stat"><b>${_exec.exercises.length}</b><span>exercises</span></div>
-      <div class="fit-exec-intro-stat"><b>${_exec.plan.duration_min || '—'}</b><span>minutes</span></div>
-      <div class="fit-exec-intro-stat"><b>${daysTxt}</b><span>last session</span></div>
-      ${d.last_avg_rpe ? `<div class="fit-exec-intro-stat"><b>${d.last_avg_rpe}</b><span>last RPE</span></div>` : ''}
+      <div class="fit-exec-intro-stat"><b>${_exec.exercises.length}</b><span>תרגילים</span></div>
+      <div class="fit-exec-intro-stat"><b>${_exec.plan.duration_min || '—'}</b><span>דקות</span></div>
+      <div class="fit-exec-intro-stat"><b>${daysTxt}</b><span>אימון אחרון</span></div>
+      ${d.last_avg_rpe ? `<div class="fit-exec-intro-stat"><b>${d.last_avg_rpe}</b><span>RPE אחרון</span></div>` : ''}
     </div>
     ${_exec.plan.rationale ? `<div class="fit-exec-intro-rationale">${_esc(_exec.plan.rationale)}</div>` : ''}
     <div class="fit-exec-intro-preview">${_esc(exNames)}</div>
-    <button class="fit-exec-complete-btn" onclick="_execStartExec()">Start workout →</button>
+    <button class="fit-exec-complete-btn" onclick="_execStartExec()">התחל אימון →</button>
   </div>`;
 }
 
@@ -5120,16 +5146,16 @@ function _execActiveHTML() {
   const ss = ex.ssGroup != null;
   const ssColor = ss ? _SS_COLORS[ex.ssGroup % _SS_COLORS.length] : null;
   const ssBadge = ss ? `<span class="fit-exec-ss-badge" style="background:${ssColor}">S${ex.ssGroup + 1}</span>` : '';
-  const breath = _execNeedsBreathCue(ex.name) ? `<div class="fit-exec-breath-badge">🫁 Exhale on exertion · neutral neck</div>` : '';
+  const breath = _execNeedsBreathCue(ex.name) ? `<div class="fit-exec-breath-badge">🫁 נשוף בזמן המאמץ · שמור על ניטרליות הצוואר</div>` : '';
   const isTimed = ex.duration_sec > 0;
   const overallDone = _exec.exercises.reduce((s, e) => s + e.logged.length, 0);
   const overallTotal = _exec.exercises.reduce((s, e) => s + e.sets, 0);
   const pct = overallTotal ? Math.round(overallDone / overallTotal * 100) : 0;
   const swap = (ss && ex.ssPartnerIdx != null)
-    ? `<button class="fit-exec-swap-btn" onclick="_execSwapSuperset()">⇄ Swap to ${_esc(_exec.exercises[ex.ssPartnerIdx].name)}</button>` : '';
+    ? `<button class="fit-exec-swap-btn" onclick="_execSwapSuperset()">⇄ עבור ל-${_esc(_exec.exercises[ex.ssPartnerIdx].name)}</button>` : '';
   const repStepper = isTimed
-    ? `<div class="fit-exec-stepper"><div class="fit-exec-stepper-label">Seconds</div><div class="fit-exec-stepper-val">${ex.duration_sec}s</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('dur',-5)">−5</button><button class="fit-exec-stepper-btn" onclick="_execStep('dur',5)">+5</button></div></div>`
-    : `<div class="fit-exec-stepper"><div class="fit-exec-stepper-label">Reps</div><div class="fit-exec-stepper-val" id="fit-exec-reps">${_exec.curReps}</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('reps',-1)">−1</button><button class="fit-exec-stepper-btn" onclick="_execStep('reps',1)">+1</button></div></div>`;
+    ? `<div class="fit-exec-stepper"><div class="fit-exec-stepper-label">שניות</div><div class="fit-exec-stepper-val">${ex.duration_sec}s</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('dur',-5)">−5</button><button class="fit-exec-stepper-btn" onclick="_execStep('dur',5)">+5</button></div></div>`
+    : `<div class="fit-exec-stepper"><div class="fit-exec-stepper-label">חזרות</div><div class="fit-exec-stepper-val" id="fit-exec-reps">${_exec.curReps}</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('reps',-1)">−1</button><button class="fit-exec-stepper-btn" onclick="_execStep('reps',1)">+1</button></div></div>`;
   return `<div class="fit-exec-active">
     <div class="fit-exec-topbar">
       <div class="fit-exec-progress-track"><div class="fit-exec-progress-fill" style="width:${pct}%"></div></div>
@@ -5138,18 +5164,18 @@ function _execActiveHTML() {
     <div class="fit-exec-card-head">
       <div>
         <div class="fit-exec-exname">${_esc(ex.name)} ${ssBadge}</div>
-        <div class="fit-exec-exsub">Set ${curSet} of ${totalSets} · target RPE ${ex.rpe || '—'}</div>
+        <div class="fit-exec-exsub">סט ${curSet} מתוך ${totalSets} · RPE יעד ${ex.rpe || '—'}</div>
         ${breath}
       </div>
       <div class="fit-ex-icon" style="font-size:30px">${_exIcon(ex.name)}</div>
     </div>
     <div class="fit-exec-viz-tabs">
-      <button class="fit-exec-viz-tab${_exec.vizTab !== 'equip' ? ' active' : ''}" id="fit-exec-tab-muscle" onclick="_execSetVizTab('muscle')">💪 Muscles</button>
-      <button class="fit-exec-viz-tab${_exec.vizTab === 'equip' ? ' active' : ''}" id="fit-exec-tab-equip" onclick="_execSetVizTab('equip')">🏋️ Equipment</button>
+      <button class="fit-exec-viz-tab${_exec.vizTab !== 'equip' ? ' active' : ''}" id="fit-exec-tab-muscle" onclick="_execSetVizTab('muscle')">💪 שרירים</button>
+      <button class="fit-exec-viz-tab${_exec.vizTab === 'equip' ? ' active' : ''}" id="fit-exec-tab-equip" onclick="_execSetVizTab('equip')">🏋️ ציוד</button>
     </div>
     <div class="fit-exec-body-svg-wrap" id="fit-exec-viz-muscle"${_exec.vizTab === 'equip' ? ' style="display:none"' : ''}>${_execBodyHTML(ex.muscles)}</div>
     <div class="fit-exec-equip-panel" id="fit-exec-viz-equip"${_exec.vizTab !== 'equip' ? ' style="display:none"' : ''}>
-      <div class="fit-exec-equip-svg-wrap">${_execEquipInfo(ex.name).svg}</div>
+      <div class="fit-exec-equip-svg-wrap" id="fit-exec-equip-img-wrap">${ex._gifUrl ? \`<img src="\${ex._gifUrl}" class="fit-exec-equip-gif" alt=""/>\` : _execEquipInfo(ex.name).svg}</div>
       <div class="fit-exec-equip-meta">
         <div class="fit-exec-equip-type-label">${_esc(_execEquipInfo(ex.name).type)}</div>
         ${_execEquipInfo(ex.name).cues.map(c => `<div class="fit-exec-equip-cue"><span class="fit-exec-equip-cue-dot">▸</span><span>${_esc(c)}</span></div>`).join('')}
@@ -5157,14 +5183,14 @@ function _execActiveHTML() {
     </div>
     <div class="fit-exec-dots">${dots}</div>
     <div class="fit-exec-steppers">
-      <div class="fit-exec-stepper"><div class="fit-exec-stepper-label">Weight kg</div><div class="fit-exec-stepper-val" id="fit-exec-weight">${_exec.curWeight}</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-2.5)">−2.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-0.5)">−.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',0.5)">+.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',2.5)">+2.5</button></div></div>
+      <div class="fit-exec-stepper"><div class="fit-exec-stepper-label">משקל ק"ג</div><div class="fit-exec-stepper-val" id="fit-exec-weight">${_exec.curWeight}</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-2.5)">−2.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-0.5)">−.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',0.5)">+.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',2.5)">+2.5</button></div></div>
     </div>
     <div class="fit-exec-steppers">${repStepper}</div>
     ${swap}
-    <button class="fit-exec-complete-btn" onclick="_execCompleteSet()">✓ Complete set ${curSet}/${totalSets}</button>
+    <button class="fit-exec-complete-btn" onclick="_execCompleteSet()">✓ סיים סט ${curSet} מתוך ${totalSets}</button>
     <div class="fit-exec-nav">
-      <button class="fit-exec-nav-btn" onclick="_execPrevEx()" ${_exec.exIdx === 0 ? 'disabled' : ''}>← Prev</button>
-      <button class="fit-exec-nav-btn" onclick="_execNextEx()" ${_exec.exIdx >= _exec.exercises.length - 1 ? 'disabled' : ''}>Skip →</button>
+      <button class="fit-exec-nav-btn" onclick="_execPrevEx()" ${_exec.exIdx === 0 ? 'disabled' : ''}>← קודם</button>
+      <button class="fit-exec-nav-btn" onclick="_execNextEx()" ${_exec.exIdx >= _exec.exercises.length - 1 ? 'disabled' : ''}>דלג →</button>
     </div>
   </div>`;
 }
@@ -5288,7 +5314,7 @@ function _execRestHTML() {
   const R = 88, C = 2 * Math.PI * R;
   const lowWater = _exec.waterMl < EXEC_MIN_WATER;
   return `<div class="fit-exec-rest">
-    <div class="fit-exec-rest-title">Rest</div>
+    <div class="fit-exec-rest-title">מנוחה</div>
     <div class="fit-exec-rest-ring-wrap">
       <svg class="fit-exec-rest-ring-svg" viewBox="0 0 200 200">
         <circle class="fit-exec-rest-track" cx="100" cy="100" r="88" stroke-width="12"/>
@@ -5298,17 +5324,17 @@ function _execRestHTML() {
         <div class="fit-exec-rest-secs" id="fit-exec-rest-secs">${_exec.restLeft}</div>
       </div>
     </div>
-    ${next ? `<div class="fit-exec-rest-next">Next: ${_esc(next.name)}</div>` : ''}
+    ${next ? `<div class="fit-exec-rest-next">הבא: ${_esc(next.name)}</div>` : ''}
     <div class="fit-exec-rest-adj">
       <button class="fit-exec-rest-adj-btn" onclick="_execAddRest(-15)">−15s</button>
       <button class="fit-exec-rest-adj-btn" onclick="_execAddRest(15)">+15s</button>
     </div>
     <div class="fit-exec-hydra-card">
       <span style="font-size:22px">💧</span>
-      <div class="fit-exec-hydra-text">${lowWater ? 'Hydration alert (Gilbert\'s guardrail) — take a sip! ' : ''}Logged <b id="fit-exec-water-val">${_exec.waterMl}</b> ml this session</div>
+      <div class="fit-exec-hydra-text">${lowWater ? '⚠️ התראת הידרציה (גילברט) — שתה עכשיו! ' : ''}סה"כ <b id="fit-exec-water-val">${_exec.waterMl}</b> מ"ל בסשן זה</div>
       <button class="fit-exec-hydra-btn" onclick="_execAddWater(250)">+250 ml</button>
     </div>
-    <button class="fit-exec-rest-skip" onclick="_execSkipRest()">Skip rest →</button>
+    <button class="fit-exec-rest-skip" onclick="_execSkipRest()">דלג על מנוחה ←</button>
   </div>`;
 }
 
@@ -5329,23 +5355,23 @@ function _execSummaryHTML() {
   let deltaHtml = '';
   if (prev > 0) {
     const pc = Math.round((totalVol - prev) / prev * 100);
-    deltaHtml = `<div class="fit-exec-delta ${pc >= 0 ? 'pos' : 'neg'}">${pc >= 0 ? '▲ +' : '▼ '}${pc}% volume vs last session</div>`;
+    deltaHtml = `<div class="fit-exec-delta ${pc >= 0 ? 'pos' : 'neg'}">${pc >= 0 ? '▲ +' : '▼ '}${pc}% נפח לעומת הסשן הקודם</div>`;
   }
   const mins = Math.max(1, Math.round((Date.now() - _exec.startedAt) / 60000));
   const lowWater = _exec.waterMl < EXEC_MIN_WATER;
   return `<div class="fit-exec-summary">
     <div style="font-size:40px">🏆</div>
-    <div class="fit-exec-summary-title">Workout complete!</div>
+    <div class="fit-exec-summary-title">!אימון הושלם</div>
     ${deltaHtml}
     <div class="fit-exec-summary-grid">
-      <div class="fit-exec-summary-stat"><b>${totalVol}</b><span>kg volume</span></div>
-      <div class="fit-exec-summary-stat"><b>${completed}/${planned}</b><span>sets done</span></div>
-      <div class="fit-exec-summary-stat"><b>${_exec.waterMl}</b><span>ml water</span></div>
-      <div class="fit-exec-summary-stat"><b>${mins}</b><span>minutes</span></div>
+      <div class="fit-exec-summary-stat"><b>${totalVol}</b><span>נפח ק"ג</span></div>
+      <div class="fit-exec-summary-stat"><b>${completed}/${planned}</b><span>סטים</span></div>
+      <div class="fit-exec-summary-stat"><b>${_exec.waterMl}</b><span>מ"ל מים</span></div>
+      <div class="fit-exec-summary-stat"><b>${mins}</b><span>דקות</span></div>
     </div>
     ${lowWater ? `<div class="fit-exec-warn">⚠️ Gilbert's guardrail: only ${_exec.waterMl} ml logged this session (aim ≥ 500 ml). Hydrate before you leave the gym.</div>` : ''}
-    <button class="fit-exec-save-btn" id="fit-exec-save-btn" onclick="_execSave()">💾 Save workout</button>
-    <button class="fit-exec-discard-btn" onclick="closeExec(true)">Discard</button>
+    <button class="fit-exec-save-btn" id="fit-exec-save-btn" onclick="_execSave()">💾 שמור אימון</button>
+    <button class="fit-exec-discard-btn" onclick="closeExec(true)">בטל</button>
   </div>`;
 }
 
@@ -5377,7 +5403,7 @@ async function _execSave() {
     source: 'executed',
   };
   const btn = document.getElementById('fit-exec-save-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'שומר...'; }
   try {
     const r = await apiPost('/api/fitness/log-structured' + _fcid(), body);
     if (_exec.waterMl > 0) {

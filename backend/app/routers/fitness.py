@@ -1,7 +1,11 @@
 """Fitness API — log workouts (image/text/structured), suggest, evaluate, body metrics, history."""
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import urllib.parse
+import urllib.request
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -297,3 +301,29 @@ async def delete_entry(
     if not fitness.delete_workout(workout_id, chat_id):
         raise HTTPException(status_code=404, detail="Workout not found")
     return {"ok": True}
+
+
+@router.get("/api/fitness/exercise-gif")
+async def exercise_gif(name: str = Query(""), _: str = Depends(_require_token)):
+    """Server-side proxy: fetch a GIF URL for an exercise from ExerciseDB (avoids browser CORS)."""
+    if not name.strip():
+        return {"gifUrl": None}
+    q = urllib.parse.quote(name.strip().lower())
+    urls_to_try = [
+        f"https://oss.exercisedb.dev/exercises/name/{q}?limit=3",
+        f"https://exercisedb.io/api/v1/exercises/name/{q}?limit=3",
+    ]
+    def _fetch(url: str):
+        req = urllib.request.Request(url, headers={"User-Agent": "danidin-fitness/1.0", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            return json.loads(r.read().decode())
+
+    loop = asyncio.get_event_loop()
+    for url in urls_to_try:
+        try:
+            data = await loop.run_in_executor(None, _fetch, url)
+            if isinstance(data, list) and data and data[0].get("gifUrl"):
+                return {"gifUrl": data[0]["gifUrl"]}
+        except Exception:
+            continue
+    return {"gifUrl": None}
