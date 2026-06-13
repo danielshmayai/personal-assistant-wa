@@ -1238,7 +1238,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-exec-rest-prog { fill:none; stroke:#a3e635; stroke-linecap:round; transition:stroke-dashoffset 1s linear; }
 .fit-exec-rest-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
 .fit-exec-rest-secs { font-size:52px; font-weight:800; color:#f9fafb; line-height:1; }
-.fit-exec-rest-next { font-size:12px; color:#6b7280; margin-top:6px; }
+.fit-exec-rest-next { font-size:12px; color:#6b7280; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
 .fit-exec-rest-adj { display:flex; gap:10px; }
 .fit-exec-rest-adj-btn { background:rgba(255,255,255,.08); border:none; color:#f9fafb; border-radius:11px; padding:10px 18px; font-size:14px; font-weight:700; cursor:pointer; }
 .fit-exec-rest-skip { background:none; border:none; color:#6b7280; font-size:13px; cursor:pointer; padding:6px; text-decoration:underline; }
@@ -1259,6 +1259,16 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-exec-warn { background:rgba(248,113,113,.12); border:1px solid rgba(248,113,113,.35); color:#fca5a5; border-radius:12px; padding:11px 14px; font-size:12px; line-height:1.4; }
 .fit-exec-save-btn { width:100%; border:none; cursor:pointer; border-radius:14px; padding:15px; font-size:16px; font-weight:800; color:#030712; background:linear-gradient(135deg,#a3e635,#34d399); }
 .fit-exec-discard-btn { background:none; border:none; color:#6b7280; font-size:13px; cursor:pointer; padding:8px; }
+
+/* Guided workout duration picker */
+.fit-guided-picker { background:rgba(79,70,229,.08); border:1px solid rgba(99,102,241,.3); border-radius:16px; padding:14px 16px; margin-bottom:14px; }
+.fit-guided-picker-title { font-size:13px; font-weight:600; color:var(--text); margin-bottom:10px; }
+.fit-guided-picker-row { display:flex; gap:8px; }
+.fit-guided-picker-btn { flex:1; border:1px solid rgba(99,102,241,.4); background:rgba(99,102,241,.1); color:var(--text); border-radius:10px; padding:10px 0; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; transition:background .15s; }
+.fit-guided-picker-btn:hover,.fit-guided-picker-btn.active { background:rgba(99,102,241,.35); border-color:#6366f1; }
+.fit-guided-loading { display:flex; align-items:center; gap:10px; padding:14px 16px; background:rgba(79,70,229,.06); border:1px solid rgba(99,102,241,.25); border-radius:16px; margin-bottom:14px; color:var(--text2); font-size:13px; }
+@keyframes fit-spin { to { transform:rotate(360deg); } }
+.fit-guided-spinner { width:18px; height:18px; border:2.5px solid rgba(99,102,241,.3); border-top-color:#6366f1; border-radius:50%; animation:fit-spin .8s linear infinite; flex-shrink:0; }
 
 /* ── Dashboard ── */
 .dash-greeting {
@@ -1916,11 +1926,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         </div>
 
         <!-- Start guided workout -->
-        <button class="fit-start-guided-btn" onclick="startGuidedWorkout()">
-          <span class="fit-start-guided-icon">▶</span>
-          <span class="fit-start-guided-text">Start guided workout</span>
-          <span class="fit-start-guided-sub">AI coach · drill-by-drill</span>
-        </button>
+        <div id="fit-guided-area">
+          <button class="fit-start-guided-btn" onclick="startGuidedWorkout()">
+            <span class="fit-start-guided-icon">▶</span>
+            <span class="fit-start-guided-text">Start guided workout</span>
+            <span class="fit-start-guided-sub">AI coach · drill-by-drill</span>
+          </button>
+        </div>
 
         <!-- Suggest workout -->
         <div class="section-block">
@@ -4837,27 +4849,51 @@ function _execNeedsBreathCue(name) {
   return /squat|press|bench|deadlift|overhead|ohp|thrust|lunge/i.test(name || '');
 }
 
-async function startGuidedWorkout() {
-  showToast('Building your session…');
+function startGuidedWorkout(minutes) {
+  if (!minutes) {
+    _showGuidedPicker();
+    return;
+  }
+  const area = document.getElementById('fit-guided-area');
+  if (area) {
+    area.innerHTML = `<div class="fit-guided-loading"><div class="fit-guided-spinner"></div><span>Building your ${minutes}-min AI session…</span></div>`;
+  }
+  _doStartGuidedWorkout(minutes);
+}
+
+function _showGuidedPicker() {
+  const area = document.getElementById('fit-guided-area');
+  if (!area) return;
+  area.innerHTML = `<div class="fit-guided-picker">
+    <div class="fit-guided-picker-title">⏱ Choose workout duration</div>
+    <div class="fit-guided-picker-row">
+      <button class="fit-guided-picker-btn" onclick="startGuidedWorkout(30)">30 min</button>
+      <button class="fit-guided-picker-btn" onclick="startGuidedWorkout(45)">45 min</button>
+      <button class="fit-guided-picker-btn" onclick="startGuidedWorkout(60)">60 min</button>
+    </div>
+  </div>`;
+}
+
+async function _doStartGuidedWorkout(minutes) {
   let dailyRec = {}, plan = null, prevVolume = 0;
   try { dailyRec = await apiGet('/api/fitness/daily-rec' + _fcid()); } catch (e) {}
-  const mins = dailyRec.duration_min || _fitMinutes || 45;
   const selType = document.getElementById('fit-suggest-type');
   const wtype = (dailyRec.workout_type && dailyRec.workout_type !== 'rest')
     ? dailyRec.workout_type : (selType ? selType.value : 'strength');
   try {
-    plan = await apiPost('/api/fitness/suggest' + _fcid(), { minutes: mins, workout_type: wtype });
+    plan = await apiPost('/api/fitness/suggest' + _fcid(), { minutes: minutes, workout_type: wtype });
   } catch (e) {}
   if (!plan || !(plan.exercises || []).length) {
     if (dailyRec.key_exercises && dailyRec.key_exercises.length) {
       plan = {
-        title: dailyRec.title || 'אימון היום', workout_type: wtype, duration_min: mins,
+        title: dailyRec.title || 'Today\'s workout', workout_type: wtype, duration_min: minutes,
         rationale: dailyRec.rationale || '',
         exercises: dailyRec.key_exercises.map(e => ({ ...e, rpe: 8, duration_sec: 0, notes: '' })),
         supersets: [],
       };
     } else {
       showToast('Could not build a workout right now.', true);
+      _restoreGuidedBtn();
       return;
     }
   }
@@ -4867,7 +4903,17 @@ async function startGuidedWorkout() {
     const past = (h.days || []).find(d => d.date < today);
     prevVolume = past ? past.total_volume : 0;
   } catch (e) {}
+  _restoreGuidedBtn();
   launchExec(plan, dailyRec, prevVolume);
+}
+
+function _restoreGuidedBtn() {
+  const area = document.getElementById('fit-guided-area');
+  if (area) area.innerHTML = `<button class="fit-start-guided-btn" onclick="startGuidedWorkout()">
+    <span class="fit-start-guided-icon">▶</span>
+    <span class="fit-start-guided-text">Start guided workout</span>
+    <span class="fit-start-guided-sub">AI coach · drill-by-drill</span>
+  </button>`;
 }
 
 function launchExec(plan, dailyRec, prevVolume) {
@@ -5082,8 +5128,10 @@ function _execNextSlot() {
 }
 
 function _execCompleteSet() {
+  if (!_exec || _exec.state !== 'active') return;
   const ex = _exec.exercises[_exec.exIdx];
   if (ex.logged.length >= ex.sets) return;
+  _exec.state = 'completing'; // guard against re-entry while DOM rebuilds
   ex.logged.push({ weight: _exec.curWeight, reps: _exec.curReps, rpe: ex.rpe > 0 ? ex.rpe : 7 });
   if (_execAllDone()) { _execGoSummary(); return; }
   _exec.pendingIdx = _execNextSlot();
@@ -5091,9 +5139,9 @@ function _execCompleteSet() {
 }
 
 function _execStartRest(sec) {
+  if (_execTimer) { clearInterval(_execTimer); _execTimer = null; }
   _exec.restTotal = sec; _exec.restLeft = sec; _exec.state = 'rest';
   renderExec();
-  if (_execTimer) clearInterval(_execTimer);
   _execTimer = setInterval(_execTickRest, 1000);
 }
 function _execTickRest() {
@@ -5167,9 +5215,9 @@ function _execRestHTML() {
       </svg>
       <div class="fit-exec-rest-center">
         <div class="fit-exec-rest-secs" id="fit-exec-rest-secs">${_exec.restLeft}</div>
-        ${next ? `<div class="fit-exec-rest-next">Next: ${_esc(next.name)}</div>` : ''}
       </div>
     </div>
+    ${next ? `<div class="fit-exec-rest-next">Next: ${_esc(next.name)}</div>` : ''}
     <div class="fit-exec-rest-adj">
       <button class="fit-exec-rest-adj-btn" onclick="_execAddRest(-15)">−15s</button>
       <button class="fit-exec-rest-adj-btn" onclick="_execAddRest(15)">+15s</button>
