@@ -810,6 +810,18 @@ def test_progression_focus_recovery_on_high_rpe():
     assert focus == "recovery"
 
 
+def test_reflux_guardrail_in_clinical_constraints():
+    """The GERD/reflux guardrail must be present and reach every fitness LLM call
+    via render_profile_block()."""
+    from app.fitness_profile import CLINICAL_CONSTRAINTS, render_profile_block
+    low = CLINICAL_CONSTRAINTS.lower()
+    assert "reflux" in low or "gerd" in low
+    assert "exhale on exertion" in low
+    assert "decline" in low  # avoid decline-press positions
+    block = render_profile_block(None).lower()
+    assert "exhale on exertion" in block
+
+
 def test_timed_exercises_volume_and_progression():
     """Timed HIIT exercises (reps=0, duration_sec>0) must produce non-zero volume
     and duration-based progression targets."""

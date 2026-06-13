@@ -1153,6 +1153,113 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-today-empty { text-align:center; padding:30px 0; color:var(--text-muted); font-size:14px; }
 .fit-rpe-badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; color:#fff; }
 
+/* Start guided workout button */
+.fit-start-guided-btn {
+  width:100%; border:none; cursor:pointer; border-radius:16px; padding:16px 18px; margin-bottom:14px;
+  background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 55%,#10b981 140%);
+  color:#fff; display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  box-shadow:0 6px 20px rgba(79,70,229,.35); font-family:inherit; text-align:left;
+}
+.fit-start-guided-btn:active { transform:scale(.985); }
+.fit-start-guided-icon { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; background:rgba(255,255,255,.2); font-size:13px; margin-bottom:4px; }
+.fit-start-guided-text { font-size:17px; font-weight:700; letter-spacing:-.01em; }
+.fit-start-guided-sub { font-size:12px; opacity:.85; }
+
+/* ── Guided workout execution overlay (premium dark) ── */
+.fit-exec {
+  position:fixed; inset:0; z-index:200; width:100%; height:100dvh; overflow:hidden;
+  background:#030712; color:#e5e7eb; font-family:inherit;
+  display:flex; flex-direction:column;
+  /* scoped theme overrides so child markup using var(--accent) etc. reads dark-mode accents */
+  --accent:#a3e635; --green:#34d399; --purple:#c084fc; --text:#f9fafb; --text2:#9ca3af; --text3:#6b7280;
+  padding:max(14px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));
+  box-sizing:border-box; animation:execFade .25s ease;
+}
+@keyframes execFade { from { opacity:0; } to { opacity:1; } }
+.fit-exec-body { flex:1; display:flex; flex-direction:column; min-height:0; }
+.fit-exec-close { position:absolute; top:max(14px,env(safe-area-inset-top)); right:14px; z-index:5;
+  background:rgba(255,255,255,.07); border:none; color:#9ca3af; width:34px; height:34px; border-radius:50%; font-size:18px; cursor:pointer; }
+.fit-exec-topbar { display:flex; align-items:center; gap:8px; margin-bottom:6px; padding-right:42px; }
+.fit-exec-progress-track { flex:1; height:5px; background:rgba(255,255,255,.08); border-radius:3px; overflow:hidden; }
+.fit-exec-progress-fill { height:100%; background:linear-gradient(90deg,#a3e635,#34d399); border-radius:3px; transition:width .3s ease; }
+.fit-exec-step-label { font-size:11px; color:#6b7280; white-space:nowrap; }
+
+/* intro */
+.fit-exec-intro { flex:1; display:flex; flex-direction:column; justify-content:center; gap:16px; text-align:center; }
+.fit-exec-intro-hi { font-size:15px; color:#9ca3af; }
+.fit-exec-intro-routine { font-size:26px; font-weight:800; letter-spacing:-.02em; color:#f9fafb; line-height:1.2; }
+.fit-exec-readiness { display:inline-flex; align-items:center; gap:6px; align-self:center; padding:6px 14px; border-radius:20px; font-size:13px; font-weight:600; }
+.fit-exec-readiness.ready { background:rgba(52,211,153,.15); color:#34d399; }
+.fit-exec-readiness.light { background:rgba(250,204,21,.15); color:#facc15; }
+.fit-exec-readiness.rest  { background:rgba(248,113,113,.15); color:#f87171; }
+.fit-exec-intro-stats { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+.fit-exec-intro-stat { background:rgba(255,255,255,.05); border-radius:12px; padding:10px 14px; min-width:78px; }
+.fit-exec-intro-stat b { display:block; font-size:18px; color:#f9fafb; }
+.fit-exec-intro-stat span { font-size:11px; color:#6b7280; }
+.fit-exec-intro-rationale { font-size:13px; color:#9ca3af; line-height:1.5; max-width:340px; margin:0 auto; }
+.fit-exec-intro-preview { font-size:12px; color:#6b7280; }
+
+/* active card */
+.fit-exec-active { flex:1; display:flex; flex-direction:column; min-height:0; }
+.fit-exec-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:4px; }
+.fit-exec-exname { font-size:20px; font-weight:700; color:#f9fafb; line-height:1.2; }
+.fit-exec-exsub { font-size:12px; color:#6b7280; margin-top:2px; }
+.fit-exec-ss-badge { font-size:11px; font-weight:800; color:#030712; border-radius:6px; padding:3px 8px; white-space:nowrap; }
+.fit-exec-breath-badge { display:inline-flex; align-items:center; gap:4px; margin-top:6px; font-size:11px; color:#facc15; background:rgba(250,204,21,.12); border-radius:8px; padding:3px 8px; }
+.fit-exec-body-svg-wrap { flex:1; display:flex; align-items:center; justify-content:center; min-height:0; padding:6px 0; }
+.fit-exec-body-svg { height:100%; max-height:230px; width:auto; }
+.fit-musc { fill:#1f2937; transition:fill .3s ease; }
+.fit-musc.is-active { fill:#a3e635; filter:drop-shadow(0 0 5px rgba(163,230,53,.7)); }
+.fit-exec-body-outline { fill:none; stroke:#374151; stroke-width:1.5; }
+.fit-exec-dots { display:flex; gap:7px; justify-content:center; margin:4px 0; }
+.fit-exec-dot { width:11px; height:11px; border-radius:50%; background:rgba(255,255,255,.14); }
+.fit-exec-dot.done { background:#34d399; }
+.fit-exec-dot.cur { background:#a3e635; box-shadow:0 0 0 3px rgba(163,230,53,.25); }
+.fit-exec-steppers { display:flex; gap:10px; margin:6px 0; }
+.fit-exec-stepper { flex:1; background:rgba(255,255,255,.05); border-radius:14px; padding:10px; text-align:center; }
+.fit-exec-stepper-label { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; }
+.fit-exec-stepper-val { font-size:26px; font-weight:800; color:#f9fafb; margin:2px 0 6px; }
+.fit-exec-stepper-row { display:flex; gap:6px; justify-content:center; }
+.fit-exec-stepper-btn { border:none; cursor:pointer; background:rgba(255,255,255,.1); color:#f9fafb; border-radius:9px; font-size:14px; font-weight:700; padding:7px 0; flex:1; min-width:38px; }
+.fit-exec-stepper-btn:active { background:rgba(163,230,53,.3); }
+.fit-exec-swap-btn { width:100%; border:1px solid rgba(192,132,252,.4); background:rgba(192,132,252,.1); color:#c084fc; border-radius:11px; padding:9px; font-size:13px; font-weight:600; cursor:pointer; margin:4px 0; }
+.fit-exec-complete-btn { width:100%; border:none; cursor:pointer; border-radius:14px; padding:15px; font-size:16px; font-weight:800; color:#030712; background:linear-gradient(135deg,#a3e635,#34d399); margin-top:6px; }
+.fit-exec-complete-btn:active { transform:scale(.985); }
+.fit-exec-nav { display:flex; justify-content:space-between; gap:8px; margin-top:8px; }
+.fit-exec-nav-btn { background:none; border:none; color:#6b7280; font-size:13px; cursor:pointer; padding:6px 4px; }
+.fit-exec-nav-btn:disabled { opacity:.3; }
+
+/* rest timer */
+.fit-exec-rest { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; }
+.fit-exec-rest-title { font-size:14px; color:#9ca3af; text-transform:uppercase; letter-spacing:.08em; }
+.fit-exec-rest-ring-wrap { position:relative; width:200px; height:200px; }
+.fit-exec-rest-ring-svg { width:200px; height:200px; transform:rotate(-90deg); }
+.fit-exec-rest-track { fill:none; stroke:rgba(255,255,255,.08); }
+.fit-exec-rest-prog { fill:none; stroke:#a3e635; stroke-linecap:round; transition:stroke-dashoffset 1s linear; }
+.fit-exec-rest-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.fit-exec-rest-secs { font-size:52px; font-weight:800; color:#f9fafb; line-height:1; }
+.fit-exec-rest-next { font-size:12px; color:#6b7280; margin-top:6px; }
+.fit-exec-rest-adj { display:flex; gap:10px; }
+.fit-exec-rest-adj-btn { background:rgba(255,255,255,.08); border:none; color:#f9fafb; border-radius:11px; padding:10px 18px; font-size:14px; font-weight:700; cursor:pointer; }
+.fit-exec-rest-skip { background:none; border:none; color:#6b7280; font-size:13px; cursor:pointer; padding:6px; text-decoration:underline; }
+.fit-exec-hydra-card { display:flex; align-items:center; gap:10px; background:rgba(96,165,250,.1); border:1px solid rgba(96,165,250,.3); border-radius:14px; padding:12px 14px; width:100%; max-width:330px; box-sizing:border-box; }
+.fit-exec-hydra-text { flex:1; font-size:12px; color:#93c5fd; line-height:1.35; }
+.fit-exec-hydra-btn { background:#3b82f6; border:none; color:#fff; border-radius:10px; padding:9px 13px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap; }
+
+/* summary */
+.fit-exec-summary { flex:1; display:flex; flex-direction:column; justify-content:center; gap:14px; text-align:center; overflow-y:auto; }
+.fit-exec-summary-title { font-size:24px; font-weight:800; color:#f9fafb; }
+.fit-exec-summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.fit-exec-summary-stat { background:rgba(255,255,255,.05); border-radius:14px; padding:16px 12px; }
+.fit-exec-summary-stat b { display:block; font-size:24px; font-weight:800; color:#f9fafb; }
+.fit-exec-summary-stat span { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.04em; }
+.fit-exec-delta { font-size:15px; font-weight:700; }
+.fit-exec-delta.pos { color:#34d399; }
+.fit-exec-delta.neg { color:#f87171; }
+.fit-exec-warn { background:rgba(248,113,113,.12); border:1px solid rgba(248,113,113,.35); color:#fca5a5; border-radius:12px; padding:11px 14px; font-size:12px; line-height:1.4; }
+.fit-exec-save-btn { width:100%; border:none; cursor:pointer; border-radius:14px; padding:15px; font-size:16px; font-weight:800; color:#030712; background:linear-gradient(135deg,#a3e635,#34d399); }
+.fit-exec-discard-btn { background:none; border:none; color:#6b7280; font-size:13px; cursor:pointer; padding:8px; }
+
 /* ── Dashboard ── */
 .dash-greeting {
   display: flex; align-items: center; justify-content: space-between; padding: 4px 0 4px;
@@ -1807,6 +1914,13 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <div class="fit-ring-name">Duration</div>
           </div>
         </div>
+
+        <!-- Start guided workout -->
+        <button class="fit-start-guided-btn" onclick="startGuidedWorkout()">
+          <span class="fit-start-guided-icon">▶</span>
+          <span class="fit-start-guided-text">Start guided workout</span>
+          <span class="fit-start-guided-sub">AI coach · drill-by-drill</span>
+        </button>
 
         <!-- Suggest workout -->
         <div class="section-block">
@@ -4693,6 +4807,462 @@ function toggleFitExercises(btn) {
   const shown = el.style.display !== 'none';
   el.style.display = shown ? 'none' : 'block';
   btn.textContent = shown ? '📋 פרט תרגילים' : '🔼 הסתר תרגילים';
+}
+
+// ── Guided workout execution overlay ──────────────────────────────────────────
+let _exec = null;          // whole session; null when overlay closed
+let _execTimer = null;     // rest-countdown setInterval handle
+let _execAudioCtx = null;  // lazily-created AudioContext
+const EXEC_MIN_WATER = 500;
+const EXEC_REST_DEFAULT = 60;
+
+const _MUSCLE_MAP = [
+  { m:['chest','triceps','shoulders'], re:/press|bench|chest|dip|fly|push.?up/ },
+  { m:['back','biceps'],               re:/pull|lat|row|chin|pulldown/ },
+  { m:['legs','glutes'],               re:/squat|lunge|leg press|leg ext|hip|thrust|split|step.?up|quad/ },
+  { m:['hamstrings','glutes','back'],  re:/deadlift|rdl|romanian|good.?morning|hinge|hamstring|leg curl|curl.*leg/ },
+  { m:['shoulders','triceps'],         re:/shoulder|overhead|ohp|lateral|arnold|raise/ },
+  { m:['biceps','forearms'],           re:/(^|\s)curl|bicep/ },
+  { m:['triceps'],                     re:/tricep|pushdown|skull/ },
+  { m:['calves'],                      re:/calf|calves/ },
+  { m:['core'],                        re:/plank|crunch|sit.?up|abs|core|hollow|rollout|mountain/ },
+  { m:['back','shoulders'],            re:/face.?pull|band pull|serratus|scapul|y.?t.?w/ },
+];
+function _exMuscles(name) {
+  const n = (name || '').toLowerCase(), set = new Set();
+  _MUSCLE_MAP.forEach(g => { if (g.re.test(n)) g.m.forEach(x => set.add(x)); });
+  return set.size ? [...set] : ['core'];
+}
+function _execNeedsBreathCue(name) {
+  return /squat|press|bench|deadlift|overhead|ohp|thrust|lunge/i.test(name || '');
+}
+
+async function startGuidedWorkout() {
+  showToast('Building your session…');
+  let dailyRec = {}, plan = null, prevVolume = 0;
+  try { dailyRec = await apiGet('/api/fitness/daily-rec' + _fcid()); } catch (e) {}
+  const mins = dailyRec.duration_min || _fitMinutes || 45;
+  const selType = document.getElementById('fit-suggest-type');
+  const wtype = (dailyRec.workout_type && dailyRec.workout_type !== 'rest')
+    ? dailyRec.workout_type : (selType ? selType.value : 'strength');
+  try {
+    plan = await apiPost('/api/fitness/suggest' + _fcid(), { minutes: mins, workout_type: wtype });
+  } catch (e) {}
+  if (!plan || !(plan.exercises || []).length) {
+    if (dailyRec.key_exercises && dailyRec.key_exercises.length) {
+      plan = {
+        title: dailyRec.title || 'אימון היום', workout_type: wtype, duration_min: mins,
+        rationale: dailyRec.rationale || '',
+        exercises: dailyRec.key_exercises.map(e => ({ ...e, rpe: 8, duration_sec: 0, notes: '' })),
+        supersets: [],
+      };
+    } else {
+      showToast('Could not build a workout right now.', true);
+      return;
+    }
+  }
+  try {
+    const h = await apiGet('/api/fitness/history' + _fcid() + '&days=30');
+    const today = new Date().toISOString().slice(0, 10);
+    const past = (h.days || []).find(d => d.date < today);
+    prevVolume = past ? past.total_volume : 0;
+  } catch (e) {}
+  launchExec(plan, dailyRec, prevVolume);
+}
+
+function launchExec(plan, dailyRec, prevVolume) {
+  const exs = (plan.exercises || []).map(e => ({
+    name: e.name,
+    sets: Math.max(1, parseInt(e.sets) || 3),
+    reps: parseInt(e.reps) || 0,
+    weight_kg: parseFloat(e.weight_kg) || 0,
+    rpe: parseFloat(e.rpe) || 0,
+    duration_sec: parseInt(e.duration_sec) || 0,
+    notes: e.notes || '',
+    muscles: _exMuscles(e.name),
+    ssGroup: null, ssPartnerIdx: null, logged: [],
+  }));
+  (plan.supersets || []).forEach((pair, gi) => {
+    const idxs = (pair || [])
+      .map(nm => exs.findIndex(x => x.name.toLowerCase() === String(nm).toLowerCase()))
+      .filter(i => i >= 0);
+    idxs.forEach(i => { exs[i].ssGroup = gi; });
+    if (idxs.length === 2) { exs[idxs[0]].ssPartnerIdx = idxs[1]; exs[idxs[1]].ssPartnerIdx = idxs[0]; }
+  });
+  _exec = {
+    state: 'intro', plan, dailyRec: dailyRec || {}, exercises: exs,
+    exIdx: 0, curWeight: exs[0] ? exs[0].weight_kg : 0, curReps: exs[0] ? exs[0].reps : 0,
+    restTotal: 0, restLeft: 0, waterMl: 0, startedAt: Date.now(),
+    prevVolume: prevVolume || 0, pendingIdx: null,
+  };
+  let el = document.getElementById('fit-exec');
+  if (!el) { el = document.createElement('div'); el.id = 'fit-exec'; el.className = 'fit-exec'; document.body.appendChild(el); }
+  el.innerHTML = '<button class="fit-exec-close" onclick="closeExec()">✕</button><div class="fit-exec-body" id="fit-exec-body"></div>';
+  renderExec();
+}
+
+function closeExec(force) {
+  if (!force && _exec && _exec.state !== 'summary' && _exec.exercises.some(e => e.logged.length)) {
+    if (!confirm('Discard this workout?')) return;
+  }
+  if (_execTimer) { clearInterval(_execTimer); _execTimer = null; }
+  const el = document.getElementById('fit-exec');
+  if (el) el.remove();
+  _exec = null;
+}
+
+function renderExec() {
+  if (!_exec) return;
+  const body = document.getElementById('fit-exec-body');
+  if (!body) return;
+  let html = '';
+  if (_exec.state === 'intro') html = _execIntroHTML();
+  else if (_exec.state === 'active') html = _execActiveHTML();
+  else if (_exec.state === 'rest') html = _execRestHTML();
+  else if (_exec.state === 'summary') html = _execSummaryHTML();
+  body.innerHTML = html;
+  if (_exec.state === 'rest') _execUpdateRestUI();
+}
+
+function _execBodyHTML(muscles) {
+  const on = m => muscles.includes(m) ? ' is-active' : '';
+  const figure = (back) => `
+    <circle class="fit-exec-body-outline" cx="45" cy="14" r="10"/>
+    <path class="fit-exec-body-outline" d="M30 26 Q45 21 60 26 L62 70 Q45 80 28 70 Z"/>
+    <path class="fit-exec-body-outline" d="M28 30 L17 74"/>
+    <path class="fit-exec-body-outline" d="M62 30 L73 74"/>
+    <ellipse class="fit-musc${on('shoulders')}" cx="27" cy="32" rx="8" ry="7"/>
+    <ellipse class="fit-musc${on('shoulders')}" cx="63" cy="32" rx="8" ry="7"/>
+    ${back ? `
+      <path class="fit-musc${on('back')}" d="M33 36 L57 36 L53 64 L37 64 Z"/>
+      <ellipse class="fit-musc${on('triceps')}" cx="22" cy="48" rx="5" ry="10"/>
+      <ellipse class="fit-musc${on('triceps')}" cx="68" cy="48" rx="5" ry="10"/>
+      <ellipse class="fit-musc${on('glutes')}" cx="39" cy="76" rx="7" ry="6"/>
+      <ellipse class="fit-musc${on('glutes')}" cx="51" cy="76" rx="7" ry="6"/>
+      <ellipse class="fit-musc${on('hamstrings')}" cx="39" cy="95" rx="6" ry="13"/>
+      <ellipse class="fit-musc${on('hamstrings')}" cx="51" cy="95" rx="6" ry="13"/>
+      <ellipse class="fit-musc${on('calves')}" cx="39" cy="115" rx="5" ry="9"/>
+      <ellipse class="fit-musc${on('calves')}" cx="51" cy="115" rx="5" ry="9"/>
+    ` : `
+      <ellipse class="fit-musc${on('chest')}" cx="38" cy="40" rx="9" ry="7"/>
+      <ellipse class="fit-musc${on('chest')}" cx="52" cy="40" rx="9" ry="7"/>
+      <ellipse class="fit-musc${on('biceps')}" cx="22" cy="48" rx="5" ry="10"/>
+      <ellipse class="fit-musc${on('biceps')}" cx="68" cy="48" rx="5" ry="10"/>
+      <ellipse class="fit-musc${on('forearms')}" cx="18" cy="67" rx="4" ry="9"/>
+      <ellipse class="fit-musc${on('forearms')}" cx="72" cy="67" rx="4" ry="9"/>
+      <rect class="fit-musc${on('core')}" x="40" y="50" width="10" height="20" rx="3"/>
+      <ellipse class="fit-musc${on('legs')}" cx="39" cy="95" rx="7" ry="16"/>
+      <ellipse class="fit-musc${on('legs')}" cx="51" cy="95" rx="7" ry="16"/>
+    `}`;
+  return `<svg class="fit-exec-body-svg" viewBox="0 0 210 145">
+    <g transform="translate(6,4)">${figure(false)}<text x="45" y="135" text-anchor="middle" fill="#4b5563" font-size="8">FRONT</text></g>
+    <g transform="translate(116,4)">${figure(true)}<text x="45" y="135" text-anchor="middle" fill="#4b5563" font-size="8">BACK</text></g>
+  </svg>`;
+}
+
+function _execIntroHTML() {
+  const d = _exec.dailyRec || {};
+  const readiness = d.readiness || 'ready';
+  const rLabel = readiness === 'rest' ? 'Rest recommended' : (readiness === 'light' ? 'Light session' : 'Ready to train');
+  const rIcon = readiness === 'rest' ? '🌙' : (readiness === 'light' ? '🌤️' : '⚡');
+  const days = d.days_since_last;
+  const daysTxt = (days === 0) ? 'today' : ((days || days === 0) ? days + 'd ago' : '—');
+  const exNames = _exec.exercises.slice(0, 4).map(e => e.name).join(' · ');
+  return `<div class="fit-exec-intro">
+    <div class="fit-exec-intro-hi">Hi Daniel 👋</div>
+    <div class="fit-exec-intro-routine">${_esc(_exec.plan.title || 'Today\'s workout')}</div>
+    <div class="fit-exec-readiness ${readiness}">${rIcon} ${rLabel}</div>
+    <div class="fit-exec-intro-stats">
+      <div class="fit-exec-intro-stat"><b>${_exec.exercises.length}</b><span>exercises</span></div>
+      <div class="fit-exec-intro-stat"><b>${_exec.plan.duration_min || '—'}</b><span>minutes</span></div>
+      <div class="fit-exec-intro-stat"><b>${daysTxt}</b><span>last session</span></div>
+      ${d.last_avg_rpe ? `<div class="fit-exec-intro-stat"><b>${d.last_avg_rpe}</b><span>last RPE</span></div>` : ''}
+    </div>
+    ${_exec.plan.rationale ? `<div class="fit-exec-intro-rationale">${_esc(_exec.plan.rationale)}</div>` : ''}
+    <div class="fit-exec-intro-preview">${_esc(exNames)}</div>
+    <button class="fit-exec-complete-btn" onclick="_execStartExec()">Start workout →</button>
+  </div>`;
+}
+
+function _execStartExec() {
+  try {
+    if (!_execAudioCtx) _execAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_execAudioCtx.state === 'suspended') _execAudioCtx.resume();
+  } catch (e) {}
+  _execGotoEx(0);
+  _exec.state = 'active';
+  renderExec();
+}
+
+function _execActiveHTML() {
+  const ex = _exec.exercises[_exec.exIdx];
+  const doneSets = ex.logged.length, totalSets = ex.sets, curSet = Math.min(doneSets + 1, totalSets);
+  const dots = Array.from({ length: totalSets }, (_, i) => {
+    const cls = i < doneSets ? 'done' : (i === doneSets ? 'cur' : '');
+    return `<span class="fit-exec-dot ${cls}"></span>`;
+  }).join('');
+  const ss = ex.ssGroup != null;
+  const ssColor = ss ? _SS_COLORS[ex.ssGroup % _SS_COLORS.length] : null;
+  const ssBadge = ss ? `<span class="fit-exec-ss-badge" style="background:${ssColor}">S${ex.ssGroup + 1}</span>` : '';
+  const breath = _execNeedsBreathCue(ex.name) ? `<div class="fit-exec-breath-badge">🫁 Exhale on exertion · neutral neck</div>` : '';
+  const isTimed = ex.duration_sec > 0;
+  const overallDone = _exec.exercises.reduce((s, e) => s + e.logged.length, 0);
+  const overallTotal = _exec.exercises.reduce((s, e) => s + e.sets, 0);
+  const pct = overallTotal ? Math.round(overallDone / overallTotal * 100) : 0;
+  const swap = (ss && ex.ssPartnerIdx != null)
+    ? `<button class="fit-exec-swap-btn" onclick="_execSwapSuperset()">⇄ Swap to ${_esc(_exec.exercises[ex.ssPartnerIdx].name)}</button>` : '';
+  const repStepper = isTimed
+    ? `<div class="fit-exec-stepper"><div class="fit-exec-stepper-label">Seconds</div><div class="fit-exec-stepper-val">${ex.duration_sec}s</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('dur',-5)">−5</button><button class="fit-exec-stepper-btn" onclick="_execStep('dur',5)">+5</button></div></div>`
+    : `<div class="fit-exec-stepper"><div class="fit-exec-stepper-label">Reps</div><div class="fit-exec-stepper-val" id="fit-exec-reps">${_exec.curReps}</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('reps',-1)">−1</button><button class="fit-exec-stepper-btn" onclick="_execStep('reps',1)">+1</button></div></div>`;
+  return `<div class="fit-exec-active">
+    <div class="fit-exec-topbar">
+      <div class="fit-exec-progress-track"><div class="fit-exec-progress-fill" style="width:${pct}%"></div></div>
+      <span class="fit-exec-step-label">${_exec.exIdx + 1}/${_exec.exercises.length}</span>
+    </div>
+    <div class="fit-exec-card-head">
+      <div>
+        <div class="fit-exec-exname">${_esc(ex.name)} ${ssBadge}</div>
+        <div class="fit-exec-exsub">Set ${curSet} of ${totalSets} · target RPE ${ex.rpe || '—'}</div>
+        ${breath}
+      </div>
+      <div class="fit-ex-icon" style="font-size:30px">${_exIcon(ex.name)}</div>
+    </div>
+    <div class="fit-exec-body-svg-wrap">${_execBodyHTML(ex.muscles)}</div>
+    <div class="fit-exec-dots">${dots}</div>
+    <div class="fit-exec-steppers">
+      <div class="fit-exec-stepper"><div class="fit-exec-stepper-label">Weight kg</div><div class="fit-exec-stepper-val" id="fit-exec-weight">${_exec.curWeight}</div><div class="fit-exec-stepper-row"><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-2.5)">−2.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',-0.5)">−.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',0.5)">+.5</button><button class="fit-exec-stepper-btn" onclick="_execStep('weight',2.5)">+2.5</button></div></div>
+    </div>
+    <div class="fit-exec-steppers">${repStepper}</div>
+    ${swap}
+    <button class="fit-exec-complete-btn" onclick="_execCompleteSet()">✓ Complete set ${curSet}/${totalSets}</button>
+    <div class="fit-exec-nav">
+      <button class="fit-exec-nav-btn" onclick="_execPrevEx()" ${_exec.exIdx === 0 ? 'disabled' : ''}>← Prev</button>
+      <button class="fit-exec-nav-btn" onclick="_execNextEx()" ${_exec.exIdx >= _exec.exercises.length - 1 ? 'disabled' : ''}>Skip →</button>
+    </div>
+  </div>`;
+}
+
+function _execStep(field, delta) {
+  if (field === 'weight') {
+    _exec.curWeight = Math.max(0, Math.round((_exec.curWeight + delta) * 10) / 10);
+    const el = document.getElementById('fit-exec-weight'); if (el) el.textContent = _exec.curWeight;
+  } else if (field === 'reps') {
+    _exec.curReps = Math.max(0, _exec.curReps + delta);
+    const el = document.getElementById('fit-exec-reps'); if (el) el.textContent = _exec.curReps;
+  } else if (field === 'dur') {
+    const ex = _exec.exercises[_exec.exIdx];
+    ex.duration_sec = Math.max(5, ex.duration_sec + delta);
+    renderExec();
+  }
+}
+
+function _execGotoEx(i) {
+  _exec.exIdx = i;
+  const ex = _exec.exercises[i];
+  const last = ex.logged.length ? ex.logged[ex.logged.length - 1] : null;
+  _exec.curWeight = last ? last.weight : ex.weight_kg;
+  _exec.curReps = last ? last.reps : ex.reps;
+}
+function _execNextEx() { if (_exec.exIdx < _exec.exercises.length - 1) { _execGotoEx(_exec.exIdx + 1); renderExec(); } }
+function _execPrevEx() { if (_exec.exIdx > 0) { _execGotoEx(_exec.exIdx - 1); renderExec(); } }
+function _execSwapSuperset() { const ex = _exec.exercises[_exec.exIdx]; if (ex.ssPartnerIdx != null) { _execGotoEx(ex.ssPartnerIdx); renderExec(); } }
+
+function _execRemaining(i) { const e = _exec.exercises[i]; return Math.max(0, e.sets - e.logged.length); }
+function _execAllDone() { return _exec.exercises.every((e, i) => _execRemaining(i) === 0); }
+function _execNextSlot() {
+  const cur = _exec.exercises[_exec.exIdx];
+  if (cur.ssPartnerIdx != null && _execRemaining(cur.ssPartnerIdx) > 0
+      && _exec.exercises[cur.ssPartnerIdx].logged.length <= cur.logged.length) return cur.ssPartnerIdx;
+  if (_execRemaining(_exec.exIdx) > 0) return _exec.exIdx;
+  for (let k = 1; k <= _exec.exercises.length; k++) {
+    const i = (_exec.exIdx + k) % _exec.exercises.length;
+    if (_execRemaining(i) > 0) return i;
+  }
+  return null;
+}
+
+function _execCompleteSet() {
+  const ex = _exec.exercises[_exec.exIdx];
+  if (ex.logged.length >= ex.sets) return;
+  ex.logged.push({ weight: _exec.curWeight, reps: _exec.curReps, rpe: ex.rpe > 0 ? ex.rpe : 7 });
+  if (_execAllDone()) { _execGoSummary(); return; }
+  _exec.pendingIdx = _execNextSlot();
+  _execStartRest(EXEC_REST_DEFAULT);
+}
+
+function _execStartRest(sec) {
+  _exec.restTotal = sec; _exec.restLeft = sec; _exec.state = 'rest';
+  renderExec();
+  if (_execTimer) clearInterval(_execTimer);
+  _execTimer = setInterval(_execTickRest, 1000);
+}
+function _execTickRest() {
+  _exec.restLeft -= 1;
+  if (_exec.restLeft <= 0) {
+    clearInterval(_execTimer); _execTimer = null;
+    _execChime();
+    _execAdvance();
+    return;
+  }
+  _execUpdateRestUI();
+}
+function _execUpdateRestUI() {
+  const secEl = document.getElementById('fit-exec-rest-secs');
+  if (secEl) secEl.textContent = _exec.restLeft;
+  const prog = document.getElementById('fit-exec-rest-prog');
+  if (prog) {
+    const R = 88, C = 2 * Math.PI * R;
+    const pct = _exec.restTotal ? Math.max(0, Math.min(1, _exec.restLeft / _exec.restTotal)) : 0;
+    prog.style.strokeDasharray = C;
+    prog.style.strokeDashoffset = C * (1 - pct);
+  }
+}
+function _execAddRest(d) {
+  _exec.restLeft = Math.max(1, _exec.restLeft + d);
+  if (_exec.restLeft > _exec.restTotal) _exec.restTotal = _exec.restLeft;
+  _execUpdateRestUI();
+}
+function _execSkipRest() { if (_execTimer) { clearInterval(_execTimer); _execTimer = null; } _execAdvance(); }
+function _execAdvance() {
+  const next = _exec.pendingIdx;
+  _exec.pendingIdx = null;
+  if (next == null) { _execGoSummary(); return; }
+  _execGotoEx(next);
+  _exec.state = 'active';
+  renderExec();
+}
+function _execAddWater(ml) {
+  _exec.waterMl += ml;
+  const el = document.getElementById('fit-exec-water-val'); if (el) el.textContent = _exec.waterMl;
+}
+function _execChime() {
+  try {
+    if (!_execAudioCtx) _execAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _execAudioCtx;
+    if (ctx.state === 'suspended') ctx.resume();
+    const now = ctx.currentTime;
+    [880, 1174.66].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      const t = now + i * 0.18;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + 0.34);
+    });
+  } catch (e) {}
+}
+
+function _execRestHTML() {
+  const next = _exec.pendingIdx != null ? _exec.exercises[_exec.pendingIdx] : null;
+  const R = 88, C = 2 * Math.PI * R;
+  const lowWater = _exec.waterMl < EXEC_MIN_WATER;
+  return `<div class="fit-exec-rest">
+    <div class="fit-exec-rest-title">Rest</div>
+    <div class="fit-exec-rest-ring-wrap">
+      <svg class="fit-exec-rest-ring-svg" viewBox="0 0 200 200">
+        <circle class="fit-exec-rest-track" cx="100" cy="100" r="88" stroke-width="12"/>
+        <circle class="fit-exec-rest-prog" id="fit-exec-rest-prog" cx="100" cy="100" r="88" stroke-width="12" stroke-dasharray="${C}" stroke-dashoffset="0"/>
+      </svg>
+      <div class="fit-exec-rest-center">
+        <div class="fit-exec-rest-secs" id="fit-exec-rest-secs">${_exec.restLeft}</div>
+        ${next ? `<div class="fit-exec-rest-next">Next: ${_esc(next.name)}</div>` : ''}
+      </div>
+    </div>
+    <div class="fit-exec-rest-adj">
+      <button class="fit-exec-rest-adj-btn" onclick="_execAddRest(-15)">−15s</button>
+      <button class="fit-exec-rest-adj-btn" onclick="_execAddRest(15)">+15s</button>
+    </div>
+    <div class="fit-exec-hydra-card">
+      <span style="font-size:22px">💧</span>
+      <div class="fit-exec-hydra-text">${lowWater ? 'Hydration alert (Gilbert\'s guardrail) — take a sip! ' : ''}Logged <b id="fit-exec-water-val">${_exec.waterMl}</b> ml this session</div>
+      <button class="fit-exec-hydra-btn" onclick="_execAddWater(250)">+250 ml</button>
+    </div>
+    <button class="fit-exec-rest-skip" onclick="_execSkipRest()">Skip rest →</button>
+  </div>`;
+}
+
+function _execGoSummary() {
+  if (_execTimer) { clearInterval(_execTimer); _execTimer = null; }
+  _exec.state = 'summary';
+  renderExec();
+}
+
+function _execSummaryHTML() {
+  let totalVol = 0, completed = 0, planned = 0;
+  _exec.exercises.forEach(e => {
+    planned += e.sets; completed += e.logged.length;
+    e.logged.forEach(l => { totalVol += (l.weight || 0) * (l.reps || 0); });
+  });
+  totalVol = Math.round(totalVol);
+  const prev = _exec.prevVolume || 0;
+  let deltaHtml = '';
+  if (prev > 0) {
+    const pc = Math.round((totalVol - prev) / prev * 100);
+    deltaHtml = `<div class="fit-exec-delta ${pc >= 0 ? 'pos' : 'neg'}">${pc >= 0 ? '▲ +' : '▼ '}${pc}% volume vs last session</div>`;
+  }
+  const mins = Math.max(1, Math.round((Date.now() - _exec.startedAt) / 60000));
+  const lowWater = _exec.waterMl < EXEC_MIN_WATER;
+  return `<div class="fit-exec-summary">
+    <div style="font-size:40px">🏆</div>
+    <div class="fit-exec-summary-title">Workout complete!</div>
+    ${deltaHtml}
+    <div class="fit-exec-summary-grid">
+      <div class="fit-exec-summary-stat"><b>${totalVol}</b><span>kg volume</span></div>
+      <div class="fit-exec-summary-stat"><b>${completed}/${planned}</b><span>sets done</span></div>
+      <div class="fit-exec-summary-stat"><b>${_exec.waterMl}</b><span>ml water</span></div>
+      <div class="fit-exec-summary-stat"><b>${mins}</b><span>minutes</span></div>
+    </div>
+    ${lowWater ? `<div class="fit-exec-warn">⚠️ Gilbert's guardrail: only ${_exec.waterMl} ml logged this session (aim ≥ 500 ml). Hydrate before you leave the gym.</div>` : ''}
+    <button class="fit-exec-save-btn" id="fit-exec-save-btn" onclick="_execSave()">💾 Save workout</button>
+    <button class="fit-exec-discard-btn" onclick="closeExec(true)">Discard</button>
+  </div>`;
+}
+
+async function _execSave() {
+  const exercises = [];
+  let rpeSum = 0, rpeN = 0, completedSets = 0, plannedSets = 0;
+  _exec.exercises.forEach(ex => {
+    plannedSets += ex.sets;
+    if (!ex.logged.length) return;
+    completedSets += ex.logged.length;
+    const last = ex.logged[ex.logged.length - 1];
+    const arpe = ex.logged.reduce((s, l) => s + (l.rpe || 0), 0) / ex.logged.length;
+    ex.logged.forEach(l => { rpeSum += (l.rpe || 0); rpeN++; });
+    const trail = ex.logged.map(l => `${l.reps}×${l.weight}`).join(',');
+    exercises.push({
+      name: ex.name, sets: ex.logged.length, reps: last.reps, weight_kg: last.weight,
+      rpe: Math.round(arpe * 10) / 10, duration_sec: ex.duration_sec || 0,
+      notes: (ex.notes ? ex.notes + ' · ' : '') + 'actuals: ' + trail,
+    });
+  });
+  const durationMin = Math.max(1, Math.round((Date.now() - _exec.startedAt) / 60000)) || _exec.plan.duration_min;
+  const body = {
+    title: _exec.plan.title || 'אימון מודרך',
+    workout_type: _exec.plan.workout_type || 'strength',
+    duration_min: durationMin,
+    avg_rpe: rpeN ? Math.round(rpeSum / rpeN * 10) / 10 : 0,
+    exercises,
+    metrics: { water_ml: _exec.waterMl, completed_sets: completedSets, planned_sets: plannedSets },
+    source: 'executed',
+  };
+  const btn = document.getElementById('fit-exec-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const r = await apiPost('/api/fitness/log-structured' + _fcid(), body);
+    if (_exec.waterMl > 0) {
+      try { await apiPost('/api/nutrition/log-water' + _fcid(), { amount_ml: _exec.waterMl }); } catch (e) {}
+    }
+    const today = r.today;
+    showToast('Workout saved! 💪');
+    if (r.evaluation && r.evaluation.ai_summary) showToast('💡 ' + r.evaluation.ai_summary);
+    closeExec(true);
+    if (today) _renderFitnessToday(today);
+  } catch (e) {
+    showToast('Failed to save: ' + (e.message || e), true);
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save workout'; }
+  }
 }
 
 function _renderFitnessToday(data) {

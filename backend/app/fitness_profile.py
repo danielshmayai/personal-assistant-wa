@@ -9,7 +9,8 @@ CLINICAL_CONSTRAINTS = """\
 CLINICAL CONSTRAINTS (mandatory — never override):
 1. Gilbert's Syndrome: requires constant hydration (≥2.5L water/day); NO extended fasting (>14h), NO extreme caloric deficit; hepatic stress from overexertion must be avoided.
 2. Right neck-to-scapula pain: AVOID heavy axial/compressive loading — no heavy barbell back squat, no heavy conventional deadlift, no military press/overhead press with weight. Emphasize scapular stabilizer work (face pulls, band pull-aparts, serratus wall slides, prone Y/T/W). Maintain neutral neck throughout all exercises. Prefer machine/cable work over heavy free-bar axial loading.
-3. Recovery: allow at least 48h between sessions targeting the same muscle group. Monitor RPE — if consecutive sessions average RPE ≥8.5 suggest a deload week."""
+3. Recovery: allow at least 48h between sessions targeting the same muscle group. Monitor RPE — if consecutive sessions average RPE ≥8.5 suggest a deload week.
+4. GERD/reflux: AVOID direct decline-press positions and full supine post-meal loading. Cue diaphragmatic breathing — exhale on exertion (the concentric phase) during squats and presses; never breath-hold (Valsalva) under load."""
 
 PHYSIO_BASELINE = {
     "sex": "Male",
