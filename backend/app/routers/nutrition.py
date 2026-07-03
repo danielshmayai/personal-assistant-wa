@@ -1,6 +1,7 @@
 """Nutrition API — log meals (image/text), today's totals, and history."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
@@ -87,6 +88,12 @@ async def log_water(
     if body.amount_ml <= 0:
         raise HTTPException(status_code=400, detail="amount_ml must be positive")
     nutrition.log_water(chat_id, body.amount_ml)
+    # Mirror to Garmin hydration tracking (fire-and-forget, never blocks the response).
+    try:
+        from app.garmin.sync import push_hydration
+        asyncio.create_task(push_hydration(body.amount_ml))
+    except Exception:
+        pass
     return {"today": nutrition.list_today(chat_id)}
 
 

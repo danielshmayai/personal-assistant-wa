@@ -1112,6 +1112,25 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-ex-list li { font-size:13px; margin-bottom:4px; list-style:none; padding-left:4px; }
 .fit-ex-list .fit-superset-label { font-size:10px; background:var(--accent); color:#fff; border-radius:4px; padding:1px 5px; margin-left:4px; }
 .fit-save-btn { margin-top:12px; width:100%; padding:10px; background:var(--green); color:#fff; border:none; border-radius:8px; font-size:14px; cursor:pointer; }
+.fit-watch-btn { margin-top:8px; width:100%; padding:10px; background:none; color:var(--accent); border:1.5px solid var(--accent); border-radius:8px; font-size:14px; cursor:pointer; font-family:inherit; }
+.fit-watch-btn:disabled { opacity:.5; cursor:default; }
+/* Garmin wellness card */
+.garmin-card { background:var(--surface); border-radius:12px; padding:14px; margin-top:12px; direction:rtl; }
+.garmin-card-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.garmin-card-title { font-weight:600; font-size:14px; display:flex; align-items:center; gap:6px; }
+.garmin-card-sub { font-size:11px; color:var(--text-muted); }
+.garmin-tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.garmin-tile { background:var(--bg); border-radius:10px; padding:10px 4px; text-align:center; }
+.garmin-tile-val { font-size:18px; font-weight:700; }
+.garmin-tile-label { font-size:10px; color:var(--text-muted); margin-top:2px; }
+.garmin-actions { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
+.garmin-sync-btn { background:none; border:1px solid var(--border); color:var(--text2); border-radius:8px; padding:5px 12px; font-size:12px; cursor:pointer; font-family:inherit; }
+.garmin-disconnect { background:none; border:none; color:var(--text3); font-size:11px; cursor:pointer; font-family:inherit; }
+.garmin-connect-form { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.garmin-connect-form input { padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:14px; font-family:inherit; direction:ltr; }
+.garmin-connect-btn { padding:10px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:14px; cursor:pointer; font-family:inherit; }
+.garmin-connect-btn:disabled { opacity:.6; }
+.garmin-err { font-size:12px; color:#ef4444; }
 /* Visual exercise cards */
 .fit-ex-cards { display:flex; flex-direction:column; gap:8px; margin:10px 0 4px; }
 .fit-ex-card { display:flex; align-items:flex-start; gap:10px; background:var(--bg); border-radius:10px; padding:10px 12px; border-left:3px solid var(--text3); }
@@ -1950,6 +1969,9 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <span class="fit-start-guided-sub">מאמן AI · תרגיל אחר תרגיל</span>
           </button>
         </div>
+
+        <!-- Garmin wellness card -->
+        <div id="fit-garmin-card"></div>
 
         <!-- Suggest workout -->
         <div class="section-block">
@@ -4758,9 +4780,138 @@ function showFitnessTab(tab) {
     const btn = document.getElementById('fit-tab-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
   });
-  if (tab === 'today') refreshFitnessToday();
+  if (tab === 'today') { refreshFitnessToday(); _loadGarminCard(); }
   if (tab === 'history') loadFitnessHistory();
   if (tab === 'profile') { _setProfileText(); loadBodyMetrics(); }
+}
+
+/* ── Garmin (Venu 2) wellness card ─────────────────────────────────── */
+let _garminConnected = false;
+let _garminLoading = false;
+
+async function _loadGarminCard(force) {
+  const el = document.getElementById('fit-garmin-card');
+  if (!el || _garminLoading) return;
+  _garminLoading = true;
+  try {
+    const data = await apiGet('/api/garmin/wellness' + _fcid() + (force ? '&force=true' : ''));
+    _garminConnected = !!data.connected;
+    _renderGarminCard(data);
+  } catch (e) {
+    // Backend unreachable / older backend — leave the card empty.
+  } finally {
+    _garminLoading = false;
+  }
+}
+
+function _renderGarminCard(data) {
+  const el = document.getElementById('fit-garmin-card');
+  if (!el) return;
+  if (!data.connected) {
+    el.innerHTML = `<div class="garmin-card">
+      <div class="garmin-card-head"><div class="garmin-card-title">⌚ Garmin Venu 2</div></div>
+      <div class="garmin-card-sub">חבר את השעון כדי לקבל ציון שינה, Body Battery והמלצות אימון חכמות יותר</div>
+      <div class="garmin-connect-form" id="garmin-connect-form">
+        <input type="email" id="garmin-email" placeholder="אימייל Garmin" autocomplete="username"/>
+        <input type="password" id="garmin-password" placeholder="סיסמה" autocomplete="current-password"/>
+        <button class="garmin-connect-btn" id="garmin-connect-btn" onclick="garminConnect()">התחבר</button>
+        <div class="garmin-err" id="garmin-err"></div>
+      </div>
+    </div>`;
+    return;
+  }
+  const w = data.today || {};
+  const v = x => (x === null || x === undefined) ? '—' : x;
+  const syncTxt = w.synced_at ? 'עודכן ' + new Date(w.synced_at).toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit'}) : '';
+  el.innerHTML = `<div class="garmin-card">
+    <div class="garmin-card-head">
+      <div class="garmin-card-title">⌚ Garmin Venu 2</div>
+      <div class="garmin-card-sub">${syncTxt}</div>
+    </div>
+    <div class="garmin-tiles">
+      <div class="garmin-tile"><div class="garmin-tile-val">😴 ${v(w.sleep_score)}</div><div class="garmin-tile-label">ציון שינה</div></div>
+      <div class="garmin-tile"><div class="garmin-tile-val">🔋 ${v(w.bb_latest !== null && w.bb_latest !== undefined ? w.bb_latest : w.bb_high)}</div><div class="garmin-tile-label">Body Battery</div></div>
+      <div class="garmin-tile"><div class="garmin-tile-val">❤️ ${v(w.resting_hr)}</div><div class="garmin-tile-label">דופק מנוחה</div></div>
+      <div class="garmin-tile"><div class="garmin-tile-val">👟 ${w.steps ? w.steps.toLocaleString() : '—'}</div><div class="garmin-tile-label">צעדים</div></div>
+    </div>
+    <div class="garmin-actions">
+      <button class="garmin-sync-btn" onclick="garminSync()">🔄 סנכרן</button>
+      <button class="garmin-disconnect" onclick="garminDisconnect()">נתק</button>
+    </div>
+  </div>`;
+}
+
+async function garminConnect() {
+  const email = (document.getElementById('garmin-email') || {}).value || '';
+  const password = (document.getElementById('garmin-password') || {}).value || '';
+  const err = document.getElementById('garmin-err');
+  const btn = document.getElementById('garmin-connect-btn');
+  if (!email.trim() || !password) { if (err) err.textContent = 'נא למלא אימייל וסיסמה'; return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'מתחבר…'; }
+  if (err) err.textContent = '';
+  try {
+    const res = await apiPost('/api/garmin/connect' + _fcid(), { email: email.trim(), password });
+    if (res.mfa_required) {
+      const form = document.getElementById('garmin-connect-form');
+      if (form) form.innerHTML = `
+        <div class="garmin-card-sub">נשלח קוד אימות (MFA) — הזן אותו כאן:</div>
+        <input type="text" id="garmin-mfa-code" placeholder="קוד אימות" inputmode="numeric" autocomplete="one-time-code"/>
+        <button class="garmin-connect-btn" id="garmin-mfa-btn" onclick="garminMfa()">אמת</button>
+        <div class="garmin-err" id="garmin-err"></div>`;
+      return;
+    }
+    showToast('Garmin חובר בהצלחה ⌚');
+    _loadGarminCard(true);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'התחבר'; }
+    const e2 = document.getElementById('garmin-err');
+    if (e2) e2.textContent = 'ההתחברות נכשלה — בדוק אימייל/סיסמה';
+  }
+}
+
+async function garminMfa() {
+  const code = (document.getElementById('garmin-mfa-code') || {}).value || '';
+  const btn = document.getElementById('garmin-mfa-btn');
+  const err = document.getElementById('garmin-err');
+  if (!code.trim()) { if (err) err.textContent = 'נא להזין קוד'; return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'מאמת…'; }
+  try {
+    await apiPost('/api/garmin/mfa' + _fcid(), { code: code.trim() });
+    showToast('Garmin חובר בהצלחה ⌚');
+    _loadGarminCard(true);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'אמת'; }
+    if (err) err.textContent = 'קוד שגוי או שפג תוקפו — נסה להתחבר מחדש';
+  }
+}
+
+async function garminSync() {
+  showToast('מסנכרן עם Garmin…');
+  await _loadGarminCard(true);
+  refreshFitnessToday(); // imported watch activities may have landed
+}
+
+async function garminDisconnect() {
+  if (!confirm('לנתק את חשבון ה-Garmin?')) return;
+  try {
+    await apiPost('/api/garmin/disconnect' + _fcid(), {});
+    _garminConnected = false;
+    _loadGarminCard();
+    showToast('Garmin נותק');
+  } catch (e) { showToast('הניתוק נכשל', true); }
+}
+
+async function sendPlanToWatch(plan) {
+  const p = plan || _lastSuggestion;
+  if (!p) { showToast('אין תוכנית אימון לשליחה', true); return; }
+  if (!_garminConnected) { showToast('Garmin לא מחובר — חבר אותו בלשונית Today', true); return; }
+  showToast('שולח אימון לשעון…');
+  try {
+    const res = await apiPost('/api/garmin/push-workout' + _fcid(), { plan: p });
+    showToast('האימון נשלח לשעון ✓ (סנכרן את השעון באפליקציית Garmin)');
+  } catch (e) {
+    showToast('שליחת האימון לשעון נכשלה', true);
+  }
 }
 
 function _setProfileText() {
@@ -5150,10 +5301,13 @@ function _execIntroHTML() {
       <div class="fit-exec-intro-stat"><b>${_exec.plan.duration_min || '—'}</b><span>דקות</span></div>
       <div class="fit-exec-intro-stat"><b>${daysTxt}</b><span>אימון אחרון</span></div>
       ${d.last_avg_rpe ? `<div class="fit-exec-intro-stat"><b>${d.last_avg_rpe}</b><span>RPE אחרון</span></div>` : ''}
+      ${d.garmin && d.garmin.sleep_score != null ? `<div class="fit-exec-intro-stat"><b>😴 ${d.garmin.sleep_score}</b><span>ציון שינה</span></div>` : ''}
+      ${d.garmin && (d.garmin.bb_latest != null || d.garmin.bb_high != null) ? `<div class="fit-exec-intro-stat"><b>🔋 ${d.garmin.bb_latest != null ? d.garmin.bb_latest : d.garmin.bb_high}</b><span>Body Battery</span></div>` : ''}
     </div>
     ${_exec.plan.rationale ? `<div class="fit-exec-intro-rationale">${_esc(_exec.plan.rationale)}</div>` : ''}
     <div class="fit-exec-intro-preview">${_esc(exNames)}</div>
     <button class="fit-exec-complete-btn" onclick="_execStartExec()">התחל אימון →</button>
+    ${_garminConnected ? `<button class="fit-watch-btn" onclick="sendPlanToWatch(_exec.plan)">⌚ שלח לשעון Garmin</button>` : ''}
   </div>`;
 }
 
@@ -5533,6 +5687,7 @@ function _renderSuggestion(plan) {
       ${plan.rationale ? `<div class="fit-suggestion-rationale">${_esc(plan.rationale)}</div>` : ''}
       ${_renderExCards(plan.exercises, plan.supersets)}
       <button class="fit-save-btn" onclick="saveFitnessSuggestion()">✅ Start & Save this workout</button>
+      ${_garminConnected ? `<button class="fit-watch-btn" onclick="sendPlanToWatch()">⌚ שלח לשעון Garmin</button>` : ''}
     </div>`;
 }
 
