@@ -1,8 +1,9 @@
 """Garmin Connect client: one-time login (with optional MFA), encrypted token persistence.
 
-The garth OAuth token bundle (``garmin.garth.dumps()`` — a base64 blob) is stored
-Fernet-encrypted in Postgres (same pattern as google_tokens). Tokens auto-refresh for
-about a year, so after the one-time login everything is automatic.
+The garminconnect library's native DI-OAuth token bundle (``garmin.client.dumps()`` —
+a JSON string of di_token/di_refresh_token/di_client_id) is stored Fernet-encrypted in
+Postgres (same pattern as google_tokens). Tokens auto-refresh, so after the one-time
+login everything is automatic.
 """
 from __future__ import annotations
 
@@ -130,7 +131,7 @@ def get_client():
 def _refresh_saved_tokens(g) -> None:
     """Persist possibly-refreshed tokens so the stored blob stays current."""
     try:
-        save_token_blob(g.garth.dumps())
+        save_token_blob(g.client.dumps())
     except Exception:
         logger.debug("could not persist refreshed Garmin tokens", exc_info=True)
 
@@ -141,17 +142,32 @@ def invalidate_client() -> None:
         _client_cache = None
 
 
+def _friendly_login_error(exc: Exception) -> str:
+    from garminconnect.exceptions import (
+        GarminConnectTooManyRequestsError,
+        GarminConnectAuthenticationError,
+    )
+    if isinstance(exc, GarminConnectTooManyRequestsError):
+        return "Garmin rate-limited this login — wait a while and try again"
+    if isinstance(exc, GarminConnectAuthenticationError):
+        return f"Garmin rejected the credentials: {exc}"
+    return str(exc)
+
+
 def begin_login(email: str, password: str) -> dict:
     """Start a login. Returns {'connected': True} or {'mfa_required': True}."""
     global _pending_mfa, _client_cache
     from garminconnect import Garmin
     g = Garmin(email=email, password=password, return_on_mfa=True)
-    result1, result2 = g.login()
+    try:
+        result1, result2 = g.login()
+    except Exception as exc:
+        raise RuntimeError(_friendly_login_error(exc)) from exc
     if result1 == "needs_mfa":
         with _lock:
             _pending_mfa = (g, result2)
         return {"mfa_required": True}
-    save_token_blob(g.garth.dumps())
+    save_token_blob(g.client.dumps())
     with _lock:
         _client_cache = g
         _pending_mfa = None
@@ -167,8 +183,11 @@ def finish_mfa(code: str) -> dict:
     if not pending:
         raise GarminNotConnected("No pending Garmin login — start again")
     g, state = pending
-    g.resume_login(state, code.strip())
-    save_token_blob(g.garth.dumps())
+    try:
+        g.resume_login(state, code.strip())
+    except Exception as exc:
+        raise RuntimeError(_friendly_login_error(exc)) from exc
+    save_token_blob(g.client.dumps())
     with _lock:
         _client_cache = g
         _pending_mfa = None
