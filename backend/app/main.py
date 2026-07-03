@@ -29,6 +29,7 @@ from app.routers.nutrition import router as nutrition_router
 from app.routers.drive_proxy import router as drive_proxy_router
 from app.routers.push import router as push_router
 from app.routers.fitness import router as fitness_router
+from app.routers.garmin import router as garmin_router
 from app.graph.checkpointer import setup_checkpointer
 
 from app.logging_config import setup_logging
@@ -233,6 +234,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed to initialise fitness tables")
     try:
+        from app.garmin.client import init_table as init_garmin_table
+        init_garmin_table()
+    except Exception:
+        logger.exception("Failed to initialise garmin tables")
+    try:
         await setup_checkpointer()
     except Exception:
         logger.exception("Failed to initialise postgres checkpointer — aborting startup")
@@ -289,6 +295,7 @@ app.include_router(nutrition_router)
 app.include_router(drive_proxy_router)
 app.include_router(push_router)
 app.include_router(fitness_router)
+app.include_router(garmin_router)
 
 # Serve the web UI static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

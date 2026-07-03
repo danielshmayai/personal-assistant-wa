@@ -161,12 +161,40 @@ async def _fitness(chat_id: str) -> str:
         return ""
 
 
+async def _garmin() -> str:
+    """Fresh Garmin wellness line (also pre-warms today's snapshot for the daily rec)."""
+    try:
+        from app.garmin import client as gclient
+        from app.garmin.sync import sync_wellness
+        if not gclient.is_connected():
+            return ""
+        w = await sync_wellness()
+        if not w:
+            return ""
+        parts = []
+        if w.get("sleep_score") is not None:
+            hours = f" ({round(w['sleep_min'] / 60, 1)} שע׳)" if w.get("sleep_min") else ""
+            parts.append(f"😴 שינה: {w['sleep_score']}/100{hours}")
+        if w.get("bb_high") is not None:
+            parts.append(f"🔋 Body Battery: {w['bb_high']}")
+        if w.get("resting_hr") is not None:
+            parts.append(f"❤️ דופק מנוחה: {w['resting_hr']}")
+        return " · ".join(parts)
+    except Exception as exc:
+        logger.warning("morning_brief garmin failed: %s", exc)
+        return ""
+
+
 async def generate(chat_id: str) -> str:
     """Build the full morning brief. All sections fetched in parallel; missing ones are silently skipped."""
     tz = ZoneInfo(USER_TIMEZONE)
     now = datetime.now(tz)
     day_he = _DAY_HE[now.weekday()]
     header = f"🌅 *בוקר טוב!*  יום {day_he} {now.strftime('%d.%m.%Y')}"
+
+    # Garmin runs FIRST (not in the gather) so the fitness daily-rec below reads
+    # a fresh sleep/Body Battery snapshot instead of racing the sync.
+    garmin_r = await _garmin()
 
     weather_r, cal_r, gmail_r, fitness_r = await asyncio.gather(
         _weather(),
@@ -186,6 +214,8 @@ async def generate(chat_id: str) -> str:
         sections.append(f"\n📅 *לוח שנה היום*\n{c}")
     if g := _safe(gmail_r):
         sections.append(f"\n📧 *מייל*\n{g}")
+    if gr := _safe(garmin_r):
+        sections.append(f"\n⌚ *Garmin*\n{gr}")
     if f := _safe(fitness_r):
         sections.append(f"\n💪 *כושר*\n{f}")
 

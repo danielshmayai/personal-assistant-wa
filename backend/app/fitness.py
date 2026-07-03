@@ -347,6 +347,24 @@ def update_workout_ai(workout_id: int, summary: str, next_rec: dict) -> None:
         conn.close()
 
 
+def merge_garmin_metrics(workout_id: int, garmin_metrics: dict) -> bool:
+    """Merge Garmin activity data (HR, calories, activity id) into a workout's metrics."""
+    if not DATABASE_URL or not garmin_metrics:
+        return False
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE fitness_workouts SET metrics = COALESCE(metrics, '{}'::jsonb) || %s::jsonb WHERE id = %s",
+                (json.dumps(garmin_metrics, ensure_ascii=False), workout_id),
+            )
+            updated = cur.rowcount > 0
+        conn.commit()
+        return updated
+    finally:
+        conn.close()
+
+
 # ── Body metrics CRUD ─────────────────────────────────────────────────────────────
 
 def insert_body_metric(
@@ -930,6 +948,16 @@ async def generate_morning_brief(chat_id: str) -> str:
         "today_duration_min": rec["duration_min"],
         "today_key_exercises": rec["key_exercises"],
     }
+    garmin = rec.get("garmin")
+    if garmin:
+        facts["garmin_watch_today"] = {
+            "sleep_score": garmin.get("sleep_score"),
+            "sleep_hours": round(garmin["sleep_min"] / 60, 1) if garmin.get("sleep_min") else None,
+            "body_battery_high": garmin.get("bb_high"),
+            "resting_hr": garmin.get("resting_hr"),
+        }
+        if rec.get("garmin_flags"):
+            facts["garmin_readiness_flags"] = rec["garmin_flags"]
 
     instructions = """\
 You are a personal trainer AI giving a daily morning fitness brief in Hebrew.
@@ -996,7 +1024,16 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
     today_str = datetime.now(tz=tz).strftime("%Y-%m-%d")
     cache_key = (_fitness_key(chat_id), today_str)
     if cache_key in _daily_rec_cache:
-        return _daily_rec_cache[cache_key]
+        cached = _daily_rec_cache[cache_key]
+        # Garmin may sync after the rec was generated — refresh the wellness snapshot
+        # on cache hits (cheap DB read; the readiness decision itself stays cached).
+        if not cached.get("garmin"):
+            try:
+                from app.garmin.sync import get_wellness as _garmin_get_wellness
+                cached["garmin"] = _garmin_get_wellness(_user_today())
+            except Exception:
+                pass
+        return cached
 
     fkey = _fitness_key(chat_id)
     recent = history(fkey, days=14)
@@ -1013,7 +1050,7 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
 
     for day in recent:
         day_date = date.fromisoformat(day["date"]) if isinstance(day.get("date"), str) else None
-        if day_date and day.get("count", 0) > 0:
+        if day_date and day.get("session_count", 0) > 0:
             trained_dates.add(day_date)
             days_ago = (today_date - day_date).days
             if days_since_last == -1:
@@ -1023,7 +1060,7 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
                 if sessions:
                     last_next_rec = sessions[-1].get("ai_next_rec") or {}
             if days_ago < 7:
-                weekly_done += day.get("count", 0)
+                weekly_done += day.get("session_count", 0)
 
     # Consecutive training days ending today (for the 3-in-a-row rest rule)
     consecutive = 0
@@ -1041,6 +1078,32 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
     else:
         readiness, readiness_he, workout_type = "ready", "מוכן לאימון", "strength"
 
+    # ── Garmin wellness overlay (Venu 2: sleep score / Body Battery) ──
+    # Physiological signals can only DOWNGRADE readiness — the RPE/frequency
+    # rules above stay authoritative for upgrades.
+    garmin_wellness = None
+    garmin_flags: list[str] = []
+    try:
+        from app.garmin.sync import get_wellness as _garmin_get_wellness
+        garmin_wellness = _garmin_get_wellness(today_date)
+    except Exception:
+        garmin_wellness = None
+    if garmin_wellness:
+        sleep_score = garmin_wellness.get("sleep_score")
+        bb_high = garmin_wellness.get("bb_high")
+        if readiness == "ready" and (
+            (sleep_score is not None and sleep_score < 55)
+            or (bb_high is not None and bb_high < 35)
+        ):
+            readiness, readiness_he, workout_type = "light", "אימון קל", "cardio"
+            if sleep_score is not None and sleep_score < 55:
+                garmin_flags.append("שינה ירודה")
+            if bb_high is not None and bb_high < 35:
+                garmin_flags.append("סוללת גוף נמוכה")
+        elif readiness == "light" and sleep_score is not None and sleep_score < 40:
+            readiness, readiness_he, workout_type = "rest", "מנוחה", "rest"
+            garmin_flags.append("שינה ירודה מאוד")
+
     # ── Deterministic key_exercises from last session's computed targets ──
     key_exercises: list = []
     if readiness != "rest":
@@ -1056,11 +1119,26 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
     # ── LLM writes ONLY the narrative (title + rationale), and fills exercises
     #    only when we have no prior targets to carry forward. ──
     need_exercises = readiness != "rest" and not key_exercises
+    garmin_facts = ""
+    if garmin_wellness:
+        gparts = []
+        if garmin_wellness.get("sleep_score") is not None:
+            gparts.append(f"sleep score {garmin_wellness['sleep_score']}/100")
+        if garmin_wellness.get("sleep_min"):
+            gparts.append(f"slept {round(garmin_wellness['sleep_min'] / 60, 1)}h")
+        if garmin_wellness.get("bb_high") is not None:
+            gparts.append(f"Body Battery high {garmin_wellness['bb_high']}")
+        if garmin_wellness.get("resting_hr") is not None:
+            gparts.append(f"resting HR {garmin_wellness['resting_hr']}")
+        if gparts:
+            garmin_facts = "\nGarmin watch (Venu 2) today: " + ", ".join(gparts) + "."
+            if garmin_flags:
+                garmin_facts += f" Readiness was downgraded because of: {', '.join(garmin_flags)} — mention this in the rationale."
     instructions = f"""\
 You are a personal trainer AI writing today's recommendation in Hebrew.
 The readiness decision and weekly stats are ALREADY DECIDED — do NOT change them.
 Today's readiness: {readiness} ({readiness_he}). Workout type: {workout_type}.
-This week: {weekly_done}/{FITNESS_WEEKLY_SESSION_TARGET} sessions. Days since last: {days_since_last if days_since_last >= 0 else 'never'}. Last avg RPE: {rpe or 'unknown'}.
+This week: {weekly_done}/{FITNESS_WEEKLY_SESSION_TARGET} sessions. Days since last: {days_since_last if days_since_last >= 0 else 'never'}. Last avg RPE: {rpe or 'unknown'}.{garmin_facts}
 
 Return ONLY a JSON object (no markdown fences):
 {{
@@ -1109,6 +1187,8 @@ Return ONLY a JSON object (no markdown fences):
         "key_exercises": key_exercises,
         "days_since_last": days_since_last,
         "last_avg_rpe": last_avg_rpe,
+        "garmin": garmin_wellness,
+        "garmin_flags": garmin_flags,
         "cached_at": today_str,
     }
     _daily_rec_cache[cache_key] = result

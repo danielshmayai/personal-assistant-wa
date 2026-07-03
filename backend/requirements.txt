@@ -31,3 +31,4 @@ python-multipart>=0.0.9
 # faster-whisper is intentionally omitted here — it depends on ctranslate2 (~150 MB)
 # which makes CI pip install extremely slow. Installed directly in Dockerfile instead.
 edge-tts>=6.1.9
+garminconnect>=0.2.19
