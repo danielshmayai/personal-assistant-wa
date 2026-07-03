@@ -4865,8 +4865,16 @@ async function garminConnect() {
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'התחבר'; }
     const e2 = document.getElementById('garmin-err');
-    if (e2) e2.textContent = 'ההתחברות נכשלה — בדוק אימייל/סיסמה';
+    if (e2) e2.textContent = 'ההתחברות נכשלה: ' + _garminErrText(e);
   }
+}
+
+function _garminErrText(e) {
+  try {
+    const parsed = JSON.parse(e.message);
+    if (parsed && parsed.detail) return parsed.detail;
+  } catch (_) {}
+  return (e && e.message) ? e.message : 'שגיאה לא ידועה';
 }
 
 async function garminMfa() {
@@ -4881,7 +4889,7 @@ async function garminMfa() {
     _loadGarminCard(true);
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'אמת'; }
-    if (err) err.textContent = 'קוד שגוי או שפג תוקפו — נסה להתחבר מחדש';
+    if (err) err.textContent = 'האימות נכשל: ' + _garminErrText(e);
   }
 }
 
