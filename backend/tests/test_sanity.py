@@ -757,20 +757,21 @@ EXPECTED_FITNESS_TOOL_NAMES = {
     "log_workout",
     "suggest_workout",
     "fitness_today",
+    "fitness_history",
     "log_body_metrics",
     "fitness_morning_brief",
 }
 
 
-def test_get_fitness_tools_returns_five_tools():
-    """get_fitness_tools must return exactly 5 tool objects."""
+def test_get_fitness_tools_returns_six_tools():
+    """get_fitness_tools must return exactly 6 tool objects."""
     from app.fitness_tool import get_fitness_tools
     tools = get_fitness_tools("test-chat-id")
-    assert len(tools) == 5, f"Expected 5 fitness tools, got {len(tools)}: {[t.name for t in tools]}"
+    assert len(tools) == 6, f"Expected 6 fitness tools, got {len(tools)}: {[t.name for t in tools]}"
 
 
 def test_get_fitness_tools_has_correct_names():
-    """Each of the 5 fitness tools must carry the exact expected name."""
+    """Each of the 6 fitness tools must carry the exact expected name."""
     from app.fitness_tool import get_fitness_tools
     tools = get_fitness_tools("test-chat-id")
     actual = {t.name for t in tools}
