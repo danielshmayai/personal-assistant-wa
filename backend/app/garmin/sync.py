@@ -209,9 +209,10 @@ def _extract_activity_metrics(act: dict, type_key: str, duration_min: float) -> 
     return {k: v for k, v in m.items() if v is not None}
 
 
-async def _evaluate_and_save(workout_id: int, workout_for_eval: dict) -> None:
+async def _evaluate_and_save(workout_id: int, workout_for_eval: dict) -> str:
     """Run the same AI-evaluation every other logging path gets, so Garmin-imported
-    and Garmin-enriched workouts also get an ai_summary + next-session targets."""
+    and Garmin-enriched workouts also get an ai_summary + next-session targets.
+    Returns the ai_summary (empty string on failure) for notification purposes."""
     from app import fitness
     try:
         evaluation = await fitness.evaluate_workout(workout_for_eval, "default")
@@ -219,8 +220,10 @@ async def _evaluate_and_save(workout_id: int, workout_for_eval: dict) -> None:
             fitness.update_workout_ai, workout_id,
             evaluation["ai_summary"], evaluation["ai_next_rec"],
         )
+        return evaluation.get("ai_summary") or ""
     except Exception:
         logger.warning("garmin activity evaluate_workout failed for id=%s", workout_id, exc_info=True)
+        return ""
 
 
 async def sync_activities() -> dict:
@@ -241,10 +244,11 @@ async def sync_activities() -> dict:
         raise
     except Exception:
         logger.warning("garmin get_activities_by_date failed", exc_info=True)
-        return {"imported": 0, "merged": 0}
+        return {"imported": 0, "merged": 0, "imported_workouts": []}
 
     known = await asyncio.to_thread(_existing_garmin_ids, start)
     imported = merged = 0
+    imported_workouts: list[dict] = []
 
     for act in activities or []:
         try:
@@ -277,10 +281,15 @@ async def sync_activities() -> dict:
                     0, [], garmin_metrics, "garmin", act_date,
                 )
                 imported += 1
-                await _evaluate_and_save(new_id, {
+                ai_summary = await _evaluate_and_save(new_id, {
                     "title": title, "workout_type": workout_type,
                     "duration_min": duration_min, "avg_rpe": 0,
                     "exercises": [], "metrics": garmin_metrics,
+                })
+                imported_workouts.append({
+                    "id": new_id, "title": title, "workout_type": workout_type,
+                    "duration_min": duration_min, "metrics": garmin_metrics,
+                    "ai_summary": ai_summary,
                 })
             known.add(aid)
         except Exception:
@@ -288,7 +297,7 @@ async def sync_activities() -> dict:
 
     if imported or merged:
         logger.info("garmin activities: imported=%d merged=%d", imported, merged)
-    return {"imported": imported, "merged": merged}
+    return {"imported": imported, "merged": merged, "imported_workouts": imported_workouts}
 
 
 # ── Hydration push ──────────────────────────────────────────────────────────
