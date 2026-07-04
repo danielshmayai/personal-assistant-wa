@@ -137,6 +137,53 @@ def get_fitness_tools(chat_id: str) -> list:
         return "\n".join(lines)
 
     @tool
+    async def fitness_history(days: int = 14) -> str:
+        """Report past workout sessions (not just today) — for questions about a specific
+        previous session, weekly summaries, or workouts auto-imported from a Garmin watch.
+
+        Use for: "מה דעתך על האימון אופניים אחרון שעשיתי?", "how was my last workout?",
+        "תסכם לי את האימונים מהשבוע שעבר", "מתי התאמנתי לאחרונה?",
+        "when did I last train legs?", "show my workout history",
+        "מה היה קצב הלב שלי באימון האחרון?".
+
+        days: how many days back to look (default 14, max 60).
+        """
+        from app import fitness
+
+        days = max(1, min(int(days or 14), 60))
+        day_rows = fitness.history(chat_id, days=days)
+        sessions = []
+        for day in day_rows:
+            for s in (day.get("sessions") or []):
+                s = dict(s)
+                s["date"] = day["date"]
+                sessions.append(s)
+        if not sessions:
+            return f"לא נמצאו אימונים ב-{days} הימים האחרונים."
+
+        sessions.sort(key=lambda s: s["date"], reverse=True)
+        lines = [f"*אימונים ב-{days} הימים האחרונים ({len(sessions)}):*"]
+        for s in sessions:
+            m = s.get("metrics") or {}
+            src_tag = " ⌚" if s.get("source") == "garmin" else ""
+            detail_parts = [f"{s.get('duration_min', 0):.0f} דקות"]
+            if s.get("exercises"):
+                detail_parts.append(f"נפח {s.get('total_volume', 0):.0f} קג")
+            if s.get("avg_rpe"):
+                detail_parts.append(f"RPE {s['avg_rpe']:.1f}")
+            if m.get("distance_km"):
+                detail_parts.append(f"{m['distance_km']:.1f} ק\"מ")
+            if m.get("hr_avg"):
+                detail_parts.append(f"דופק ממוצע {m['hr_avg']:.0f}")
+            if m.get("calories"):
+                detail_parts.append(f"{m['calories']:.0f} קלוריות")
+            lines.append(f"\n📅 {s['date']} — *{s.get('title', '')}*{src_tag} ({s.get('workout_type', '')})")
+            lines.append("• " + " | ".join(detail_parts))
+            if s.get("ai_summary"):
+                lines.append(f"💡 {s['ai_summary']}")
+        return "\n".join(lines)
+
+    @tool
     async def log_body_metrics(
         weight_kg: float | None = None,
         lbm_kg: float | None = None,
@@ -195,4 +242,4 @@ def get_fitness_tools(chat_id: str) -> list:
         except Exception as exc:
             return f"לא הצלחתי לייצר תדרוך בוקר: {exc}"
 
-    return [log_workout, suggest_workout, fitness_today, log_body_metrics, fitness_morning_brief]
+    return [log_workout, suggest_workout, fitness_today, fitness_history, log_body_metrics, fitness_morning_brief]
