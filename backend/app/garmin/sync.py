@@ -209,10 +209,10 @@ def _extract_activity_metrics(act: dict, type_key: str, duration_min: float) -> 
     return {k: v for k, v in m.items() if v is not None}
 
 
-async def _evaluate_and_save(workout_id: int, workout_for_eval: dict) -> str:
+async def _evaluate_and_save(workout_id: int, workout_for_eval: dict) -> dict:
     """Run the same AI-evaluation every other logging path gets, so Garmin-imported
     and Garmin-enriched workouts also get an ai_summary + next-session targets.
-    Returns the ai_summary (empty string on failure) for notification purposes."""
+    Returns the evaluation dict ({} on failure) for notification purposes."""
     from app import fitness
     try:
         evaluation = await fitness.evaluate_workout(workout_for_eval, "default")
@@ -220,10 +220,10 @@ async def _evaluate_and_save(workout_id: int, workout_for_eval: dict) -> str:
             fitness.update_workout_ai, workout_id,
             evaluation["ai_summary"], evaluation["ai_next_rec"],
         )
-        return evaluation.get("ai_summary") or ""
+        return evaluation
     except Exception:
         logger.warning("garmin activity evaluate_workout failed for id=%s", workout_id, exc_info=True)
-        return ""
+        return {}
 
 
 async def sync_activities() -> dict:
@@ -275,22 +275,19 @@ async def sync_activities() -> dict:
                 if merged_workout:
                     await _evaluate_and_save(wid, merged_workout)
             else:
+                parsed = {
+                    "title": title, "workout_type": workout_type,
+                    "duration_min": duration_min, "avg_rpe": 0,
+                    "exercises": [], "metrics": garmin_metrics,
+                }
                 new_id = await asyncio.to_thread(
                     fitness.insert_workout,
                     "default", workout_type, title, duration_min,
                     0, [], garmin_metrics, "garmin", act_date,
                 )
                 imported += 1
-                ai_summary = await _evaluate_and_save(new_id, {
-                    "title": title, "workout_type": workout_type,
-                    "duration_min": duration_min, "avg_rpe": 0,
-                    "exercises": [], "metrics": garmin_metrics,
-                })
-                imported_workouts.append({
-                    "id": new_id, "title": title, "workout_type": workout_type,
-                    "duration_min": duration_min, "metrics": garmin_metrics,
-                    "ai_summary": ai_summary,
-                })
+                evaluation = await _evaluate_and_save(new_id, parsed)
+                imported_workouts.append({"id": new_id, "parsed": parsed, "evaluation": evaluation})
             known.add(aid)
         except Exception:
             logger.warning("garmin activity import failed for one activity", exc_info=True)

@@ -94,6 +94,55 @@ def _total_volume(exercises: list) -> float:
     return round(total, 1)
 
 
+def format_workout_log_message(parsed: dict, evaluation: dict, today: dict, tag: str = "") -> str:
+    """Build the '✅ ... נרשם' WhatsApp confirmation shared by every logging path —
+    manual/photo chat log_workout AND Garmin auto-import — so a workout looks and reads
+    identically in chat no matter where it came from.
+
+    parsed: {title, workout_type, duration_min, avg_rpe, exercises, metrics,
+             is_estimated_volume?, user_feedback?}
+    evaluation: {ai_summary, ai_next_rec: {targets, ...}}
+    today: result of list_today(chat_id) — used for the running daily totals footer.
+    tag: optional short suffix appended to the title line, e.g. " ⌚" for watch imports.
+    """
+    exercises = parsed.get("exercises") or []
+    metrics = parsed.get("metrics") or {}
+    avg_rpe = _num(parsed.get("avg_rpe"))
+
+    detail = [f"סוג: {parsed.get('workout_type', '')}", f"{_num(parsed.get('duration_min')):.0f} דקות"]
+    if avg_rpe:
+        detail.append(f"RPE {avg_rpe:.1f}")
+    lines = [f"✅ *{parsed.get('title', '')}*{tag} נרשם", "• " + " | ".join(detail)]
+
+    if exercises:
+        volume = _total_volume(exercises)
+        vol_note = " *(הערכה)*" if parsed.get("is_estimated_volume") else ""
+        lines.append(f"• נפח: {volume:.0f} קג{vol_note}")
+    else:
+        # Cardio / Garmin activity with no exercise list — report what we do have.
+        cardio_detail = []
+        if metrics.get("distance_km"):
+            cardio_detail.append(f"{metrics['distance_km']:.1f} ק\"מ")
+        if metrics.get("hr_avg"):
+            cardio_detail.append(f"דופק ממוצע {metrics['hr_avg']:.0f}")
+        if metrics.get("calories"):
+            cardio_detail.append(f"{metrics['calories']:.0f} קלוריות")
+        if cardio_detail:
+            lines.append("• " + " | ".join(cardio_detail))
+
+    if parsed.get("user_feedback"):
+        lines.append(f"\n{parsed['user_feedback']}")
+    if evaluation.get("ai_summary"):
+        lines.append(f"\n💡 {evaluation['ai_summary']}")
+    targets = (evaluation.get("ai_next_rec") or {}).get("targets") or []
+    if targets:
+        lines.append("\n*יעדים לאימון הבא:*")
+        for t in targets[:3]:
+            lines.append(f"• {t['name']}: {t.get('target_weight_kg', '?')} קג × {t.get('target_reps', '?')}")
+    lines.append(f"\n— סה\"כ היום: {_num(today.get('total_duration_min')):.0f} דקות, נפח {_num(today.get('total_volume')):.0f} קג")
+    return "\n".join(lines)
+
+
 # ── DB init ─────────────────────────────────────────────────────────────────────
 
 def init_table() -> None:

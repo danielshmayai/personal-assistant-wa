@@ -93,38 +93,27 @@ async def _flow_garmin_sync(chat_ids: list[str]) -> None:
 
 
 async def _notify_new_garmin_workouts(chat_ids: list[str], result: dict) -> None:
-    """WhatsApp-confirm newly auto-imported workouts — mirrors the confirmation manual
-    log_workout gives, so an automatic import doesn't feel invisible."""
+    """WhatsApp-confirm newly auto-imported workouts using the exact same message the
+    log_workout chat tool sends — so a watch-recorded workout is documented and reads
+    identically to one the user typed themselves, just tagged with a watch emoji."""
     from app.scheduled_jobs import insert_job
+    from app.fitness import format_workout_log_message, list_today
     from datetime import timezone as utc
 
     workouts = result.get("imported_workouts") or []
     if not workouts or not chat_ids:
         return
 
-    header = "⌚ *אימון חדש יובא מהשעון:*" if len(workouts) == 1 else f"⌚ *{len(workouts)} אימונים חדשים יובאו מהשעון:*"
-    lines = [header]
-    for w in workouts:
-        m = w.get("metrics") or {}
-        detail = [f"{w['duration_min']:.0f} דקות"]
-        if m.get("distance_km"):
-            detail.append(f"{m['distance_km']:.1f} ק\"מ")
-        if m.get("hr_avg"):
-            detail.append(f"דופק ממוצע {m['hr_avg']:.0f}")
-        if m.get("calories"):
-            detail.append(f"{m['calories']:.0f} קלוריות")
-        lines.append(f"\n✅ *{w['title']}* ({w['workout_type']}) — " + " | ".join(detail))
-        if w.get("ai_summary"):
-            lines.append(f"💡 {w['ai_summary']}")
-    text = "\n".join(lines)
-
     for chat_id in chat_ids:
-        try:
-            insert_job(
-                chat_id=chat_id,
-                action_type="send_message",
-                payload={"text": text},
-                run_at=datetime.now(utc.utc),
-            )
-        except Exception:
-            logger.exception("Failed to queue Garmin import notification for chat_id=%s", chat_id)
+        today = list_today(chat_id)
+        for w in workouts:
+            text = format_workout_log_message(w["parsed"], w["evaluation"], today, tag=" ⌚")
+            try:
+                insert_job(
+                    chat_id=chat_id,
+                    action_type="send_message",
+                    payload={"text": text},
+                    run_at=datetime.now(utc.utc),
+                )
+            except Exception:
+                logger.exception("Failed to queue Garmin import notification for chat_id=%s", chat_id)
