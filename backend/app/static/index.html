@@ -911,15 +911,44 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .entity-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .entity-preview { font-size: 12px; color: var(--text2); margin-top: 3px; line-height: 1.4; }
 .entity-time { font-size: 10.5px; color: var(--text3); margin-top: 2px; }
-.rule-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.rule-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .rule-item:last-child { border-bottom: none; }
-.rule-text { flex: 1; font-size: 13px; color: var(--text); line-height: 1.5; }
-.rule-date { font-size: 11px; color: var(--text3); flex-shrink: 0; padding-top: 2px; }
+.rule-body { flex: 1; min-width: 0; }
+.rule-text { font-size: 13px; color: var(--text); line-height: 1.5; overflow-wrap: anywhere; }
+.rule-reason { font-size: 11px; color: var(--text3); line-height: 1.4; margin-top: 2px; font-style: italic; }
+.rule-date { font-size: 10.5px; color: var(--text3); flex-shrink: 0; padding-top: 2px; white-space: nowrap; }
 .rule-hide-btn {
   background: none; border: none; color: var(--text3); cursor: pointer;
   font-size: 13px; padding: 2px 5px; border-radius: 4px; flex-shrink: 0; transition: color .15s;
 }
 .rule-hide-btn:hover { color: var(--red); }
+/* Rules toolbar + topic groups */
+.rules-toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+.rules-toolbar input {
+  flex: 1; min-width: 0; background: var(--bg3); border: 1.5px solid var(--border2);
+  border-radius: 10px; padding: 8px 12px; font-size: 13px; color: var(--text); font-family: inherit;
+}
+.rules-toolbar input:focus { outline: none; border-color: var(--accent); }
+.rules-toolbar select {
+  background: var(--bg3); border: 1.5px solid var(--border2); border-radius: 10px;
+  padding: 8px 10px; font-size: 12.5px; color: var(--text); font-family: inherit; flex-shrink: 0;
+}
+.rule-group { background: var(--surface); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.rule-group-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 11px 12px;
+  background: none; border: none; cursor: pointer; font-family: inherit; text-align: start;
+}
+.rule-group-head:hover { background: var(--bg3); }
+.rule-group-icon { font-size: 16px; flex-shrink: 0; }
+.rule-group-name { flex: 1; font-size: 13.5px; font-weight: 700; color: var(--text); }
+.rule-group-count {
+  font-size: 11px; font-weight: 700; color: var(--text2); background: var(--bg3);
+  border-radius: 10px; padding: 2px 9px; flex-shrink: 0;
+}
+.rule-group-chev { font-size: 11px; color: var(--text3); flex-shrink: 0; transition: transform .18s; }
+.rule-group.collapsed .rule-group-chev { transform: rotate(-90deg); }
+.rule-group.collapsed .rule-group-items { display: none; }
+.rule-group-items { border-top: 1px solid var(--border); }
 .memory-search-wrap { flex: 1; }
 .memory-search-wrap input {
   width: 100%; background: var(--bg3); border: 1.5px solid var(--border2);
@@ -2144,6 +2173,14 @@ details[open].reasoning-block summary::before { content: "▼  "; }
       </div>
       <div id="memory-rules-section" class="section-block">
         <div class="section-title">Rules</div>
+        <div class="rules-toolbar">
+          <input id="rules-search" type="search" placeholder="🔍 חפש חוק…" oninput="_renderRules()"/>
+          <select id="rules-sort" onchange="_renderRules()">
+            <option value="new">חדש → ישן</option>
+            <option value="old">ישן → חדש</option>
+            <option value="az">א־ב</option>
+          </select>
+        </div>
         <div id="rules-list"><div class="empty-state">No rules saved yet.</div></div>
       </div>
       <div class="quick-add-row">
@@ -4614,28 +4651,109 @@ async function openEntity(catName, entityName) {
   }
 }
 
+/* ── Rules: client-side topic grouping, filter & sort (zero LLM/API cost) ── */
+let _memRules = null; // cached [{text, added, main, reason, cat}] — classified once per load
+
+// Keyword→topic table (same regex-table idiom as _exIcon/_EQUIP_DATA). Order matters:
+// first match wins, so the more specific "terminology" pattern precedes smart-home.
+const _RULE_CATS = [
+  { key: 'terms',   icon: '📖', name: 'מונחים והגדרות',
+    re: /\bmeans\b|מתכוון|interchangeable|clarified|refers to|הכוונה|synonym/i },
+  { key: 'home',    icon: '🏠', name: 'בית חכם',
+    re: /switch|light|tuya|boiler|heater|thermostat|בוילר|דוד|מזגן|תריס|מפה את|סלון|מטבח|תאורה/i },
+  { key: 'comms',   icon: '💬', name: 'תקשורת וסגנון',
+    re: /answer|reply|respond|channel|chat|group|whatsapp|hebrew|english|language|voice|tone|עברית|אנגלית|תענה|תשיב|הודעה|קול/i },
+  { key: 'fitness', icon: '💪', name: 'כושר ותזונה',
+    re: /workout|fitness|protein|nutrition|diet|hydration|calorie|אימון|כושר|חלבון|תזונה|קלוריות|מים|שתיה/i },
+  { key: 'schedule',icon: '⏰', name: 'תזכורות ולו״ז',
+    re: /remind|schedule|calendar|meeting|appointment|תזכורת|תזכיר|לוז|לו"ז|יומן|פגיש/i },
+  { key: 'general', icon: '⚙️', name: 'כללי', re: /(?:)/ }, // catch-all
+];
+const _rulesCollapsed = new Set(JSON.parse(localStorage.getItem('pa_rules_collapsed') || '[]'));
+
+function _classifyRule(rule, i) {
+  // Split the trailing "(because: ...)" into a muted reason line for scannability.
+  const m = (rule.text || '').match(/^(.*?)\s*\(because:\s*([^)]*)\)\s*$/is);
+  const main = m ? m[1].trim() : rule.text;
+  const reason = m ? m[2].trim() : '';
+  const cat = (_RULE_CATS.find(c => c.re.test(rule.text)) || _RULE_CATS[_RULE_CATS.length - 1]).key;
+  return { ...rule, main, reason, cat, _i: i };
+}
+
 async function loadMemoryRules() {
   const list = document.getElementById('rules-list');
   try {
     const { rules } = await apiGet('/api/memory/rules');
-    if (!rules.length) { list.innerHTML = '<div class="empty-state">No rules saved yet.</div>'; return; }
-    list.innerHTML = '';
-    for (const rule of rules) {
-      const div = document.createElement('div');
-      div.className = 'rule-item';
-      div.innerHTML = `<span class="rule-text">${_esc(rule.text)}</span>
-        ${rule.added ? `<span class="rule-date">${rule.added}</span>` : ''}
-        <button class="rule-hide-btn" title="Hide rule" onclick="hideRule(${JSON.stringify(rule.text)}, this)">×</button>`;
-      list.appendChild(div);
-    }
+    _memRules = rules.map((r, i) => _classifyRule(r, i));
+    _renderRules();
   } catch (e) { list.innerHTML = `<div class="empty-state">Could not load rules.</div>`; }
 }
 
-async function hideRule(ruleText, btn) {
-  if (!confirm('Hide this rule?')) return;
+function _renderRules() {
+  const list = document.getElementById('rules-list');
+  if (!_memRules) return;
+  if (!_memRules.length) { list.innerHTML = '<div class="empty-state">No rules saved yet.</div>'; return; }
+
+  const q = (document.getElementById('rules-search')?.value || '').toLowerCase().trim();
+  const sort = document.getElementById('rules-sort')?.value || 'new';
+
+  let rules = q
+    ? _memRules.filter(r => r.text.toLowerCase().includes(q))
+    : _memRules.slice();
+  rules.sort((a, b) => {
+    if (sort === 'az') return (a.main || '').localeCompare(b.main || '', 'he');
+    const cmp = (a.added || '').localeCompare(b.added || '');
+    return sort === 'old' ? cmp : -cmp;
+  });
+
+  if (!rules.length) { list.innerHTML = '<div class="empty-state">אין חוקים תואמים לחיפוש.</div>'; return; }
+
+  const byCat = {};
+  for (const r of rules) (byCat[r.cat] = byCat[r.cat] || []).push(r);
+
+  let html = '';
+  for (const cat of _RULE_CATS) {
+    const items = byCat[cat.key];
+    if (!items) continue;
+    // While searching, always show matches (ignore collapsed state).
+    const collapsed = !q && _rulesCollapsed.has(cat.key);
+    html += `<div class="rule-group${collapsed ? ' collapsed' : ''}" data-cat="${cat.key}">
+      <button class="rule-group-head" onclick="_toggleRuleGroup('${cat.key}')">
+        <span class="rule-group-icon">${cat.icon}</span>
+        <span class="rule-group-name">${cat.name}</span>
+        <span class="rule-group-count">${items.length}</span>
+        <span class="rule-group-chev">▼</span>
+      </button>
+      <div class="rule-group-items">`;
+    for (const r of items) {
+      html += `<div class="rule-item">
+        <div class="rule-body">
+          <div class="rule-text" dir="auto">${_esc(r.main)}</div>
+          ${r.reason ? `<div class="rule-reason" dir="auto">${_esc(r.reason)}</div>` : ''}
+        </div>
+        ${r.added ? `<span class="rule-date">${r.added}</span>` : ''}
+        <button class="rule-hide-btn" title="Hide rule" onclick="hideRule(${r._i})">×</button>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+  list.innerHTML = html;
+}
+
+function _toggleRuleGroup(key) {
+  if (_rulesCollapsed.has(key)) _rulesCollapsed.delete(key); else _rulesCollapsed.add(key);
+  localStorage.setItem('pa_rules_collapsed', JSON.stringify([..._rulesCollapsed]));
+  const el = document.querySelector(`.rule-group[data-cat="${key}"]`);
+  if (el) el.classList.toggle('collapsed');
+}
+
+async function hideRule(ruleIdx) {
+  const rule = (_memRules || []).find(r => r._i === ruleIdx);
+  if (!rule || !confirm('Hide this rule?')) return;
   try {
-    await apiPost('/api/memory/rule/hide', { instruction: ruleText });
-    btn.closest('.rule-item').remove();
+    await apiPost('/api/memory/rule/hide', { instruction: rule.text });
+    _memRules = _memRules.filter(r => r._i !== ruleIdx);
+    _renderRules(); // re-render so the group count updates too
   } catch (e) { alert('Failed: ' + e.message); }
 }
 
