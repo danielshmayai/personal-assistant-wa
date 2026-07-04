@@ -270,7 +270,10 @@ def history(chat_id: str, days: int = 30) -> list[dict]:
                            'avg_rpe', avg_rpe,
                            'total_volume', total_volume,
                            'ai_next_rec', ai_next_rec,
-                           'exercises', exercises
+                           'ai_summary', ai_summary,
+                           'exercises', exercises,
+                           'metrics', metrics,
+                           'source', source
                          ) ORDER BY created_at
                        ) AS sessions
                 FROM fitness_workouts
@@ -786,6 +789,11 @@ Schema:
   "next_summary": "<1-2 sentence Hebrew recommendation for the next session>"
 }
 
+If "exercises" is empty but "session_metrics" has data (a cardio/cycling/running activity,
+often auto-imported from a Garmin watch), base ai_summary on those metrics instead —
+comment on heart rate (avg/max), pace or speed, distance, and calories; do not say there
+is nothing to evaluate.
+
 MANDATORY (always include in ai_summary):
 - A hydration reminder (Gilbert's Syndrome).
 - If avg_rpe ≥ 9, mention recovery/rest is the priority.
@@ -810,6 +818,7 @@ async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
         "workout_type": workout.get("workout_type"),
         "avg_rpe": workout.get("avg_rpe"),
         "exercises": workout.get("exercises"),
+        "session_metrics": workout.get("metrics") or {},
         "computed_targets": targets,
         "focus": focus,
     }
@@ -893,6 +902,12 @@ Timing guidelines:
 - 60 min → 7-8 exercises, full progressive split.
 
 Use ai_next_rec targets from previous session as weights when available.
+The recent-history JSON below includes ALL logged sessions regardless of source — manual
+logs, photo logs, and activities auto-imported from a Garmin watch (source="garmin", which
+may include cardio/cycling/running sessions with HR/distance/pace in "metrics" but no
+"exercises"). Treat these as real training load: factor recent cardio volume and intensity
+(duration, avg/max HR) into today's fatigue/recovery consideration and workout_type choice
+the same way you would a logged strength session.
 MANDATORY CONSTRAINTS (always enforce):
 - NEVER include heavy barbell back squat, conventional deadlift, or military press.
 - ALWAYS include at least one scapular stabilizer exercise (face pulls, band pull-aparts, prone Y/T/W, serratus wall slides).

@@ -178,8 +178,57 @@ def _find_merge_candidate(log_date, start_dt) -> int | None:
         conn.close()
 
 
+def _float_or_none(v):
+    try:
+        return round(float(v), 2) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_activity_metrics(act: dict, type_key: str, duration_min: float) -> dict:
+    """Pull the richest available fields from a Garmin activity summary so evaluate_workout
+    has enough to actually analyze the session (not just HR/calories)."""
+    distance_km = _float_or_none((act.get("distance") or 0) / 1000) or None
+    is_run_walk = any(k in type_key for k in ("running", "walking", "hiking"))
+    is_cycling = "cycling" in type_key or "biking" in type_key
+    m = {
+        "garmin_activity_id": str(act.get("activityId") or ""),
+        "hr_avg": _int_or_none(act.get("averageHR")),
+        "hr_max": _int_or_none(act.get("maxHR")),
+        "calories": _int_or_none(act.get("calories")),
+        "distance_km": distance_km,
+        "elevation_gain_m": _int_or_none(act.get("elevationGain")),
+        "training_effect_aerobic": _float_or_none(act.get("aerobicTrainingEffect")),
+        "training_effect_anaerobic": _float_or_none(act.get("anaerobicTrainingEffect")),
+        "steps": _int_or_none(act.get("steps")),
+    }
+    if is_run_walk and distance_km:
+        m["pace_min_km"] = _float_or_none(duration_min / distance_km)
+    elif is_cycling and act.get("averageSpeed"):
+        m["avg_speed_kmh"] = _float_or_none(act["averageSpeed"] * 3.6)
+    return {k: v for k, v in m.items() if v is not None}
+
+
+async def _evaluate_and_save(workout_id: int, workout_for_eval: dict) -> None:
+    """Run the same AI-evaluation every other logging path gets, so Garmin-imported
+    and Garmin-enriched workouts also get an ai_summary + next-session targets."""
+    from app import fitness
+    try:
+        evaluation = await fitness.evaluate_workout(workout_for_eval, "default")
+        await asyncio.to_thread(
+            fitness.update_workout_ai, workout_id,
+            evaluation["ai_summary"], evaluation["ai_next_rec"],
+        )
+    except Exception:
+        logger.warning("garmin activity evaluate_workout failed for id=%s", workout_id, exc_info=True)
+
+
 async def sync_activities() -> dict:
-    """Import watch-recorded activities from the last few days; merge or insert."""
+    """Import watch-recorded activities from the last few days; merge or insert.
+
+    Every imported/enriched workout is also run through evaluate_workout so it gets an
+    ai_summary and next-session targets, same as manually logged sessions.
+    """
     from app import fitness
 
     today = _user_today()
@@ -210,27 +259,29 @@ async def sync_activities() -> dict:
             act_date = start_dt.date()
             type_key = ((act.get("activityType") or {}).get("typeKey") or "").lower()
             workout_type = "strength" if "strength" in type_key else "cardio"
-            garmin_metrics = {
-                "garmin_activity_id": aid,
-                "hr_avg": _int_or_none(act.get("averageHR")),
-                "hr_max": _int_or_none(act.get("maxHR")),
-                "calories": _int_or_none(act.get("calories")),
-            }
-            garmin_metrics = {k: v for k, v in garmin_metrics.items() if v is not None}
+            duration_min = round((act.get("duration") or 0) / 60, 1)
+            title = act.get("activityName") or "אימון מהשעון"
+            garmin_metrics = _extract_activity_metrics(act, type_key, duration_min)
 
             wid = await asyncio.to_thread(_find_merge_candidate, act_date, start_dt)
             if wid:
                 await asyncio.to_thread(fitness.merge_garmin_metrics, wid, garmin_metrics)
                 merged += 1
+                merged_workout = await asyncio.to_thread(fitness.get_workout, wid, "default")
+                if merged_workout:
+                    await _evaluate_and_save(wid, merged_workout)
             else:
-                await asyncio.to_thread(
+                new_id = await asyncio.to_thread(
                     fitness.insert_workout,
-                    "default", workout_type,
-                    act.get("activityName") or "אימון מהשעון",
-                    round((act.get("duration") or 0) / 60, 1),
+                    "default", workout_type, title, duration_min,
                     0, [], garmin_metrics, "garmin", act_date,
                 )
                 imported += 1
+                await _evaluate_and_save(new_id, {
+                    "title": title, "workout_type": workout_type,
+                    "duration_min": duration_min, "avg_rpe": 0,
+                    "exercises": [], "metrics": garmin_metrics,
+                })
             known.add(aid)
         except Exception:
             logger.warning("garmin activity import failed for one activity", exc_info=True)
