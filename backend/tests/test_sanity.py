@@ -849,6 +849,205 @@ def test_timed_exercises_volume_and_progression():
     assert len(result["exercises"]) == 2, "Timed exercises should not be replaced by fallback"
 
 
+# ---------------------------------------------------------------------------
+# Garmin integration — shared message formatter, metrics merge, history()
+# projection, and the readiness-downgrade overlay in generate_daily_recommendation.
+# ---------------------------------------------------------------------------
+
+def test_format_workout_log_message_strength_shape():
+    """A strength workout (has exercises) shows volume, RPE, and next-session targets."""
+    from app.fitness import format_workout_log_message
+    parsed = {"title": "אימון כוח", "workout_type": "strength", "duration_min": 45, "avg_rpe": 7.5,
+              "exercises": [{"sets": 3, "reps": 8, "weight_kg": 60}], "metrics": {}}
+    evaluation = {"ai_summary": "עבודה טובה.", "ai_next_rec": {"targets": [
+        {"name": "לחיצת חזה", "target_weight_kg": 62.5, "target_reps": 8}]}}
+    today = {"total_duration_min": 45, "total_volume": 1440}
+
+    msg = format_workout_log_message(parsed, evaluation, today)
+    assert "אימון כוח" in msg and "נרשם" in msg
+    assert "RPE 7.5" in msg
+    assert "נפח: 1440" in msg
+    assert "עבודה טובה." in msg
+    assert "יעדים לאימון הבא" in msg
+    assert "לחיצת חזה: 62.5 קג × 8" in msg
+
+
+def test_format_workout_log_message_cardio_shape_no_exercises():
+    """A Garmin cardio import (no exercises) shows distance/HR/calories instead of volume,
+    and the watch tag is appended to the title line."""
+    from app.fitness import format_workout_log_message
+    parsed = {"title": "Cycling", "workout_type": "cardio", "duration_min": 122, "avg_rpe": 0,
+              "exercises": [], "metrics": {"distance_km": 32.0, "hr_avg": 128, "calories": 850}}
+    evaluation = {"ai_summary": "אימון סבולת טוב.", "ai_next_rec": {"targets": []}}
+    today = {"total_duration_min": 122, "total_volume": 0}
+
+    msg = format_workout_log_message(parsed, evaluation, today, tag=" ⌚")
+    assert "*Cycling* ⌚" in msg
+    assert "RPE" not in msg  # avg_rpe == 0 must not show a fake RPE line
+    assert "• נפח:" not in msg  # no exercises → no per-workout volume line
+                                # (the daily-totals footer legitimately says "נפח 0 קג")
+    assert "32.0 ק\"מ" in msg
+    assert "דופק ממוצע 128" in msg
+    assert "850 קלוריות" in msg
+    assert "אימון סבולת טוב." in msg
+
+
+def test_format_workout_log_message_estimated_volume_note():
+    from app.fitness import format_workout_log_message
+    parsed = {"title": "ריצה", "workout_type": "cardio", "duration_min": 30, "avg_rpe": 6,
+              "exercises": [{"sets": 1, "reps": 1, "weight_kg": 1}], "metrics": {}, "is_estimated_volume": True}
+    msg = format_workout_log_message(parsed, {"ai_summary": "", "ai_next_rec": {}}, {"total_duration_min": 30, "total_volume": 1})
+    assert "(הערכה)" in msg
+
+
+def test_merge_garmin_metrics_updates_jsonb_column():
+    """merge_garmin_metrics must UPDATE metrics via jsonb concatenation, not overwrite."""
+    import json
+    from unittest.mock import MagicMock, patch
+    fake_cursor = MagicMock()
+    fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
+    fake_cursor.__exit__ = MagicMock(return_value=False)
+    fake_cursor.rowcount = 1
+    fake_conn = MagicMock()
+    fake_conn.cursor = MagicMock(return_value=fake_cursor)
+
+    with (
+        patch("app.fitness.DATABASE_URL", "postgresql://fake"),
+        patch("psycopg2.connect", return_value=fake_conn),
+    ):
+        from app.fitness import merge_garmin_metrics
+        ok = merge_garmin_metrics(42, {"hr_avg": 128, "garmin_activity_id": "999"})
+
+    assert ok is True
+    sql, params = fake_cursor.execute.call_args[0]
+    assert "metrics" in sql and "||" in sql, "must merge (||) not overwrite metrics"
+    assert params[1] == 42
+    assert json.loads(params[0]) == {"hr_avg": 128, "garmin_activity_id": "999"}
+    fake_conn.commit.assert_called_once()
+
+
+def test_merge_garmin_metrics_returns_false_when_no_row_matched():
+    from unittest.mock import MagicMock, patch
+    fake_cursor = MagicMock()
+    fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
+    fake_cursor.__exit__ = MagicMock(return_value=False)
+    fake_cursor.rowcount = 0
+    fake_conn = MagicMock()
+    fake_conn.cursor = MagicMock(return_value=fake_cursor)
+
+    with (
+        patch("app.fitness.DATABASE_URL", "postgresql://fake"),
+        patch("psycopg2.connect", return_value=fake_conn),
+    ):
+        from app.fitness import merge_garmin_metrics
+        assert merge_garmin_metrics(9999, {"hr_avg": 100}) is False
+
+
+def test_history_query_includes_garmin_fields():
+    """history()'s per-session projection must include metrics/ai_summary/source so
+    suggest_workout and fitness_history can see Garmin-imported cardio sessions."""
+    from unittest.mock import MagicMock, patch
+    fake_cursor = MagicMock()
+    fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
+    fake_cursor.__exit__ = MagicMock(return_value=False)
+    fake_cursor.fetchall = MagicMock(return_value=[])
+    fake_conn = MagicMock()
+    fake_conn.cursor = MagicMock(return_value=fake_cursor)
+
+    with (
+        patch("app.fitness.DATABASE_URL", "postgresql://fake"),
+        patch("psycopg2.connect", return_value=fake_conn),
+    ):
+        from app.fitness import history
+        history("default", days=14)
+
+    sql = fake_cursor.execute.call_args[0][0]
+    for token in ("'metrics', metrics", "'ai_summary', ai_summary", "'source', source"):
+        assert token in sql, f"history() query missing {token!r}"
+
+
+def _daily_rec_common_mocks(recent_days, garmin_wellness):
+    """Shared patch set for generate_daily_recommendation tests — mocks history,
+    body metrics, profile rendering, the LLM call, and the Garmin wellness lookup."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(return_value=MagicMock(
+        content='{"title": "אימון", "duration_min": 45, "rationale": "בדיקה"}'
+    ))
+    return (
+        patch("app.fitness.history", return_value=recent_days),
+        patch("app.fitness.latest_body_metrics", return_value=None),
+        patch("app.fitness_profile.render_profile_block", return_value="profile"),
+        patch("app.llm.get_gemini_llm", return_value=llm),
+        patch("app.garmin.sync.get_wellness", return_value=garmin_wellness),
+    )
+
+
+def test_daily_rec_garmin_downgrades_ready_to_light_on_poor_sleep():
+    """Deterministic history/RPE logic alone would say 'ready' — poor Garmin sleep
+    score must downgrade it to 'light' and record why in garmin_flags."""
+    import asyncio
+    from app.fitness import _user_today
+    today = _user_today()
+    # No sessions in the last 14 days → days_since_last stays -1 → readiness = 'ready'.
+    recent_days = []
+    garmin_wellness = {"date": today.isoformat(), "sleep_score": 40, "sleep_min": 300,
+                        "bb_high": 70, "resting_hr": 55}
+
+    mocks = _daily_rec_common_mocks(recent_days, garmin_wellness)
+    with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4]:
+        from app.fitness import generate_daily_recommendation
+        result = asyncio.get_event_loop().run_until_complete(
+            generate_daily_recommendation("default")
+        )
+
+    assert result["readiness"] == "light"
+    assert result["garmin"]["sleep_score"] == 40
+    assert "שינה ירודה" in result["garmin_flags"]
+
+
+def test_daily_rec_garmin_never_upgrades_rest():
+    """A day already forced to 'rest' by the deterministic rules must stay 'rest'
+    even with excellent Garmin wellness data — Garmin can only downgrade."""
+    import asyncio
+    from app.fitness import _user_today
+    today = _user_today()
+    # Trained today with RPE 9 → deterministic rules force 'rest'.
+    recent_days = [{
+        "date": today.isoformat(), "session_count": 1, "avg_rpe": 9.0,
+        "sessions": [{"ai_next_rec": {"targets": []}}],
+    }]
+    garmin_wellness = {"date": today.isoformat(), "sleep_score": 95, "bb_high": 90, "resting_hr": 48}
+
+    mocks = _daily_rec_common_mocks(recent_days, garmin_wellness)
+    with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4]:
+        from app.fitness import generate_daily_recommendation
+        result = asyncio.get_event_loop().run_until_complete(
+            generate_daily_recommendation("default")
+        )
+
+    assert result["readiness"] == "rest"
+    assert result["garmin_flags"] == []
+
+
+def test_daily_rec_no_garmin_data_is_unaffected():
+    """When Garmin isn't connected (get_wellness returns None), behavior must be
+    identical to before this feature existed — no crash, garmin=None."""
+    import asyncio
+    recent_days = []
+
+    mocks = _daily_rec_common_mocks(recent_days, None)
+    with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4]:
+        from app.fitness import generate_daily_recommendation
+        result = asyncio.get_event_loop().run_until_complete(
+            generate_daily_recommendation("default")
+        )
+
+    assert result["readiness"] == "ready"
+    assert result["garmin"] is None
+    assert result["garmin_flags"] == []
+
+
 def test_episode_gate_skips_trivial_exchanges():
     """Trivial acknowledgements must not trigger an LLM summary / episode row."""
     from app.memory.episodes import _is_trivial
