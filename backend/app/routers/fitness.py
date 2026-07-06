@@ -269,7 +269,65 @@ async def post_body_metrics(
         note=body.note,
         source="manual",
     )
-    return {"id": metric_id, "latest": fitness.latest_body_metrics(chat_id)}
+    analysis = {"ai_summary": "", "deltas": {}}
+    try:
+        analysis = await fitness.evaluate_body_metrics(
+            {"weight_kg": body.weight_kg, "lbm_kg": body.lbm_kg,
+             "smm_kg": body.smm_kg, "bf_pct": body.bf_pct, "extras": {}},
+            chat_id,
+        )
+        fitness.update_body_metric_ai(metric_id, analysis["ai_summary"])
+    except Exception:
+        logger.exception("body metrics AI evaluation failed")
+    return {"id": metric_id, "analysis": analysis, "latest": fitness.latest_body_metrics(chat_id)}
+
+
+@router.post("/api/fitness/body-metrics-image")
+async def post_body_metrics_image(
+    file: UploadFile,
+    chat_id: str = Query(...),
+    _: str = Depends(_require_token),
+):
+    """Upload a photo of a computerized body-composition summary sheet (InBody etc.):
+    extracts every readable metric, appends a new measurement row (history preserved),
+    and returns an AI trend analysis vs the previous measurement."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty image")
+    if len(data) > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image too large (max 12 MB)")
+
+    try:
+        parsed = await fitness.parse_body_scan_image(data, file.content_type or "image/jpeg", chat_id)
+    except Exception as exc:
+        logger.exception("body scan parse failed")
+        raise HTTPException(status_code=502, detail=f"Could not read the summary sheet: {exc}")
+
+    metric_id = fitness.insert_body_metric(
+        chat_id=chat_id,
+        weight_kg=parsed["weight_kg"],
+        lbm_kg=parsed["lbm_kg"],
+        smm_kg=parsed["smm_kg"],
+        bf_pct=parsed["bf_pct"],
+        source="scan",
+        note="imported from body-scan image",
+        log_date=parsed.get("measured_date"),
+        extras=parsed.get("extras") or {},
+    )
+    analysis = {"ai_summary": "", "deltas": {}}
+    try:
+        analysis = await fitness.evaluate_body_metrics(parsed, chat_id)
+        fitness.update_body_metric_ai(metric_id, analysis["ai_summary"])
+    except Exception:
+        logger.exception("body scan AI evaluation failed")
+
+    return {
+        "id": metric_id,
+        "parsed": {**parsed, "measured_date": parsed["measured_date"].isoformat() if parsed.get("measured_date") else None},
+        "analysis": analysis,
+        "latest": fitness.latest_body_metrics(chat_id),
+        "history": fitness.body_metrics_history(chat_id, days=365),
+    }
 
 
 @router.get("/api/fitness/progression")
