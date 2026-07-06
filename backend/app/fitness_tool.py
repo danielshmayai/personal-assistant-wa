@@ -3,6 +3,23 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+_DELTA_LABELS = {"weight_kg": "משקל", "lbm_kg": "מסה רזה", "smm_kg": "מסת שריר", "bf_pct": "אחוז שומן"}
+
+
+def _format_body_deltas(deltas: dict) -> str:
+    """Hebrew one-liner of per-metric changes vs the previous measurement,
+    with ✅/⚠️ direction markers relative to the goal (muscle up, fat down)."""
+    if not deltas:
+        return ""
+    parts = []
+    for k, d in deltas.items():
+        arrow = "↑" if d["delta"] > 0 else ("↓" if d["delta"] < 0 else "→")
+        mark = ""
+        if "good" in d:
+            mark = " ✅" if d["good"] else " ⚠️"
+        parts.append(f"{_DELTA_LABELS.get(k, k)} {d['from']}→{d['to']} {arrow}{mark}")
+    return "📈 מול המדידה הקודמת: " + " | ".join(parts)
+
 
 def get_fitness_tools(chat_id: str) -> list:
     """Return fitness tools bound to *chat_id*."""
@@ -190,7 +207,7 @@ def get_fitness_tools(chat_id: str) -> list:
         if all(v is None for v in [weight_kg, lbm_kg, smm_kg, bf_pct]):
             return "לא ציינת אף מדד. אנא ציין משקל, מסה רזה, SMM, או אחוז שומן."
 
-        fitness.insert_body_metric(
+        metric_id = fitness.insert_body_metric(
             chat_id=chat_id,
             weight_kg=weight_kg,
             lbm_kg=lbm_kg,
@@ -198,7 +215,6 @@ def get_fitness_tools(chat_id: str) -> list:
             bf_pct=bf_pct,
             source="manual",
         )
-        latest = fitness.latest_body_metrics(chat_id) or {}
         parts = []
         if weight_kg is not None:
             parts.append(f"משקל: {weight_kg} קג")
@@ -208,7 +224,86 @@ def get_fitness_tools(chat_id: str) -> list:
             parts.append(f"SMM: {smm_kg} קג")
         if bf_pct is not None:
             parts.append(f"אחוז שומן: {bf_pct}%")
-        return "✅ נרשם: " + " | ".join(parts)
+        lines = ["✅ נרשם: " + " | ".join(parts)]
+        try:
+            analysis = await fitness.evaluate_body_metrics(
+                {"weight_kg": weight_kg, "lbm_kg": lbm_kg, "smm_kg": smm_kg,
+                 "bf_pct": bf_pct, "extras": {}},
+                chat_id,
+            )
+            fitness.update_body_metric_ai(metric_id, analysis["ai_summary"])
+            lines.append(_format_body_deltas(analysis.get("deltas") or {}))
+            if analysis.get("ai_summary"):
+                lines.append(f"\n💡 {analysis['ai_summary']}")
+        except Exception:
+            import logging
+            logging.getLogger("pa.fitness").warning("body metrics evaluation failed", exc_info=True)
+        return "\n".join(l for l in lines if l)
+
+    @tool
+    async def analyze_body_scan(message_id: str) -> str:
+        """Analyze a photo of a computerized body-composition summary sheet (InBody / Tanita /
+        gym scale report) the user sent in WhatsApp. Extracts ALL readable metrics (weight,
+        lean mass, muscle mass, BF%, BMR, visceral fat…), saves them as a NEW measurement
+        (old values are kept for trend tracking), and returns an AI trend analysis vs the
+        previous measurement.
+
+        Use when a [MEDIA type=image …] tag arrives and the caption/context suggests a body
+        scan, weight report, InBody sheet, "דף סיכום", "מדדים", "שקילה", "הרכב גוף".
+        message_id comes from the [MEDIA ...] context tag.
+        """
+        from app import fitness
+        from app.google.drive_tools import _download_from_waha
+
+        try:
+            data, mime = await _download_from_waha(message_id)
+        except Exception as exc:
+            return f"לא הצלחתי להוריד את התמונה: {exc}"
+        try:
+            parsed = await fitness.parse_body_scan_image(data, mime, chat_id)
+        except Exception as exc:
+            return f"לא הצלחתי לקרוא נתונים מדף הסיכום: {exc}"
+
+        metric_id = fitness.insert_body_metric(
+            chat_id=chat_id,
+            weight_kg=parsed["weight_kg"],
+            lbm_kg=parsed["lbm_kg"],
+            smm_kg=parsed["smm_kg"],
+            bf_pct=parsed["bf_pct"],
+            source="scan",
+            note="imported from body-scan image",
+            log_date=parsed.get("measured_date"),
+            extras=parsed.get("extras") or {},
+        )
+
+        labels = [("weight_kg", "משקל", "קג"), ("lbm_kg", "מסה רזה", "קג"),
+                  ("smm_kg", "מסת שריר", "קג"), ("bf_pct", "אחוז שומן", "%")]
+        vals = [f"{name}: {parsed[k]}{unit}" for k, name, unit in labels if parsed.get(k) is not None]
+        extras = parsed.get("extras") or {}
+        extra_labels = {"bmi": "BMI", "bmr_kcal": "BMR (קק\"ל)", "visceral_fat_level": "שומן ויסצרלי",
+                        "total_body_water_l": "מים (ל')", "protein_kg": "חלבון (קג)",
+                        "minerals_kg": "מינרלים (קג)", "inbody_score": "ציון InBody",
+                        "waist_hip_ratio": "יחס מותן-ירך", "body_fat_kg": "מסת שומן (קג)",
+                        "target_weight_kg": "משקל יעד (קג)", "smi": "SMI",
+                        "recommended_kcal": "צריכה מומלצת (קק\"ל)"}
+        extra_vals = [f"{extra_labels.get(k, k)}: {v}" for k, v in extras.items() if k in extra_labels]
+
+        lines = ["📊 *דף הסיכום נקרא ונשמר כמדידה חדשה*", "• " + " | ".join(vals)]
+        if extra_vals:
+            lines.append("• " + " | ".join(extra_vals))
+        if extras.get("segmental_notes"):
+            lines.append(f"• {extras['segmental_notes']}")
+
+        try:
+            analysis = await fitness.evaluate_body_metrics(parsed, chat_id)
+            fitness.update_body_metric_ai(metric_id, analysis["ai_summary"])
+            lines.append(_format_body_deltas(analysis.get("deltas") or {}))
+            if analysis.get("ai_summary"):
+                lines.append(f"\n💡 {analysis['ai_summary']}")
+        except Exception:
+            import logging
+            logging.getLogger("pa.fitness").warning("body scan evaluation failed", exc_info=True)
+        return "\n".join(l for l in lines if l)
 
     @tool
     async def fitness_morning_brief() -> str:
@@ -225,4 +320,4 @@ def get_fitness_tools(chat_id: str) -> list:
         except Exception as exc:
             return f"לא הצלחתי לייצר תדרוך בוקר: {exc}"
 
-    return [log_workout, suggest_workout, fitness_today, fitness_history, log_body_metrics, fitness_morning_brief]
+    return [log_workout, suggest_workout, fitness_today, fitness_history, log_body_metrics, analyze_body_scan, fitness_morning_brief]

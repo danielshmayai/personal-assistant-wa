@@ -191,6 +191,14 @@ def init_table() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_fitness_body_metrics_chat_date "
                 "ON fitness_body_metrics (chat_id, log_date)"
             )
+            # Body-scan support: extra measurements (BMR, visceral fat, water…) from
+            # InBody-style summary sheets + the per-measurement AI trend analysis.
+            cur.execute(
+                "ALTER TABLE fitness_body_metrics ADD COLUMN IF NOT EXISTS extras JSONB DEFAULT '{}'"
+            )
+            cur.execute(
+                "ALTER TABLE fitness_body_metrics ADD COLUMN IF NOT EXISTS ai_summary TEXT DEFAULT ''"
+            )
             cur.execute(
                 "UPDATE fitness_workouts SET chat_id = 'default' WHERE chat_id != 'default'"
             )
@@ -428,15 +436,19 @@ def insert_body_metric(
     source: str = "manual",
     note: str = "",
     log_date: date | None = None,
+    extras: dict | None = None,
+    ai_summary: str = "",
 ) -> int:
+    """Append a new measurement row — history is never overwritten, so every update
+    keeps the previous values for trend tracking."""
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO fitness_body_metrics
-                  (chat_id, log_date, weight_kg, lbm_kg, smm_kg, bf_pct, source, note)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                  (chat_id, log_date, weight_kg, lbm_kg, smm_kg, bf_pct, source, note, extras, ai_summary)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
                 RETURNING id
                 """,
                 (
@@ -448,11 +460,29 @@ def insert_body_metric(
                     bf_pct,
                     source,
                     note or "",
+                    json.dumps(extras or {}, ensure_ascii=False),
+                    ai_summary or "",
                 ),
             )
             row_id = cur.fetchone()[0]
         conn.commit()
         return row_id
+    finally:
+        conn.close()
+
+
+def update_body_metric_ai(metric_id: int, ai_summary: str) -> None:
+    """Attach the AI trend analysis to an already-inserted measurement."""
+    if not DATABASE_URL:
+        return
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE fitness_body_metrics SET ai_summary = %s WHERE id = %s",
+                (ai_summary or "", metric_id),
+            )
+        conn.commit()
     finally:
         conn.close()
 
@@ -495,10 +525,11 @@ def body_metrics_history(chat_id: str, days: int = 180) -> list[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT id, log_date, weight_kg, lbm_kg, smm_kg, bf_pct, source, note
+                SELECT id, log_date, weight_kg, lbm_kg, smm_kg, bf_pct, source, note,
+                       extras, ai_summary
                 FROM fitness_body_metrics
                 WHERE chat_id = %s AND log_date >= %s
-                ORDER BY log_date ASC
+                ORDER BY log_date ASC, created_at ASC
                 """,
                 (_fitness_key(chat_id), since),
             )
@@ -516,6 +547,8 @@ def body_metrics_history(chat_id: str, days: int = 180) -> list[dict]:
             "bf_pct": float(r["bf_pct"]) if r["bf_pct"] is not None else None,
             "source": r["source"],
             "note": r["note"],
+            "extras": r.get("extras") or {},
+            "ai_summary": r.get("ai_summary") or "",
         })
     return result
 
@@ -675,6 +708,161 @@ async def parse_workout_image(image_bytes: bytes, mime_type: str = "image/jpeg",
     resp = await llm.ainvoke(messages)
     raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
     return _normalize_workout(raw)  # no text hint for image path
+
+
+_PARSE_BODY_SCAN_INSTRUCTIONS = """\
+You are a body-composition analyst. The image is a printed/computerized body-composition
+summary sheet (e.g. InBody 270/570 / Tanita / gym scale report), possibly in Hebrew or
+English. Extract EVERY measurement you can read. Respond with ONLY a single JSON object —
+no markdown, no code fences.
+
+Schema:
+{
+  "weight_kg": <number or null>,
+  "lbm_kg": <number or null>,          // lean body mass — on InBody sheets this is "Fat Free Mass" (FFM); מסת גוף רזה
+  "smm_kg": <number or null>,          // "SMM" / Skeletal Muscle Mass / מסת שריר שלד
+  "bf_pct": <number or null>,          // "PBF" / Percent Body Fat / אחוז שומן
+  "measured_date": "<YYYY-MM-DD or null — the Test Date printed on the sheet.
+                     InBody prints it European style DD.MM.YYYY (e.g. 06.07.2026 = July 6th) — convert carefully>",
+  "extras": {                           // include ONLY keys visible on the sheet
+    "bmi": <number>,
+    "bmr_kcal": <number>,               // "Basal Metabolic Rate"
+    "body_fat_kg": <number>,            // "Body Fat Mass"
+    "visceral_fat_level": <number>,
+    "total_body_water_l": <number>,
+    "protein_kg": <number>,
+    "minerals_kg": <number>,
+    "waist_hip_ratio": <number>,
+    "inbody_score": <number>,           // "InBody Score" X/100
+    "target_weight_kg": <number>,       // "Target Weight" under Weight Control
+    "smi": <number>,                    // Skeletal Muscle Index
+    "recommended_kcal": <number>,       // "Recommended calorie intake"
+    "segmental_notes": "<short text ONLY if segmental lean analysis shows a marked left/right or limb imbalance; omit when all segments are Normal>"
+  }
+}
+Numbers only (strip units and normal-range parentheses). If a value is not on the sheet,
+omit it from extras / use null for the top-level fields. Never invent values."""
+
+
+async def parse_body_scan_image(image_bytes: bytes, mime_type: str = "image/jpeg", chat_id: str = "") -> dict:
+    """Extract all body-composition measurements from a scan/summary-sheet photo."""
+    import base64
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from app.llm import get_gemini_llm
+
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    data_uri = f"data:{mime_type or 'image/jpeg'};base64,{b64}"
+    llm = get_gemini_llm()
+    messages = [
+        SystemMessage(content=_PARSE_BODY_SCAN_INSTRUCTIONS),
+        HumanMessage(content=[
+            {"type": "text", "text": "Extract all body-composition data from this summary sheet."},
+            {"type": "image_url", "image_url": {"url": data_uri}},
+        ]),
+    ]
+    resp = await llm.ainvoke(messages)
+    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    out = {
+        "weight_kg": round(_num(raw.get("weight_kg")), 1) if raw.get("weight_kg") is not None else None,
+        "lbm_kg": round(_num(raw.get("lbm_kg")), 1) if raw.get("lbm_kg") is not None else None,
+        "smm_kg": round(_num(raw.get("smm_kg")), 1) if raw.get("smm_kg") is not None else None,
+        "bf_pct": round(_num(raw.get("bf_pct")), 1) if raw.get("bf_pct") is not None else None,
+        "extras": raw.get("extras") if isinstance(raw.get("extras"), dict) else {},
+        "measured_date": None,
+    }
+    md = raw.get("measured_date")
+    if md:
+        try:
+            out["measured_date"] = date.fromisoformat(str(md)[:10])
+        except ValueError:
+            pass
+    if all(out[k] is None for k in ("weight_kg", "lbm_kg", "smm_kg", "bf_pct")) and not out["extras"]:
+        raise ValueError("No body-composition values could be read from the image")
+    return out
+
+
+def _body_metric_deltas(new: dict, prev: dict | None) -> dict:
+    """Deterministic per-metric change vs the previous measurement (never LLM-guessed).
+    Positive delta = value went up. 'good' reflects the user's goal:
+    LBM/SMM up = good, BF% down = good, weight judged by composition context."""
+    deltas: dict = {}
+    if not prev:
+        return deltas
+    for key, good_when in (("weight_kg", None), ("lbm_kg", "up"), ("smm_kg", "up"), ("bf_pct", "down")):
+        nv, pv = new.get(key), prev.get(key)
+        if nv is None or pv is None:
+            continue
+        d = round(float(nv) - float(pv), 1)
+        entry = {"from": float(pv), "to": float(nv), "delta": d}
+        if good_when and d != 0:
+            entry["good"] = (d > 0) if good_when == "up" else (d < 0)
+        deltas[key] = entry
+    return deltas
+
+
+_EVALUATE_BODY_INSTRUCTIONS = """\
+You are a body-composition coach AI. Write a short Hebrew analysis of the user's new
+body measurement versus the previous one. The numeric deltas are ALREADY COMPUTED —
+do NOT recompute or contradict them. Respond with ONLY a single JSON object:
+
+{
+  "ai_summary": "<Hebrew, 2-4 sentences: what improved, what regressed, overall opinion
+                  relative to the goal (build lean mass, reduce BF%), and ONE concrete
+                  actionable recommendation. If this is the first measurement, welcome the
+                  baseline and say what to watch going forward.>"
+}
+
+MANDATORY: relate to LBM/SMM direction (muscle) and BF% direction (fat) explicitly when
+present; include the Gilbert's-Syndrome hydration reminder only if total body water or
+hydration appears low; keep an encouraging, professional tone."""
+
+
+async def evaluate_body_metrics(new_metrics: dict, chat_id: str = "") -> dict:
+    """AI opinion on a new measurement vs the previous one. Returns {ai_summary, deltas}."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from app.llm import get_gemini_llm
+    from app.fitness_profile import render_profile_block
+
+    history = body_metrics_history(chat_id, days=365)
+    # The just-inserted row is last; the previous distinct measurement precedes it.
+    prev = history[-2] if len(history) >= 2 else None
+    deltas = _body_metric_deltas(new_metrics, prev)
+
+    context = {
+        "new_measurement": {k: new_metrics.get(k) for k in ("weight_kg", "lbm_kg", "smm_kg", "bf_pct")},
+        "new_extras": new_metrics.get("extras") or {},
+        "previous_measurement": (
+            {k: prev.get(k) for k in ("log_date", "weight_kg", "lbm_kg", "smm_kg", "bf_pct")} if prev else None
+        ),
+        "computed_deltas": deltas,
+        "measurements_in_last_year": len(history),
+    }
+
+    ai_summary = ""
+    try:
+        llm = get_gemini_llm()
+        profile = render_profile_block(None)
+        messages = [
+            SystemMessage(content=f"{profile}\n\n{_EVALUATE_BODY_INSTRUCTIONS}"),
+            HumanMessage(content=f"New body measurement (deltas already computed):\n{json.dumps(context, ensure_ascii=False, indent=2, default=str)}"),
+        ]
+        resp = await llm.ainvoke(messages)
+        raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+        ai_summary = str(raw.get("ai_summary") or "")
+    except Exception as exc:
+        logger.warning("evaluate_body_metrics narrative failed: %s", exc)
+        # Deterministic fallback so the user always gets *something* useful.
+        if deltas:
+            parts = []
+            labels = {"weight_kg": "משקל", "lbm_kg": "מסה רזה", "smm_kg": "מסת שריר", "bf_pct": "אחוז שומן"}
+            for k, d in deltas.items():
+                arrow = "עלה" if d["delta"] > 0 else ("ירד" if d["delta"] < 0 else "ללא שינוי")
+                parts.append(f"{labels[k]} {arrow} ({d['from']}→{d['to']})")
+            ai_summary = "עדכון נתוני גוף: " + ", ".join(parts) + "."
+        else:
+            ai_summary = "מדידת בסיס נשמרה — מהמדידה הבאה נעקוב אחרי מגמות שיפור."
+
+    return {"ai_summary": ai_summary, "deltas": deltas}
 
 
 def _apply_volume_fallback(parsed: dict, text: str = "") -> dict:

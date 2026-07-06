@@ -1279,6 +1279,32 @@ details[open].reasoning-block summary::before { content: "▼  "; }
 .fit-exec-nav-btn { background:none; border:none; color:#6b7280; font-size:13px; cursor:pointer; padding:6px 4px; }
 .fit-exec-nav-btn:disabled { opacity:.3; }
 
+/* body-scan upload + measurement history */
+.body-scan-btn {
+  width: 100%; margin: 8px 0; padding: 11px; border: 1.5px dashed var(--accent);
+  background: none; color: var(--accent); border-radius: 10px; font-size: 13.5px;
+  font-weight: 600; cursor: pointer; font-family: inherit; direction: rtl;
+}
+.body-scan-btn:disabled { opacity: .55; cursor: default; }
+.body-scan-analysis-card {
+  background: var(--bg); border-inline-start: 3px solid var(--accent); border-radius: 10px;
+  padding: 10px 12px; margin: 8px 0; font-size: 12.5px; line-height: 1.55; direction: rtl; text-align: right;
+}
+.bm-history { margin-top: 14px; }
+.bm-history-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 6px; }
+.bm-row { padding: 9px 0; border-bottom: 1px solid var(--border); }
+.bm-row:last-child { border-bottom: none; }
+.bm-row-head { display: flex; align-items: center; gap: 8px; }
+.bm-row-date { font-size: 12px; font-weight: 600; color: var(--text); }
+.bm-row-src { font-size: 11px; }
+.bm-row-vals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.bm-chip { font-size: 11.5px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 2px 8px; color: var(--text2); }
+.bm-chip b { color: var(--text); }
+.bm-delta { font-size: 10.5px; font-weight: 700; margin-inline-start: 3px; }
+.bm-delta.good { color: var(--green); }
+.bm-delta.bad { color: var(--red); }
+.bm-delta.neutral { color: var(--text3); }
+.bm-ai { font-size: 11.5px; color: var(--text2); line-height: 1.5; margin-top: 5px; direction: rtl; text-align: right; font-style: italic; }
 /* viz tabs (muscles / equipment toggle) */
 .fit-exec-viz-tabs { display:flex; gap:6px; margin-bottom:4px; }
 .fit-exec-viz-tab { flex:1; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#6b7280; border-radius:10px; padding:7px; font-size:11px; font-weight:700; cursor:pointer; text-transform:uppercase; letter-spacing:.05em; font-family:inherit; transition:background .15s; }
@@ -2112,6 +2138,11 @@ details[open].reasoning-block summary::before { content: "▼  "; }
         <div class="section-block">
           <div class="section-title">Body metrics</div>
           <div id="fit-latest-metrics"><div class="dash-empty">No measurements yet</div></div>
+          <button class="body-scan-btn" id="body-scan-btn" onclick="document.getElementById('body-scan-file').click()">
+            📷 העלה דף סיכום מדדים (InBody)
+          </button>
+          <input type="file" id="body-scan-file" accept="image/*" style="display:none" onchange="uploadBodyScan(this)"/>
+          <div id="body-scan-analysis"></div>
           <div class="fit-metrics-form">
             <div><label>Weight (kg)</label><input id="fit-m-weight" type="number" step="0.1" placeholder="71.1"></div>
             <div><label>LBM (kg)</label><input id="fit-m-lbm" type="number" step="0.1" placeholder="31.8"></div>
@@ -2119,6 +2150,7 @@ details[open].reasoning-block summary::before { content: "▼  "; }
             <div><label>BF%</label><input id="fit-m-bf" type="number" step="0.1" placeholder="22.0"></div>
           </div>
           <button class="add-btn" style="width:100%;margin-top:8px" onclick="saveBodyMetrics()">Save metrics</button>
+          <div id="fit-metrics-history"></div>
         </div>
       </div>
     </div>
@@ -6044,9 +6076,50 @@ function _renderLbmChart(el, points) {
   </div>`;
 }
 
+const _BM_FIELDS = [
+  { key: 'weight_kg', label: 'משקל', unit: ' קג', good: null },
+  { key: 'lbm_kg',    label: 'מסה רזה', unit: ' קג', good: 'up' },
+  { key: 'smm_kg',    label: 'שריר', unit: ' קג', good: 'up' },
+  { key: 'bf_pct',    label: 'שומן', unit: '%', good: 'down' },
+];
+
+function _bmDeltaChip(cur, prev, good) {
+  if (cur == null || prev == null) return '';
+  const d = Math.round((cur - prev) * 10) / 10;
+  if (d === 0) return ` <span class="bm-delta neutral">→</span>`;
+  const arrow = d > 0 ? '↑' : '↓';
+  let cls = 'neutral';
+  if (good === 'up') cls = d > 0 ? 'good' : 'bad';
+  if (good === 'down') cls = d < 0 ? 'good' : 'bad';
+  return ` <span class="bm-delta ${cls}">${arrow}${Math.abs(d)}</span>`;
+}
+
+function _renderBodyMetricsHistory(history) {
+  const el = document.getElementById('fit-metrics-history');
+  if (!el) return;
+  if (!history || history.length === 0) { el.innerHTML = ''; return; }
+  const rows = history.slice().reverse(); // newest first
+  let html = `<div class="bm-history"><div class="bm-history-title">היסטוריית מדידות (${rows.length})</div>`;
+  for (let i = 0; i < rows.length; i++) {
+    const m = rows[i];
+    const prev = rows[i + 1] || null; // chronologically previous
+    const src = m.source === 'scan' ? '📷' : '✍️';
+    const chips = _BM_FIELDS
+      .filter(f => m[f.key] != null)
+      .map(f => `<span class="bm-chip">${f.label}: <b>${m[f.key]}${f.unit}</b>${prev ? _bmDeltaChip(m[f.key], prev[f.key], f.good) : ''}</span>`)
+      .join('');
+    html += `<div class="bm-row">
+      <div class="bm-row-head"><span class="bm-row-src">${src}</span><span class="bm-row-date">${m.log_date}</span></div>
+      <div class="bm-row-vals">${chips}</div>
+      ${m.ai_summary ? `<div class="bm-ai">💡 ${_esc(m.ai_summary)}</div>` : ''}
+    </div>`;
+  }
+  el.innerHTML = html + '</div>';
+}
+
 async function loadBodyMetrics() {
   try {
-    const data = await apiGet('/api/fitness/body-metrics' + _fcid() + '&days=180');
+    const data = await apiGet('/api/fitness/body-metrics' + _fcid() + '&days=365');
     const el = document.getElementById('fit-latest-metrics');
     if (data.latest) {
       const m = data.latest;
@@ -6058,7 +6131,40 @@ async function loadBodyMetrics() {
         <span style="color:var(--text-muted);font-size:11px">(${m.log_date})</span>
       </div>`;
     }
+    _renderBodyMetricsHistory(data.history);
   } catch(e) { /* ignore */ }
+}
+
+function _showBodyScanAnalysis(analysis) {
+  const el = document.getElementById('body-scan-analysis');
+  if (!el || !analysis || !analysis.ai_summary) return;
+  el.innerHTML = `<div class="body-scan-analysis-card">💡 ${_esc(analysis.ai_summary)}</div>`;
+}
+
+async function uploadBodyScan(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const btn = document.getElementById('body-scan-btn');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '🔎 מנתח את דף הסיכום…';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const resp = await fetch('/api/fitness/body-metrics-image' + _fcid(), {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd,
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const r = await resp.json();
+    showToast('דף הסיכום נקרא ונשמר כמדידה חדשה ✅');
+    _showBodyScanAnalysis(r.analysis);
+    loadBodyMetrics();
+    loadLbmChart();
+  } catch(e) {
+    showToast('הניתוח נכשל: ' + (e.message || e), true);
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+    input.value = '';
+  }
 }
 
 async function saveBodyMetrics() {
@@ -6074,9 +6180,10 @@ async function saveBodyMetrics() {
     return;
   }
   try {
-    await apiPost('/api/fitness/body-metrics' + _fcid(), body);
+    const r = await apiPost('/api/fitness/body-metrics' + _fcid(), body);
     showToast('Body metrics saved! ✅');
     ['fit-m-weight','fit-m-lbm','fit-m-smm','fit-m-bf'].forEach(id => document.getElementById(id).value = '');
+    _showBodyScanAnalysis(r.analysis);
     loadBodyMetrics();
     loadLbmChart();
   } catch(e) {

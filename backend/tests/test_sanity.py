@@ -759,19 +759,20 @@ EXPECTED_FITNESS_TOOL_NAMES = {
     "fitness_today",
     "fitness_history",
     "log_body_metrics",
+    "analyze_body_scan",
     "fitness_morning_brief",
 }
 
 
-def test_get_fitness_tools_returns_six_tools():
-    """get_fitness_tools must return exactly 6 tool objects."""
+def test_get_fitness_tools_returns_seven_tools():
+    """get_fitness_tools must return exactly 7 tool objects."""
     from app.fitness_tool import get_fitness_tools
     tools = get_fitness_tools("test-chat-id")
-    assert len(tools) == 6, f"Expected 6 fitness tools, got {len(tools)}: {[t.name for t in tools]}"
+    assert len(tools) == 7, f"Expected 7 fitness tools, got {len(tools)}: {[t.name for t in tools]}"
 
 
 def test_get_fitness_tools_has_correct_names():
-    """Each of the 6 fitness tools must carry the exact expected name."""
+    """Each of the 7 fitness tools must carry the exact expected name."""
     from app.fitness_tool import get_fitness_tools
     tools = get_fitness_tools("test-chat-id")
     actual = {t.name for t in tools}
@@ -1046,6 +1047,26 @@ def test_daily_rec_no_garmin_data_is_unaffected():
     assert result["readiness"] == "ready"
     assert result["garmin"] is None
     assert result["garmin_flags"] == []
+
+
+def test_body_metric_deltas_direction_and_goodness():
+    """Deltas vs previous measurement: LBM/SMM up = good, BF% down = good,
+    weight carries no goodness judgement."""
+    from app.fitness import _body_metric_deltas
+    new = {"weight_kg": 71.6, "lbm_kg": 59.1, "smm_kg": 33.7, "bf_pct": 17.5}
+    prev = {"weight_kg": 70.6, "lbm_kg": 58.0, "smm_kg": 33.1, "bf_pct": 17.3}
+    d = _body_metric_deltas(new, prev)
+    assert d["smm_kg"]["delta"] == 0.6 and d["smm_kg"]["good"] is True
+    assert d["lbm_kg"]["delta"] == 1.1 and d["lbm_kg"]["good"] is True
+    assert d["bf_pct"]["delta"] == 0.2 and d["bf_pct"]["good"] is False  # fat went up
+    assert d["weight_kg"]["delta"] == 1.0 and "good" not in d["weight_kg"]
+
+
+def test_body_metric_deltas_first_measurement_and_missing_fields():
+    from app.fitness import _body_metric_deltas
+    assert _body_metric_deltas({"weight_kg": 71}, None) == {}
+    d = _body_metric_deltas({"weight_kg": 71, "bf_pct": None}, {"weight_kg": 70, "bf_pct": 20})
+    assert "bf_pct" not in d and d["weight_kg"]["delta"] == 1.0
 
 
 def test_episode_gate_skips_trivial_exchanges():
