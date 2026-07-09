@@ -239,7 +239,7 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
 
     # Build the full message for the agent: media tag (if any) + caption/text
     if media_ctx:
-        full_text = f"{media_ctx}\n{text}" if text else f"{media_ctx}\nPlease save this to Google Drive."
+        full_text = f"{media_ctx}\n{text}" if text else f"{media_ctx}\n(no caption — follow the media routing rules: image → analyze first, document → save)"
     else:
         full_text = text
 

@@ -23,7 +23,7 @@ RULES_FILE = VAULT_ROOT / "System" / "Rules.md"
 ALLOWED_CATEGORIES: set[str] = {
     c.strip() for c in os.getenv(
         "OBSIDIAN_CATEGORIES",
-        "System,People,Entities,Investments,Projects,Preferences,Misc",
+        "System,People,Entities,Investments,Projects,Preferences,Photos,Misc",
     ).split(",") if c.strip()
 }
 
