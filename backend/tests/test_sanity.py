@@ -1069,6 +1069,91 @@ def test_body_metric_deltas_first_measurement_and_missing_fields():
     assert "bf_pct" not in d and d["weight_kg"]["delta"] == 1.0
 
 
+# ---------------------------------------------------------------------------
+# Image tools — general vision analysis + Drive save with memory tagging
+# ---------------------------------------------------------------------------
+
+def test_get_image_tools_returns_two_tools_with_correct_names():
+    from app.image_tools import get_image_tools
+    tools = get_image_tools("test-chat-id")
+    assert {t.name for t in tools} == {"analyze_image", "save_photo_tagged"}
+
+
+def test_photos_category_is_allowed_not_coerced_to_misc():
+    """The Photos memory category must be in ALLOWED_CATEGORIES so photo-index notes
+    don't silently land in Misc/."""
+    from app.memory.obsidian import ALLOWED_CATEGORIES
+    assert "Photos" in ALLOWED_CATEGORIES
+
+
+def test_save_photo_tagged_uploads_and_writes_memory_note():
+    """save_photo_tagged must upload to Drive AND append a Photos/<YYYY-MM> memory note
+    containing the Drive link + description, so the link is retrievable later."""
+    import asyncio
+
+    fact_calls = []
+    fake_creds = MagicMock(valid=True, scopes=["https://www.googleapis.com/auth/drive.file"])
+
+    async def fake_download(message_id):
+        assert message_id == "msg_123"
+        return b"jpegbytes", "image/jpeg"
+
+    async def fake_vision(image_bytes, mime, system, user_text):
+        return "אופני הרים כחולים של טרק\n#אופניים #ספורט"
+
+    with (
+        patch("app.google.auth.get_credentials", return_value=fake_creds),
+        patch("app.google.drive_tools._download_from_waha", side_effect=fake_download),
+        patch("app.google.drive.upload_photo", return_value="https://drive.google.com/file/d/abc/view"),
+        patch("app.image_tools._vision", side_effect=fake_vision),
+        patch("app.memory.obsidian.save_fact",
+              side_effect=lambda cat, ent, content: fact_calls.append((cat, ent, content)) or "Saved"),
+    ):
+        from app.image_tools import get_image_tools
+        tools = {t.name: t for t in get_image_tools("test-chat-id")}
+        result = asyncio.get_event_loop().run_until_complete(
+            tools["save_photo_tagged"].ainvoke(
+                {"message_id": "msg_123", "filename": "bike.jpg", "subfolder": "אופניים"}
+            )
+        )
+
+    assert "https://drive.google.com/file/d/abc/view" in result
+    assert len(fact_calls) == 1
+    cat, ent, content = fact_calls[0]
+    assert cat == "Photos"
+    import re as _re
+    assert _re.fullmatch(r"\d{4}-\d{2}", ent), f"entity should be YYYY-MM, got {ent}"
+    assert "https://drive.google.com/file/d/abc/view" in content
+    assert "אופני הרים" in content  # AI description indexed for retrieval
+    assert "#אופניים" in content
+
+
+def test_analyze_image_passes_question_and_returns_vision_text():
+    import asyncio
+
+    async def fake_download(message_id):
+        return b"jpegbytes", "image/jpeg"
+
+    seen = {}
+
+    async def fake_vision(image_bytes, mime, system, user_text):
+        seen["question"] = user_text
+        return "אלה אופני Trek Marlin 7, אופני הרים לשבילים."
+
+    with (
+        patch("app.google.drive_tools._download_from_waha", side_effect=fake_download),
+        patch("app.image_tools._vision", side_effect=fake_vision),
+    ):
+        from app.image_tools import get_image_tools
+        tools = {t.name: t for t in get_image_tools("test-chat-id")}
+        result = asyncio.get_event_loop().run_until_complete(
+            tools["analyze_image"].ainvoke({"message_id": "m1", "question": "איזה דגם אופניים זה?"})
+        )
+
+    assert seen["question"] == "איזה דגם אופניים זה?"
+    assert "Trek Marlin" in result
+
+
 def test_episode_gate_skips_trivial_exchanges():
     """Trivial acknowledgements must not trigger an LLM summary / episode row."""
     from app.memory.episodes import _is_trivial

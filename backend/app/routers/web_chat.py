@@ -189,7 +189,7 @@ async def websocket_chat(websocket: WebSocket, token: str = "", chat_id: str = "
                     fname = cached.get("filename", f"upload_{media_id[:8]}")
                     broad = "image" if mime.startswith("image/") else "document"
                     media_tag = f"[MEDIA id={media_id} type={broad} filename={fname} mime={mime}]"
-                    full_text = f"{media_tag}\n{user_text}" if user_text else f"{media_tag}\nPlease save this to Google Drive."
+                    full_text = f"{media_tag}\n{user_text}" if user_text else f"{media_tag}\n(no caption — follow the media routing rules: image → analyze first, document → save)"
                 else:
                     full_text = user_text or "Please save my file to Google Drive."
             else:
