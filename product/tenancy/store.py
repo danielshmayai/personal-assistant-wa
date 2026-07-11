@@ -70,6 +70,21 @@ def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> 
             created = False
             if row:
                 tenant = _row_to_tenant(row)
+                if tenant.status == "deleted":
+                    # A previously-deleted account signing in again. Its data
+                    # was already wiped at offboarding, so there are no lingering
+                    # artifacts — let the person return as a fresh pending request
+                    # (re-onboard, owner re-approves) instead of a dead tombstone.
+                    cur.execute(
+                        "UPDATE tenants SET status = 'pending', onboarded_at = NULL, "
+                        "display_name = %s, avatar_url = %s WHERE id = %s",
+                        (name or tenant.display_name, picture or tenant.avatar_url, tenant.id),
+                    )
+                    tenant.status = "pending"
+                    tenant.onboarded_at = None
+                    tenant.display_name = name or tenant.display_name
+                    tenant.avatar_url = picture or tenant.avatar_url
+                    created = True  # notify the owner, just like a brand-new request
             else:
                 cur.execute("SELECT COUNT(*) FROM tenants")
                 first_ever = cur.fetchone()[0] == 0
