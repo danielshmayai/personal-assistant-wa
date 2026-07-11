@@ -20,6 +20,24 @@ def _row_to_tenant(row) -> Tenant:
     )
 
 
+def _resurrect_deleted(cur, tenant: Tenant, name: str, picture: str) -> None:
+    """Reset a deleted tombstone to a fresh 'pending' request in place.
+
+    Offboarding already wiped all data, so there are no lingering artifacts;
+    the owner re-approves before access is restored. Applied on either match
+    path (google_sub link or email) so a returning account never stays stuck.
+    """
+    cur.execute(
+        "UPDATE tenants SET status = 'pending', onboarded_at = NULL, "
+        "display_name = %s, avatar_url = %s WHERE id = %s",
+        (name or tenant.display_name, picture or tenant.avatar_url, tenant.id),
+    )
+    tenant.status = "pending"
+    tenant.onboarded_at = None
+    tenant.display_name = name or tenant.display_name
+    tenant.avatar_url = picture or tenant.avatar_url
+
+
 def get_tenant(tenant_id: str) -> Tenant | None:
     conn = get_conn()
     try:
@@ -63,7 +81,13 @@ def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> 
             )
             row = cur.fetchone()
             if row:
-                return _row_to_tenant(row), False
+                tenant = _row_to_tenant(row)
+                if tenant.status != "deleted":
+                    return tenant, False
+                # Deleted account returning via its existing google_sub link.
+                _resurrect_deleted(cur, tenant, name, picture)
+                conn.commit()
+                return tenant, True
 
             cur.execute(f"SELECT {_TENANT_COLS} FROM tenants WHERE email = %s", (email,))
             row = cur.fetchone()
@@ -71,19 +95,8 @@ def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> 
             if row:
                 tenant = _row_to_tenant(row)
                 if tenant.status == "deleted":
-                    # A previously-deleted account signing in again. Its data
-                    # was already wiped at offboarding, so there are no lingering
-                    # artifacts — let the person return as a fresh pending request
-                    # (re-onboard, owner re-approves) instead of a dead tombstone.
-                    cur.execute(
-                        "UPDATE tenants SET status = 'pending', onboarded_at = NULL, "
-                        "display_name = %s, avatar_url = %s WHERE id = %s",
-                        (name or tenant.display_name, picture or tenant.avatar_url, tenant.id),
-                    )
-                    tenant.status = "pending"
-                    tenant.onboarded_at = None
-                    tenant.display_name = name or tenant.display_name
-                    tenant.avatar_url = picture or tenant.avatar_url
+                    # Returning via email (no active google_sub link).
+                    _resurrect_deleted(cur, tenant, name, picture)
                     created = True  # notify the owner, just like a brand-new request
             else:
                 cur.execute("SELECT COUNT(*) FROM tenants")
