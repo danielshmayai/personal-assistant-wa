@@ -22,6 +22,30 @@ WAHA webhook → FastAPI → async worker queue
                                             reflection → END
 ```
 
+## The two assistants — shared vocabulary
+
+This repo ships **two** assistants that share one engine. When the user
+says where they want a change, map it as follows:
+
+| Term the user uses | Means | Touch |
+|---|---|---|
+| "old assistant" / "the WhatsApp one" / "8000" | Original single-user WhatsApp engine | `docker-compose.yml` (project `pa`), `backend/app/` (routers, worker, WAHA) |
+| "new assistant" / "product" / "multi-tenant" / "8080" | Multi-tenant web platform that *wraps* the engine | `docker-compose.product.yml` (project `pa-product`), `product/`, `frontend/` |
+| "both" / "the shared engine" | Code under `backend/app/` used by both | graph, tools, memory |
+
+Key fact: the **new** assistant wraps the **old** one. Everything in
+`backend/app/` (graph, tools, memory) runs in BOTH. So a change to a
+tool / the graph / memory affects both assistants — flag this to the
+user and confirm scope. WhatsApp/worker/WAHA changes are old-only;
+tenants/login/secrets/settings-UI changes are new-only.
+
+Run them isolated (product must start after the engine — it shares the
+engine's Postgres over the external `pa_pa-net` network):
+```bash
+docker compose up -d                                          # old, :8000
+docker compose -f docker-compose.product.yml -p pa-product up -d  # new, :8080
+```
+
 ## Tech stack
 
 | Layer | Tech |
