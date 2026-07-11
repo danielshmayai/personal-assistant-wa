@@ -1,8 +1,18 @@
 import logging
 from langchain_ollama import ChatOllama
-from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL, LLM_TIMEOUT_SECONDS, GEMINI_API_KEY, GEMINI_MODEL
+from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL, LLM_TIMEOUT_SECONDS, GEMINI_MODEL
 
 logger = logging.getLogger("pa.llm")
+
+# One Gemini client per (tenant, key) — never shared across tenants.
+# Keyed by tenant_id; the key fingerprint guards against a stale client
+# surviving a key rotation that raced the cache bust.
+_gemini_cache: dict[str, tuple[str, object]] = {}
+
+
+def _gemini_key() -> str:
+    from app import runtime
+    return runtime.get_secret("GEMINI_API_KEY")
 
 
 def get_llm() -> ChatOllama:
@@ -17,23 +27,40 @@ def get_llm() -> ChatOllama:
 
 
 def get_gemini_llm():
+    from app import runtime
     from langchain_google_genai import ChatGoogleGenerativeAI
-    return ChatGoogleGenerativeAI(
+
+    api_key = _gemini_key()
+    tid = runtime.tenant_id()
+    cached = _gemini_cache.get(tid)
+    if cached and cached[0] == api_key:
+        return cached[1]
+    llm = ChatGoogleGenerativeAI(
         model=GEMINI_MODEL,
-        google_api_key=GEMINI_API_KEY,
+        google_api_key=api_key,
         temperature=0.3,
     )
+    _gemini_cache[tid] = (api_key, llm)
+    return llm
+
+
+def clear_llm_cache(tenant_id: str | None = None) -> None:
+    """Drop cached Gemini clients (call after a tenant's key changes)."""
+    if tenant_id is None:
+        _gemini_cache.clear()
+    else:
+        _gemini_cache.pop(tenant_id, None)
 
 
 def get_smart_llm():
-    if GEMINI_API_KEY:
+    if _gemini_key():
         return get_gemini_llm()
     return get_llm()
 
 
 def llm_with_fallback():
     ollama = get_llm()
-    if not GEMINI_API_KEY:
+    if not _gemini_key():
         return ollama
     gemini = get_gemini_llm()
     return ollama.with_fallbacks([gemini])

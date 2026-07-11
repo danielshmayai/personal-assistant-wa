@@ -10,6 +10,14 @@ _STD_FIELDS = frozenset({
 })
 
 
+def _current_tenant() -> str:
+    try:
+        from app.context import current_tenant_id
+        return current_tenant_id.get()
+    except Exception:
+        return ""
+
+
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         dt = datetime.datetime.fromtimestamp(record.created, tz=datetime.timezone.utc)
@@ -19,6 +27,9 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        tenant = _current_tenant()
+        if tenant:
+            log["tenant_id"] = tenant
         for key, val in record.__dict__.items():
             if key not in _STD_FIELDS and not key.startswith("_"):
                 log[key] = val

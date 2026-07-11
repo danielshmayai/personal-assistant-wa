@@ -2,11 +2,18 @@
 
 import logging
 from pathlib import Path
-from app.config import GEMINI_API_KEY, DATABASE_URL, OBSIDIAN_VAULT_PATH
+from app.config import DATABASE_URL, OBSIDIAN_VAULT_PATH
+from app.context import current_tenant_id
 
 logger = logging.getLogger("pa.embeddings")
 
+# Owner base vault — used only by the startup rebuild jobs (owner path).
 VAULT_ROOT = Path(OBSIDIAN_VAULT_PATH)
+
+
+def _tid() -> str:
+    """Tenant scope for all embedding rows ('' = owner/legacy data)."""
+    return current_tenant_id.get()
 _EMBEDDING_MODEL = "models/text-embedding-004"
 _MAX_CONTENT_CHARS = 8000
 
@@ -17,10 +24,12 @@ def _get_conn():
 
 
 def _model():
-    if not GEMINI_API_KEY:
+    from app import runtime
+    api_key = runtime.get_secret("GEMINI_API_KEY")
+    if not api_key:
         return None
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
-    return GoogleGenerativeAIEmbeddings(model=_EMBEDDING_MODEL, google_api_key=GEMINI_API_KEY)
+    return GoogleGenerativeAIEmbeddings(model=_EMBEDDING_MODEL, google_api_key=api_key)
 
 
 def vec_str(v: list[float]) -> str:
@@ -54,12 +63,12 @@ def upsert_embedding(filepath: str, content: str) -> bool:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO vault_embeddings (filepath, embedding, updated_at)
-                    VALUES (%s, %s::vector, NOW())
-                    ON CONFLICT (filepath) DO UPDATE
+                    INSERT INTO vault_embeddings (tenant_id, filepath, embedding, updated_at)
+                    VALUES (%s, %s, %s::vector, NOW())
+                    ON CONFLICT (tenant_id, filepath) DO UPDATE
                     SET embedding = EXCLUDED.embedding, updated_at = NOW()
                     """,
-                    (filepath, vec),
+                    (_tid(), filepath, vec),
                 )
             conn.commit()
         finally:
@@ -84,10 +93,11 @@ def semantic_search(query: str, limit: int = 8) -> list[str]:
                     """
                     SELECT filepath
                     FROM vault_embeddings
+                    WHERE tenant_id = %s
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
                     """,
-                    (vec, limit),
+                    (_tid(), vec, limit),
                 )
                 return [r[0] for r in cur.fetchall()]
         finally:
@@ -109,11 +119,11 @@ def store_rule_embedding(rule_text: str) -> None:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO rule_embeddings (rule_text, embedding)
-                    VALUES (%s, %s::vector)
-                    ON CONFLICT (rule_text) DO UPDATE SET embedding = EXCLUDED.embedding
+                    INSERT INTO rule_embeddings (tenant_id, rule_text, embedding)
+                    VALUES (%s, %s, %s::vector)
+                    ON CONFLICT (tenant_id, rule_text) DO UPDATE SET embedding = EXCLUDED.embedding
                     """,
-                    (rule_text, vs),
+                    (_tid(), rule_text, vs),
                 )
             conn.commit()
         finally:
@@ -136,11 +146,11 @@ def find_similar_rule(rule_text: str, threshold: float = 0.85) -> str | None:
                     """
                     SELECT rule_text, 1 - (embedding <=> %s::vector) AS sim
                     FROM rule_embeddings
-                    WHERE 1 - (embedding <=> %s::vector) >= %s
+                    WHERE tenant_id = %s AND 1 - (embedding <=> %s::vector) >= %s
                     ORDER BY embedding <=> %s::vector
                     LIMIT 1
                     """,
-                    (vs, vs, threshold, vs),
+                    (vs, _tid(), vs, threshold, vs),
                 )
                 row = cur.fetchone()
                 return row[0] if row else None
@@ -196,7 +206,7 @@ async def rebuild_vault_embeddings() -> int:
         conn = _get_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT filepath, updated_at FROM vault_embeddings")
+                cur.execute("SELECT filepath, updated_at FROM vault_embeddings WHERE tenant_id = ''")
                 for fp, ts in cur.fetchall():
                     existing[fp] = ts.timestamp() if ts else 0.0
         finally:

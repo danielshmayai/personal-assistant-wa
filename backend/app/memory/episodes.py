@@ -49,10 +49,10 @@ async def create_episode(chat_id: str, transcript: str) -> None:
         if not summary:
             return
 
-        loop = asyncio.get_running_loop()
-        v = await loop.run_in_executor(None, embed_text, summary)
+        from app.runtime import in_thread
+        v = await in_thread(embed_text, summary)
         vs = vec_str(v) if v else None
-        await loop.run_in_executor(None, save_episode, chat_id, summary, vs)
+        await in_thread(save_episode, chat_id, summary, vs)
         logger.debug("Episode saved for chat_id=%s", chat_id)
     except Exception:
         logger.debug("create_episode failed for %s", chat_id, exc_info=True)
@@ -62,12 +62,12 @@ async def get_relevant_episodes(query: str, limit: int = 3) -> list[str]:
     """Return summaries of past conversations most semantically similar to `query`."""
     try:
         from app.memory.embeddings import embed_text, vec_str
-        loop = asyncio.get_running_loop()
-        v = await loop.run_in_executor(None, embed_text, query[:2000])
+        from app.runtime import in_thread
+        v = await in_thread(embed_text, query[:2000])
         if not v:
             return []
         vs = vec_str(v)
-        return await loop.run_in_executor(None, search_episodes, vs, limit)
+        return await in_thread(search_episodes, vs, limit)
     except Exception:
         logger.debug("get_relevant_episodes failed", exc_info=True)
         return []

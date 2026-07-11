@@ -41,9 +41,21 @@ def _client_config() -> dict:
 
 
 def _token_key(chat_id: str) -> str:
-    """Web conversations use a new chat_id every session, so all web users
-    share a single stable token key.  WhatsApp threads keep their phone number."""
-    return "web_user" if chat_id.startswith("web") else chat_id
+    """Stable token-row key.
+
+    Web chat_ids change every session, so web tokens are keyed by tenant:
+    - product tenants → "tenant:<tenant_id>" from the request ContextVar
+      (the product layer sets it on every entry point, including the OAuth
+      callback). Every tenant gets their own Google token row.
+    - the legacy owner web UI (no tenant in context) keeps the historic
+      "web_user" key.
+    WhatsApp threads keep their phone-number chat_id.
+    """
+    if not chat_id.startswith("web"):
+        return chat_id
+    from app.context import current_tenant_id
+    tid = current_tenant_id.get()
+    return f"tenant:{tid}" if tid else "web_user"
 
 
 def get_auth_url(chat_id: str) -> str:

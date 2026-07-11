@@ -143,13 +143,14 @@ async def _run_reflection(state: PAState) -> None:
                 from app.memory.embeddings import find_similar_rule, store_rule_embedding
                 import asyncio as _asyncio
                 loop = _asyncio.get_running_loop()
-                similar = await loop.run_in_executor(None, find_similar_rule, key_or_rule)
+                from app.runtime import in_thread
+                similar = await in_thread(find_similar_rule, key_or_rule)
                 if similar and similar.strip().lower() == key_or_rule.strip().lower():
                     continue  # semantically identical rule already exists
                 if similar:
                     obsidian.hide_rule(similar)  # retire outdated version
                 obsidian.update_rule(key_or_rule)
-                await loop.run_in_executor(None, store_rule_embedding, key_or_rule)
+                await in_thread(store_rule_embedding, key_or_rule)
                 logger.info("Reflection saved rule: %s", key_or_rule)
             elif lesson_type == "FACT":
                 obsidian.save_fact("Preferences", key_or_rule, value_or_reason or key_or_rule)

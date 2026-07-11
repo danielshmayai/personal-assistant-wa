@@ -12,6 +12,57 @@ def _get_conn():
     return psycopg2.connect(DATABASE_URL)
 
 
+def _tid() -> str:
+    """Tenant scope for every memory row ('' = owner/legacy data)."""
+    from app.context import current_tenant_id
+    return current_tenant_id.get()
+
+
+def _pk_cols(cur, table: str) -> set[str]:
+    cur.execute(
+        """
+        SELECT a.attname FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = %s::regclass AND i.indisprimary
+        """,
+        (table,),
+    )
+    return {r[0] for r in cur.fetchall()}
+
+
+def _ensure_tenant_scoping(cur) -> None:
+    """Idempotent migration: add tenant_id ('' = owner) and composite keys.
+
+    Existing single-user data keeps tenant_id='' so the owner path is
+    untouched; product tenants get their own keyspace.
+    """
+    for table in (
+        "vault_embeddings", "memory_facts", "memory_rules", "rule_embeddings",
+        "episodes", "conversation_log", "web_conversations",
+    ):
+        cur.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT ''"
+        )
+
+    if _pk_cols(cur, "vault_embeddings") != {"tenant_id", "filepath"}:
+        cur.execute("ALTER TABLE vault_embeddings DROP CONSTRAINT IF EXISTS vault_embeddings_pkey")
+        cur.execute("ALTER TABLE vault_embeddings ADD PRIMARY KEY (tenant_id, filepath)")
+    if _pk_cols(cur, "rule_embeddings") != {"tenant_id", "rule_text"}:
+        cur.execute("ALTER TABLE rule_embeddings DROP CONSTRAINT IF EXISTS rule_embeddings_pkey")
+        cur.execute("ALTER TABLE rule_embeddings ADD PRIMARY KEY (tenant_id, rule_text)")
+
+    cur.execute("ALTER TABLE memory_facts DROP CONSTRAINT IF EXISTS memory_facts_key_key")
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS memory_facts_tenant_key_uq ON memory_facts(tenant_id, key)"
+    )
+    cur.execute("ALTER TABLE memory_rules DROP CONSTRAINT IF EXISTS memory_rules_rule_key")
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS memory_rules_tenant_rule_uq ON memory_rules(tenant_id, rule)"
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS episodes_tenant_idx ON episodes(tenant_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS conversation_log_tenant_idx ON conversation_log(tenant_id)")
+
+
 def init_memory_tables():
     """Create memory tables if they don't exist (idempotent)."""
     conn = _get_conn()
@@ -120,6 +171,7 @@ def init_memory_tables():
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            _ensure_tenant_scoping(cur)
         conn.commit()
     finally:
         conn.close()
@@ -211,13 +263,13 @@ def upsert_fact(key: str, value: str, source: str = "user"):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO memory_facts (key, value, source, updated_at)
-                VALUES (%s, %s, %s, NOW())
-                ON CONFLICT (key) DO UPDATE
+                INSERT INTO memory_facts (tenant_id, key, value, source, updated_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT (tenant_id, key) DO UPDATE
                 SET value = EXCLUDED.value,
                     source = EXCLUDED.source,
                     updated_at = NOW()
-            """, (key, value, source))
+            """, (_tid(), key, value, source))
         conn.commit()
         logger.info("Upserted fact: %s", key)
     finally:
@@ -230,10 +282,10 @@ def insert_rule(rule: str, reason: str = "", source: str = "reflection"):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO memory_rules (rule, reason, source)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (rule) DO NOTHING
-            """, (rule, reason, source))
+                INSERT INTO memory_rules (tenant_id, rule, reason, source)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (tenant_id, rule) DO NOTHING
+            """, (_tid(), rule, reason, source))
         conn.commit()
         logger.info("Inserted rule: %.80s", rule)
     finally:
@@ -244,7 +296,7 @@ def get_all_facts() -> list[dict]:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT key, value FROM memory_facts ORDER BY updated_at DESC")
+            cur.execute("SELECT key, value FROM memory_facts WHERE tenant_id = %s ORDER BY updated_at DESC", (_tid(),))
             return [{"key": r[0], "value": r[1]} for r in cur.fetchall()]
     finally:
         conn.close()
@@ -254,7 +306,7 @@ def get_all_facts_with_ids() -> list[dict]:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, key, value FROM memory_facts ORDER BY updated_at DESC")
+            cur.execute("SELECT id, key, value FROM memory_facts WHERE tenant_id = %s ORDER BY updated_at DESC", (_tid(),))
             return [{"id": r[0], "key": r[1], "value": r[2]} for r in cur.fetchall()]
     finally:
         conn.close()
@@ -264,7 +316,7 @@ def get_all_rules() -> list[dict]:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT rule, reason FROM memory_rules ORDER BY created_at DESC")
+            cur.execute("SELECT rule, reason FROM memory_rules WHERE tenant_id = %s ORDER BY created_at DESC", (_tid(),))
             return [{"rule": r[0], "reason": r[1]} for r in cur.fetchall()]
     finally:
         conn.close()
@@ -274,7 +326,7 @@ def get_all_rules_with_ids() -> list[dict]:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, rule, reason FROM memory_rules ORDER BY created_at DESC")
+            cur.execute("SELECT id, rule, reason FROM memory_rules WHERE tenant_id = %s ORDER BY created_at DESC", (_tid(),))
             return [{"id": r[0], "rule": r[1], "reason": r[2]} for r in cur.fetchall()]
     finally:
         conn.close()
@@ -285,7 +337,7 @@ def delete_fact(key: str) -> bool:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM memory_facts WHERE key = %s", (key,))
+            cur.execute("DELETE FROM memory_facts WHERE tenant_id = %s AND key = %s", (_tid(), key))
             deleted = cur.rowcount > 0
         conn.commit()
         if deleted:
@@ -300,7 +352,7 @@ def delete_rule(rule_id: int) -> bool:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM memory_rules WHERE id = %s", (rule_id,))
+            cur.execute("DELETE FROM memory_rules WHERE tenant_id = %s AND id = %s", (_tid(), rule_id))
             deleted = cur.rowcount > 0
         conn.commit()
         if deleted:
@@ -317,17 +369,17 @@ async def load_memory_context(query: str = "") -> str:
     """
     from app.memory import obsidian
     from app.memory.embeddings import semantic_search
-    loop = asyncio.get_running_loop()
-    rules = await loop.run_in_executor(None, obsidian.read_rules)
+    from app.runtime import in_thread
+    rules = await in_thread(obsidian.read_rules)
 
     facts = ""
     episodes: list[str] = []
     if query:
         try:
-            filepaths = await loop.run_in_executor(None, semantic_search, query)
+            filepaths = await in_thread(semantic_search, query)
             non_system = [f for f in filepaths if not f.startswith("System/")]
             if non_system:
-                facts = await loop.run_in_executor(None, obsidian.read_facts_by_paths, non_system)
+                facts = await in_thread(obsidian.read_facts_by_paths, non_system)
         except Exception:
             pass
         try:
@@ -336,7 +388,7 @@ async def load_memory_context(query: str = "") -> str:
         except Exception:
             pass
     if not facts:
-        facts = await loop.run_in_executor(None, obsidian.read_relevant_facts, query)
+        facts = await in_thread(obsidian.read_relevant_facts, query)
 
     parts: list[str] = []
     if rules:
@@ -423,8 +475,8 @@ def upsert_web_conversation(chat_id: str, title: str | None = None) -> None:
         with conn.cursor() as cur:
             if title:
                 cur.execute("""
-                    INSERT INTO web_conversations (id, title, updated_at)
-                    VALUES (%s, %s, NOW())
+                    INSERT INTO web_conversations (id, tenant_id, title, updated_at)
+                    VALUES (%s, %s, %s, NOW())
                     ON CONFLICT (id) DO UPDATE
                     SET title = CASE
                             WHEN web_conversations.title = 'New conversation'
@@ -432,13 +484,13 @@ def upsert_web_conversation(chat_id: str, title: str | None = None) -> None:
                             ELSE web_conversations.title
                         END,
                         updated_at = NOW()
-                """, (chat_id, title))
+                """, (chat_id, _tid(), title))
             else:
                 cur.execute("""
-                    INSERT INTO web_conversations (id, updated_at)
-                    VALUES (%s, NOW())
+                    INSERT INTO web_conversations (id, tenant_id, updated_at)
+                    VALUES (%s, %s, NOW())
                     ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
-                """, (chat_id,))
+                """, (chat_id, _tid()))
         conn.commit()
     finally:
         conn.close()
@@ -449,7 +501,7 @@ def delete_web_conversation(chat_id: str) -> bool:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM web_conversations WHERE id = %s", (chat_id,))
+            cur.execute("DELETE FROM web_conversations WHERE tenant_id = %s AND id = %s", (_tid(), chat_id))
             deleted = cur.rowcount > 0
         conn.commit()
         if deleted:
@@ -466,13 +518,13 @@ def save_episode(chat_id: str, summary: str, vec_str: str | None = None) -> None
         with conn.cursor() as cur:
             if vec_str:
                 cur.execute(
-                    "INSERT INTO episodes (chat_id, summary, embedding) VALUES (%s, %s, %s::vector)",
-                    (chat_id, summary, vec_str),
+                    "INSERT INTO episodes (tenant_id, chat_id, summary, embedding) VALUES (%s, %s, %s, %s::vector)",
+                    (_tid(), chat_id, summary, vec_str),
                 )
             else:
                 cur.execute(
-                    "INSERT INTO episodes (chat_id, summary) VALUES (%s, %s)",
-                    (chat_id, summary),
+                    "INSERT INTO episodes (tenant_id, chat_id, summary) VALUES (%s, %s, %s)",
+                    (_tid(), chat_id, summary),
                 )
         conn.commit()
     finally:
@@ -487,11 +539,11 @@ def search_episodes(vec_str: str, limit: int = 3) -> list[str]:
             cur.execute(
                 """
                 SELECT summary FROM episodes
-                WHERE embedding IS NOT NULL
+                WHERE tenant_id = %s AND embedding IS NOT NULL
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
-                (vec_str, limit),
+                (_tid(), vec_str, limit),
             )
             return [r[0] for r in cur.fetchall()]
     finally:
@@ -506,8 +558,8 @@ def log_conversation(chat_id: str, transcript: str) -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO conversation_log (chat_id, transcript) VALUES (%s, %s)",
-                (chat_id, transcript),
+                "INSERT INTO conversation_log (tenant_id, chat_id, transcript) VALUES (%s, %s, %s)",
+                (_tid(), chat_id, transcript),
             )
         conn.commit()
     finally:
@@ -525,11 +577,11 @@ def get_recent_conversations(hours: int = 24) -> list[dict]:
                 """
                 SELECT chat_id, transcript, created_at
                 FROM conversation_log
-                WHERE created_at > %s
+                WHERE tenant_id = %s AND created_at > %s
                 ORDER BY created_at DESC
                 LIMIT 50
                 """,
-                (cutoff,),
+                (_tid(), cutoff),
             )
             return [
                 {"chat_id": r[0], "transcript": r[1], "created_at": r[2].isoformat()}
@@ -547,9 +599,10 @@ def list_web_conversations() -> list[dict]:
             cur.execute("""
                 SELECT id, title, created_at, updated_at
                 FROM web_conversations
+                WHERE tenant_id = %s
                 ORDER BY updated_at DESC
                 LIMIT 50
-            """)
+            """, (_tid(),))
             return [
                 {
                     "id": r[0],

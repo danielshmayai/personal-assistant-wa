@@ -240,7 +240,7 @@ async def agent_node(state: PAState) -> dict:
     from app.graph.tools_registry import get_all_tools
 
     chat_id = state.get("chat_id", "")
-    tools = get_all_tools(chat_id)
+    tools = get_all_tools(chat_id, state.get("tenant_id", ""), state.get("enabled_modules"))
 
     tool_names = [t.name for t in tools]
     logger.info("agent_node: binding %d tools: %s", len(tool_names), tool_names)

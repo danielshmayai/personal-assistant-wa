@@ -91,15 +91,17 @@ def _last_ai_reply(messages: list) -> str:
 async def _log(chat_id: str, transcript: str) -> None:
     """Fire-and-forget: write conversation transcript to the log table."""
     try:
-        await asyncio.get_running_loop().run_in_executor(None, log_conversation, chat_id, transcript)
+        from app.runtime import in_thread
+        await in_thread(log_conversation, chat_id, transcript)
     except Exception:
         logger.debug("Failed to log conversation for %s", chat_id)
 
 
-async def stream_graph(user_text: str, chat_id: str):
+async def stream_graph(user_text: str, chat_id: str, enabled_modules: list[str] | None = None):
     """Async generator of WebSocket event dicts for the web UI."""
-    from app.context import request_id_var
+    from app.context import request_id_var, current_tenant_id
     request_id = request_id_var.get() or str(uuid.uuid4())
+    tenant_id = current_tenant_id.get()
 
     graph = _get_graph()
     config = {
@@ -110,6 +112,8 @@ async def stream_graph(user_text: str, chat_id: str):
     input_state = {
         "user_input": user_text,
         "chat_id": chat_id,
+        "tenant_id": tenant_id,
+        "enabled_modules": enabled_modules,
         "messages": [HumanMessage(content=user_text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})],
     }
     reply_parts: list[str] = []
@@ -182,8 +186,9 @@ async def stream_graph(user_text: str, chat_id: str):
 
 
 async def run_graph(text: str, chat_id: str) -> str:
-    from app.context import request_id_var
+    from app.context import request_id_var, current_tenant_id
     request_id = request_id_var.get() or str(uuid.uuid4())
+    tenant_id = current_tenant_id.get()
 
     graph = _get_graph()
     config = {
@@ -202,7 +207,7 @@ async def run_graph(text: str, chat_id: str) -> str:
 
     try:
         result = await graph.ainvoke(
-            {"user_input": text, "chat_id": chat_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
+            {"user_input": text, "chat_id": chat_id, "tenant_id": tenant_id, "messages": [HumanMessage(content=text, additional_kwargs={"ts": datetime.now(timezone.utc).isoformat()})]},
             config=config,
         )
     except Exception as exc:

@@ -17,8 +17,22 @@ logger = logging.getLogger("pa.memory.obsidian")
 
 # ── Configuration ──────────────────────────────────────────────────────────
 
-VAULT_ROOT = Path(os.getenv("OBSIDIAN_VAULT_PATH", "/app/obsidian_vault"))
-RULES_FILE = VAULT_ROOT / "System" / "Rules.md"
+def vault_root() -> Path:
+    """Vault directory for the current tenant (via app.runtime; owner base by default)."""
+    from app import runtime
+    return runtime.get_vault_root()
+
+
+def rules_file() -> Path:
+    return vault_root() / "System" / "Rules.md"
+
+
+def __getattr__(name):  # PEP 562 — legacy importers (capabilities, self_review, memory_api)
+    if name == "VAULT_ROOT":
+        return vault_root()
+    if name == "RULES_FILE":
+        return rules_file()
+    raise AttributeError(name)
 
 ALLOWED_CATEGORIES: set[str] = {
     c.strip() for c in os.getenv(
@@ -62,8 +76,8 @@ def _safe_path(category: str, entity: str, allow_system: bool = False) -> Path:
         cat = "Misc"
     if cat == "System" and not allow_system:
         raise ValueError("category 'System' is reserved for rules")
-    target = (VAULT_ROOT / cat / f"{ent}.md").resolve()
-    root = VAULT_ROOT.resolve()
+    target = (vault_root() / cat / f"{ent}.md").resolve()
+    root = vault_root().resolve()
     if root not in target.parents:
         raise ValueError("path traversal blocked")
     return target
@@ -137,9 +151,9 @@ def _is_hidden(path: Path) -> bool:
 def _vault_entity_names() -> list[str]:
     """Return all entity names (stem of every .md file) currently in the vault,
     longest first so multi-word names match before their substrings."""
-    if not VAULT_ROOT.exists():
+    if not vault_root().exists():
         return []
-    names = [p.stem for p in VAULT_ROOT.rglob("*.md") if not p.stem.startswith(".")]
+    names = [p.stem for p in vault_root().rglob("*.md") if not p.stem.startswith(".")]
     # Longest first to avoid partial replacements (e.g. "Tel Aviv" before "Aviv")
     return sorted(set(names), key=len, reverse=True)
 
@@ -185,12 +199,12 @@ def save_fact(category: str, entity: str, content: str) -> str:
             with path.open("w", encoding="utf-8", newline="\n") as f:
                 f.write(_frontmatter_block(category, entity))
                 f.write(section)
-            logger.info("Created vault file: %s", path.relative_to(VAULT_ROOT))
+            logger.info("Created vault file: %s", path.relative_to(vault_root()))
         else:
             with path.open("a", encoding="utf-8", newline="\n") as f:
                 f.write(section)
-            logger.info("Appended to vault file: %s", path.relative_to(VAULT_ROOT))
-    return f"Saved to {path.relative_to(VAULT_ROOT).as_posix()}"
+            logger.info("Appended to vault file: %s", path.relative_to(vault_root()))
+    return f"Saved to {path.relative_to(vault_root()).as_posix()}"
 
 
 def update_rule(instruction: str) -> str:
@@ -200,17 +214,17 @@ def update_rule(instruction: str) -> str:
         return "Could not save: empty instruction"
     line = f"- {rule}  _(added {datetime.now(timezone.utc).date().isoformat()})_"
 
-    with _lock_for(RULES_FILE):
-        _ensure_parent(RULES_FILE)
-        if RULES_FILE.exists():
-            existing = RULES_FILE.read_text(encoding="utf-8")
+    with _lock_for(rules_file()):
+        _ensure_parent(rules_file())
+        if rules_file().exists():
+            existing = rules_file().read_text(encoding="utf-8")
             if any(rule == _strip_rule_meta(ln) for ln in existing.splitlines()):
                 return "Rule already exists."
-            with RULES_FILE.open("a", encoding="utf-8", newline="\n") as f:
+            with rules_file().open("a", encoding="utf-8", newline="\n") as f:
                 f.write(line + "\n")
         else:
             header = "# Rules\n\nBehavioral rules for the assistant. Edit by hand or use the agent.\n\n"
-            RULES_FILE.write_text(header + line + "\n", encoding="utf-8", newline="\n")
+            rules_file().write_text(header + line + "\n", encoding="utf-8", newline="\n")
     logger.info("Saved rule: %.80s", rule)
     return f"Saved rule: {rule}"
 
@@ -235,17 +249,17 @@ def hide_fact(category: str, entity: str) -> str:
         return f"No fact found at {category}/{entity}."
     with _lock_for(path):
         _set_frontmatter_field(path, "hidden", "true")
-    logger.info("Hid vault file: %s", path.relative_to(VAULT_ROOT))
-    return f"Hidden: {path.relative_to(VAULT_ROOT).as_posix()}"
+    logger.info("Hid vault file: %s", path.relative_to(vault_root()))
+    return f"Hidden: {path.relative_to(vault_root()).as_posix()}"
 
 
 def hide_rule(instruction: str) -> str:
     """Soft-delete: strikethrough the matching rule line in `System/Rules.md`."""
     target = (instruction or "").strip()
-    if not target or not RULES_FILE.exists():
+    if not target or not rules_file().exists():
         return "No matching rule."
-    with _lock_for(RULES_FILE):
-        lines = RULES_FILE.read_text(encoding="utf-8").splitlines()
+    with _lock_for(rules_file()):
+        lines = rules_file().read_text(encoding="utf-8").splitlines()
         changed = False
         for i, ln in enumerate(lines):
             if ln.lstrip().startswith("~~"):
@@ -257,18 +271,18 @@ def hide_rule(instruction: str) -> str:
                 break
         if not changed:
             return f"No matching rule for: {target!r}"
-        tmp = RULES_FILE.with_suffix(".md.tmp")
+        tmp = rules_file().with_suffix(".md.tmp")
         tmp.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-        os.replace(tmp, RULES_FILE)
+        os.replace(tmp, rules_file())
     logger.info("Hid rule: %.80s", target)
     return f"Hidden rule: {target}"
 
 
 def read_rules() -> str:
     """Return the contents of `Rules.md`, stripped of strikethrough lines."""
-    if not RULES_FILE.exists():
+    if not rules_file().exists():
         return ""
-    text = RULES_FILE.read_text(encoding="utf-8")
+    text = rules_file().read_text(encoding="utf-8")
     visible = [ln for ln in text.splitlines() if not ln.lstrip().startswith("~~")]
     out = "\n".join(visible)
     cap = MAX_INJECTED_BYTES // 2
@@ -305,11 +319,11 @@ def _best_snippet(text: str, tokens: list[str]) -> str:
 
 
 def _vault_files(exclude_system: bool = False) -> list[Path]:
-    if not VAULT_ROOT.exists():
+    if not vault_root().exists():
         return []
     files = []
-    for p in VAULT_ROOT.rglob("*.md"):
-        if exclude_system and p.is_relative_to(VAULT_ROOT / "System"):
+    for p in vault_root().rglob("*.md"):
+        if exclude_system and p.is_relative_to(vault_root() / "System"):
             continue
         if _is_hidden(p):
             continue
@@ -340,7 +354,7 @@ def retrieve_context(query: str, limit: int = MAX_RETRIEVE_RESULTS) -> str:
     parts: list[str] = []
     used = 0
     for _, path, text in scored[:limit]:
-        rel = path.relative_to(VAULT_ROOT).as_posix()
+        rel = path.relative_to(vault_root()).as_posix()
         snippet = _best_snippet(text, tokens)
         block = f"### {rel}\n{snippet}\n"
         if used + len(block) > MAX_INJECTED_BYTES:
@@ -373,7 +387,7 @@ def read_relevant_facts(query: str, byte_budget: int = MAX_INJECTED_BYTES) -> st
     parts: list[str] = []
     used = 0
     for _, path, text in scored[:MAX_RETRIEVE_RESULTS]:
-        rel = path.relative_to(VAULT_ROOT).as_posix()
+        rel = path.relative_to(vault_root()).as_posix()
         snippet = _best_snippet(text, tokens)
         block = f"### {rel}\n{snippet}\n"
         if used + len(block) > byte_budget:
@@ -386,7 +400,7 @@ def read_relevant_facts(query: str, byte_budget: int = MAX_INJECTED_BYTES) -> st
 def append_to_note(filepath: str, content: str, header: str = "") -> str:
     """Append content to any existing Markdown note by relative file path.
 
-    `filepath` is relative to VAULT_ROOT, e.g. "Daily/2024-01-15.md" or
+    `filepath` is relative to vault_root(), e.g. "Daily/2024-01-15.md" or
     "Projects/Home Renovation.md".  If `header` is given (e.g. "## Tasks"),
     the content is inserted at the end of that section; if the header does
     not exist it is created.  Atomic write via a .tmp file so Obsidian never
@@ -394,8 +408,8 @@ def append_to_note(filepath: str, content: str, header: str = "") -> str:
     """
     # Sanitise: strip leading slashes, block traversal
     clean = filepath.lstrip("/").replace("\\", "/")
-    path = (VAULT_ROOT / clean).resolve()
-    root = VAULT_ROOT.resolve()
+    path = (vault_root() / clean).resolve()
+    root = vault_root().resolve()
     if root not in path.parents and path != root:
         return "Error: path traversal blocked"
     if not clean.endswith(".md"):
@@ -408,7 +422,7 @@ def append_to_note(filepath: str, content: str, header: str = "") -> str:
         if not header:
             with path.open("a", encoding="utf-8", newline="\n") as f:
                 f.write(f"\n{content.strip()}\n")
-            logger.info("Appended to %s", path.relative_to(VAULT_ROOT))
+            logger.info("Appended to %s", path.relative_to(vault_root()))
             return f"Appended to {filepath}"
 
         # Locate the header line (match ignoring leading #s and whitespace)
@@ -442,7 +456,7 @@ def append_to_note(filepath: str, content: str, header: str = "") -> str:
             addition = f"\n{header}\n\n{content.strip()}\n"
             with path.open("a", encoding="utf-8", newline="\n") as f:
                 f.write(addition)
-            logger.info("Created header %r in %s", header, path.relative_to(VAULT_ROOT))
+            logger.info("Created header %r in %s", header, path.relative_to(vault_root()))
             return f"Created section '{header}' and appended to {filepath}"
 
         # Insert before the next section, keeping a blank separator
@@ -451,7 +465,7 @@ def append_to_note(filepath: str, content: str, header: str = "") -> str:
         tmp = path.with_suffix(".md.tmp")
         tmp.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
         os.replace(tmp, path)
-        logger.info("Appended under %r in %s", header, path.relative_to(VAULT_ROOT))
+        logger.info("Appended under %r in %s", header, path.relative_to(vault_root()))
         return f"Appended under '{header}' in {filepath}"
 
 
@@ -462,8 +476,8 @@ def grep_note(filepath: str, keyword: str, max_results: int = 100) -> str:
     token usage minimal even for large files.
     """
     clean = filepath.lstrip("/").replace("\\", "/")
-    path = (VAULT_ROOT / clean).resolve()
-    root = VAULT_ROOT.resolve()
+    path = (vault_root() / clean).resolve()
+    root = vault_root().resolve()
     if root not in path.parents and path != root:
         return "Error: path traversal blocked"
     if not path.exists():
@@ -493,8 +507,8 @@ def read_note(filepath: str, max_chars: int = 32_000) -> str:
     `filepath` is relative to vault root, e.g. "Misc/רשימת_אנשי_קשר.md".
     """
     clean = filepath.lstrip("/").replace("\\", "/")
-    path = (VAULT_ROOT / clean).resolve()
-    root = VAULT_ROOT.resolve()
+    path = (vault_root() / clean).resolve()
+    root = vault_root().resolve()
     if root not in path.parents and path != root:
         return "Error: path traversal blocked"
     if not clean.endswith(".md"):
@@ -515,7 +529,7 @@ def read_facts_by_paths(filepaths: list[str], byte_budget: int = MAX_INJECTED_BY
     parts: list[str] = []
     used = 0
     for rel in filepaths:
-        path = (VAULT_ROOT / rel).resolve()
+        path = (vault_root() / rel).resolve()
         if not path.exists() or _is_hidden(path):
             continue
         try:
@@ -534,19 +548,19 @@ def read_facts_by_paths(filepaths: list[str], byte_budget: int = MAX_INJECTED_BY
 
 def list_visible(category: str = "") -> str:
     """Directory listing of visible (non-hidden) fact files, plus rules count."""
-    if not VAULT_ROOT.exists():
+    if not vault_root().exists():
         return "Vault is empty."
 
     by_cat: dict[str, list[str]] = {}
     for path in _vault_files(exclude_system=True):
-        rel = path.relative_to(VAULT_ROOT)
+        rel = path.relative_to(vault_root())
         cat = rel.parts[0] if len(rel.parts) > 1 else "Misc"
         if category and cat != category:
             continue
         by_cat.setdefault(cat, []).append(rel.stem)
 
     parts: list[str] = []
-    if RULES_FILE.exists():
+    if rules_file().exists():
         rules_text = read_rules()
         rule_count = sum(1 for ln in rules_text.splitlines() if ln.strip().startswith("- "))
         parts.append(f"*Rules:* {rule_count} active (see System/Rules.md)")
