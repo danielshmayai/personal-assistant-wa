@@ -39,6 +39,11 @@ def get_gemini_llm():
         model=GEMINI_MODEL,
         google_api_key=api_key,
         temperature=0.3,
+        # Gemini 2.5-flash bug: with tools bound AND a system prompt, thinking
+        # mode swallows the whole turn — it returns empty content and no tool
+        # call (finish_reason=STOP). Disabling thinking restores normal tool
+        # calling and text replies. (Verified: budget=0 → proper tool_calls.)
+        thinking_budget=0,
         # Fail fast: without this the client retries a 429/quota for ~30s and it
         # surfaces as an opaque timeout. 2 retries lets the real error reach the
         # UI quickly so the user is told what's wrong (e.g. quota exceeded).
