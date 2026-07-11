@@ -10,6 +10,7 @@ from product.tenancy.models import Tenant
 logger = logging.getLogger("product.tenancy")
 
 _TENANT_COLS = "id, email, display_name, avatar_url, is_owner, status, onboarded_at"
+_TENANT_COLS_T = "t.id, t.email, t.display_name, t.avatar_url, t.is_owner, t.status, t.onboarded_at"
 
 
 def _row_to_tenant(row) -> Tenant:
@@ -50,7 +51,7 @@ def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> 
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f"""SELECT {_TENANT_COLS} FROM tenants t
+                f"""SELECT {_TENANT_COLS_T} FROM tenants t
                     JOIN tenant_google_identity g ON g.tenant_id = t.id
                     WHERE g.google_sub = %s""",
                 (sub,),
@@ -137,7 +138,7 @@ def get_session_tenant(jti: str) -> Tenant | None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f"""SELECT {_TENANT_COLS} FROM tenants t
+                f"""SELECT {_TENANT_COLS_T} FROM tenants t
                     JOIN sessions s ON s.tenant_id = t.id
                     WHERE s.id = %s AND NOT s.revoked AND s.expires_at > NOW()
                           AND t.status = 'active'""",

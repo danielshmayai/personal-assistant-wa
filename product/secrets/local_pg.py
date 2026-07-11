@@ -9,6 +9,8 @@
   keys must never be stored or returned as plaintext (unlike the engine's
   crypto.py, whose fail-open is tolerated only for the owner's own tokens).
 """
+from __future__ import annotations
+
 import logging
 
 from cryptography.fernet import Fernet
