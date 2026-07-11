@@ -1,30 +1,21 @@
-# Multi-tenant product stack — postgres + API + SPA gateway.
-# No GPU/Ollama and no WAHA: web tenants only. The owner's WhatsApp stack
-# (docker-compose.yml) can run alongside, sharing the same Postgres if the
-# same DATABASE_URL is configured.
+# Multi-tenant product stack — API + SPA gateway.
+# No GPU/Ollama and no WAHA: web tenants only.
 #
-#   docker compose -f docker-compose.product.yml up --build
+# This stack does NOT run its own Postgres. It attaches to the engine's
+# network (pa_pa-net) and shares the main Postgres, because product tables
+# live alongside the engine tables (see product/config.py). The product
+# schema is created automatically on startup via product/db.run_migrations().
 #
-# Frontend must be built first: cd frontend && npm ci && npm run build
+# Prerequisites:
+#   1. The main stack must be up first (it owns Postgres):
+#        docker compose up -d
+#   2. Build the frontend:
+#        cd frontend && npm ci && npm run build
+#
+# Run under its OWN project name so the two stacks never collide:
+#   docker compose -f docker-compose.product.yml -p pa-product up -d
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-pa}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:-pa}
-    volumes:
-      - product-postgres-data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pa} -d ${POSTGRES_DB:-pa}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    networks: [pa-product-net]
-
   product-api:
     build:
       context: .
@@ -44,15 +35,14 @@ services:
       USER_TIMEZONE: ${USER_TIMEZONE:-Asia/Jerusalem}
     volumes:
       - product-vaults:/data/vaults
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 15s
       timeout: 5s
       retries: 5
-    networks: [pa-product-net]
+    # pa-net (external) reaches the main Postgres; pa-product-net is the
+    # private link to the gateway.
+    networks: [pa-net, pa-product-net]
 
   gateway:
     image: nginx:alpine
@@ -66,9 +56,13 @@ services:
     networks: [pa-product-net]
 
 volumes:
-  product-postgres-data:
   product-vaults:
 
 networks:
+  # The engine's network, created by docker-compose.yml. Shared so product-api
+  # can resolve the main Postgres by its "postgres" alias.
+  pa-net:
+    external: true
+    name: pa_pa-net
   pa-product-net:
     driver: bridge
