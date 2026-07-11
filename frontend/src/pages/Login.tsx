@@ -6,6 +6,7 @@ const ERRORS: Record<string, string> = {
   state_expired: "The sign-in link expired — please try again.",
   exchange_failed: "Sign-in failed on our side — please try again.",
   account_disabled: "This account has been disabled. Contact the administrator.",
+  account_pending: "Your account is awaiting approval from the administrator. You'll be able to sign in once it's approved.",
 };
 
 export default function Login() {

@@ -32,6 +32,15 @@ def _target(tenant_id: str) -> Tenant:
     return target
 
 
+@router.post("/tenants/{tenant_id}/approve")
+async def approve(tenant_id: str, _: Tenant = Depends(require_owner)):
+    target = _target(tenant_id)
+    if target.status != "pending":
+        raise HTTPException(status_code=400, detail="not_pending")
+    set_tenant_status(target.id, "active")
+    return {"ok": True}
+
+
 @router.post("/tenants/{tenant_id}/revoke")
 async def revoke(tenant_id: str, _: Tenant = Depends(require_owner)):
     target = _target(tenant_id)

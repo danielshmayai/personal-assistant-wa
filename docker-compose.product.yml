@@ -33,6 +33,12 @@ services:
       VAULT_BASE_DIR: /data/vaults
       LOG_FORMAT: ${LOG_FORMAT:-json}
       USER_TIMEZONE: ${USER_TIMEZONE:-Asia/Jerusalem}
+      # Reaches the owner's WhatsApp stack (over pa-net) to notify + let the
+      # owner approve new sign-ups by reply. Optional: unset → no notification.
+      WAHA_BASE_URL: ${WAHA_BASE_URL:-http://waha:3000}
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
+      WAHA_SESSION: ${WAHA_SESSION:-default}
+      MY_WHATSAPP_ID: ${MY_WHATSAPP_ID:-}
     volumes:
       - product-vaults:/data/vaults
     healthcheck:

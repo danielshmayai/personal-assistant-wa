@@ -193,6 +193,39 @@ async def _restart_backend(chat_id: str) -> None:
     sys.exit(0)
 
 
+def _first_word(text: str) -> str:
+    return text.split(None, 1)[0].lstrip("!").lower() if text.split() else ""
+
+
+async def _handle_tenant_command(text: str, chat_id: str) -> None:
+    """Approve/deny/list pending web sign-ups from the owner's self-chat."""
+    from app import tenant_admin
+    parts = text.split(None, 1)
+    cmd = parts[0].lstrip("!").lower()
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    try:
+        if cmd == "pending":
+            emails = tenant_admin.list_pending()
+            if not emails:
+                reply = "No pending access requests."
+            else:
+                listed = "\n".join(f"• {e}" for e in emails)
+                reply = f"Pending access requests:\n{listed}\n\nReply: approve <email>"
+        elif cmd == "approve":
+            ok, info = tenant_admin.set_status(arg, "active")
+            reply = f"✅ Approved {info} — they can sign in now." if ok else f"⚠️ {info}"
+        elif cmd == "deny":
+            ok, info = tenant_admin.set_status(arg, "revoked")
+            reply = f"🚫 Denied {info}." if ok else f"⚠️ {info}"
+        else:
+            return
+    except Exception as exc:
+        logger.exception("Tenant command failed: %s", text)
+        reply = f"⚠️ Command failed: {type(exc).__name__}: {exc}"
+    prefix = "‏[ *danidin* ]" if _is_rtl(reply) else "[ *danidin* ]"
+    await send_whatsapp_message(chat_id, f"{prefix} {reply}")
+
+
 @router.post("/webhook/waha")
 async def waha_webhook(request: Request, secret: str = Query(default="")):
     """
@@ -245,8 +278,14 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
 
     # --- SELF-CHAT: enqueue for async processing ---
     if _is_self_chat(body):
-        if text.strip().lower() == "!restart":
+        stripped = text.strip()
+        if stripped.lower() == "!restart":
             asyncio.create_task(_restart_backend(chat_id))
+            return Response(status_code=202)
+        # Owner tenant-approval commands (approve/deny/pending) — handled
+        # directly against the shared product DB, never sent to the graph.
+        if _first_word(stripped) in ("approve", "deny", "pending"):
+            asyncio.create_task(_handle_tenant_command(stripped, chat_id))
             return Response(status_code=202)
         logger.info("Self-chat: %.80s...", full_text)
         enqueue(message_id, chat_id, full_text)

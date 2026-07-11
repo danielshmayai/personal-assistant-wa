@@ -8,6 +8,7 @@ from product.auth import oidc
 from product.auth.sessions import COOKIE_NAME, issue_token, verify_token
 from product.config import ENVIRONMENT, PRODUCT_BASE_URL, SESSION_TTL_DAYS
 from product.modules.store import _ensure_defaults
+from product.tenancy.models import Tenant
 from product.tenancy.store import create_session, revoke_session, upsert_tenant_from_google
 
 logger = logging.getLogger("product.auth")
@@ -15,6 +16,29 @@ logger = logging.getLogger("product.auth")
 router = APIRouter()
 
 _COOKIE_SECURE = ENVIRONMENT == "production" or PRODUCT_BASE_URL.startswith("https://")
+
+
+async def _notify_owner_of_request(tenant: Tenant) -> None:
+    """Ping the owner on WhatsApp so they can approve the new account by reply.
+
+    Best-effort: a WAHA/network failure must never break the login flow.
+    Reaches the owner's WhatsApp stack over the shared pa-net network.
+    """
+    from app.config import MY_WHATSAPP_ID
+    if not MY_WHATSAPP_ID:
+        return
+    from app.whatsapp import send_whatsapp_message
+    name = tenant.display_name or tenant.email
+    msg = (
+        "‏[ *danidin* ] 🔔 New access request\n"
+        f"{name}\n{tenant.email}\n\n"
+        f"Reply:  approve {tenant.email}\n"
+        f"   or:  deny {tenant.email}"
+    )
+    try:
+        await send_whatsapp_message(MY_WHATSAPP_ID, msg)
+    except Exception:
+        logger.exception("Failed to notify owner of access request for %s", tenant.email)
 
 
 @router.get("/auth/login")
@@ -35,12 +59,17 @@ async def callback(code: str = "", state: str = "", error: str = ""):
         logger.exception("OIDC code exchange failed")
         return RedirectResponse(f"{PRODUCT_BASE_URL}/login?error=exchange_failed", status_code=302)
 
-    tenant = upsert_tenant_from_google(
+    tenant, created = upsert_tenant_from_google(
         sub=claims["sub"],
         email=claims.get("email", ""),
         name=claims.get("name", ""),
         picture=claims.get("picture", ""),
     )
+    if tenant.status == "pending":
+        # New account awaiting owner approval — no session issued.
+        if created:
+            await _notify_owner_of_request(tenant)
+        return RedirectResponse(f"{PRODUCT_BASE_URL}/login?error=account_pending", status_code=302)
     if tenant.status != "active":
         return RedirectResponse(f"{PRODUCT_BASE_URL}/login?error=account_disabled", status_code=302)
 

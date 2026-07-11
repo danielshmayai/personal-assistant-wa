@@ -28,8 +28,8 @@ export default function Admin() {
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <h2 className="text-lg font-semibold">Members</h2>
       <p className="text-sm text-slate-400">
-        Anyone signing in with Google gets an isolated account. Revoke to block access instantly;
-        delete to erase all of their data.
+        Anyone signing in with Google lands in <span className="text-amber-400">pending</span> and stays
+        blocked until you approve them. Revoke to block access instantly; delete to erase all of their data.
       </p>
       {tenants.map((t) => (
         <Card key={t.id} className="flex flex-wrap items-center justify-between gap-3">
@@ -37,6 +37,7 @@ export default function Admin() {
             <div className="flex items-center gap-2 font-medium">
               {t.display_name || t.email}
               {t.is_owner && <Badge tone="info">owner</Badge>}
+              {t.status === "pending" && <Badge tone="warn">pending</Badge>}
               {t.status === "active" && !t.is_owner && <Badge tone="ok">active</Badge>}
               {t.status === "revoked" && <Badge tone="warn">revoked</Badge>}
               {t.status === "deleted" && <Badge>deleted</Badge>}
@@ -46,11 +47,17 @@ export default function Admin() {
           </div>
           {!t.is_owner && t.status !== "deleted" && (
             <div className="flex gap-2">
-              {t.status === "active" ? (
+              {t.status === "pending" && (
+                <Button variant="primary" onClick={() => act(() => api.post(`/api/admin/tenants/${t.id}/approve`))}>
+                  Approve
+                </Button>
+              )}
+              {t.status === "active" && (
                 <Button variant="secondary" onClick={() => act(() => api.post(`/api/admin/tenants/${t.id}/revoke`))}>
                   Revoke
                 </Button>
-              ) : (
+              )}
+              {t.status === "revoked" && (
                 <Button variant="secondary" onClick={() => act(() => api.post(`/api/admin/tenants/${t.id}/restore`))}>
                   Restore
                 </Button>

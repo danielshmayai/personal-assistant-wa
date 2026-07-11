@@ -41,11 +41,16 @@ def list_tenants() -> list[Tenant]:
         conn.close()
 
 
-def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> Tenant:
+def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> tuple[Tenant, bool]:
     """Find-or-create a tenant for a verified Google identity.
 
     Matching order: google_sub link → email. The configured OWNER_EMAIL
-    (or the very first tenant ever created) becomes the owner.
+    (or the very first tenant ever created) becomes the owner and is active
+    immediately; every other new tenant is created 'pending' and stays
+    blocked until the owner approves it.
+
+    Returns (tenant, created) — created is True only when a brand-new tenant
+    row was inserted, so callers can notify the owner exactly once.
     """
     conn = get_conn()
     try:
@@ -58,27 +63,34 @@ def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> 
             )
             row = cur.fetchone()
             if row:
-                return _row_to_tenant(row)
+                return _row_to_tenant(row), False
 
             cur.execute(f"SELECT {_TENANT_COLS} FROM tenants WHERE email = %s", (email,))
             row = cur.fetchone()
+            created = False
             if row:
                 tenant = _row_to_tenant(row)
             else:
                 cur.execute("SELECT COUNT(*) FROM tenants")
                 first_ever = cur.fetchone()[0] == 0
                 is_owner = (email == OWNER_EMAIL) or (not OWNER_EMAIL and first_ever)
+                # New strangers land in 'pending' and cannot get a session
+                # until the owner approves (get_session_tenant filters active).
+                status = "active" if is_owner else "pending"
                 tenant = Tenant(
                     id=str(uuid.uuid4()), email=email,
                     display_name=name or "", avatar_url=picture or "",
-                    is_owner=is_owner,
+                    is_owner=is_owner, status=status,
                 )
                 cur.execute(
-                    """INSERT INTO tenants (id, email, display_name, avatar_url, is_owner)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (tenant.id, tenant.email, tenant.display_name, tenant.avatar_url, tenant.is_owner),
+                    """INSERT INTO tenants (id, email, display_name, avatar_url, is_owner, status)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (tenant.id, tenant.email, tenant.display_name, tenant.avatar_url,
+                     tenant.is_owner, tenant.status),
                 )
-                logger.info("Created tenant %s (%s, owner=%s)", tenant.id, email, is_owner)
+                created = True
+                logger.info("Created tenant %s (%s, owner=%s, status=%s)",
+                            tenant.id, email, is_owner, status)
 
             cur.execute(
                 """INSERT INTO tenant_google_identity (google_sub, tenant_id)
@@ -86,7 +98,7 @@ def upsert_tenant_from_google(sub: str, email: str, name: str, picture: str) -> 
                 (sub, tenant.id),
             )
         conn.commit()
-        return tenant
+        return tenant, created
     finally:
         conn.close()
 
