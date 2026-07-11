@@ -40,7 +40,9 @@ services:
       WAHA_SESSION: ${WAHA_SESSION:-default}
       MY_WHATSAPP_ID: ${MY_WHATSAPP_ID:-}
     volumes:
-      - product-vaults:/data/vaults
+      # Bind-mounted to a host folder (not a hidden Docker volume) so each
+      # tenant's Obsidian vault is visible on disk and covered by H: backups.
+      - ${HOST_TENANT_VAULTS:-H:/Obsidian/tenants}:/data/vaults
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 15s
@@ -60,9 +62,6 @@ services:
     depends_on:
       - product-api
     networks: [pa-product-net]
-
-volumes:
-  product-vaults:
 
 networks:
   # The engine's network, created by docker-compose.yml. Shared so product-api
