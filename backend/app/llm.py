@@ -39,6 +39,10 @@ def get_gemini_llm():
         model=GEMINI_MODEL,
         google_api_key=api_key,
         temperature=0.3,
+        # Fail fast: without this the client retries a 429/quota for ~30s and it
+        # surfaces as an opaque timeout. 2 retries lets the real error reach the
+        # UI quickly so the user is told what's wrong (e.g. quota exceeded).
+        max_retries=2,
     )
     _gemini_cache[tid] = (api_key, llm)
     return llm

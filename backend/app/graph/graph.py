@@ -19,6 +19,23 @@ logger = logging.getLogger("pa.graph")
 _RECURSION_LIMIT = 25
 
 
+def _classify_agent_error(content: str) -> str | None:
+    """Map an agent's internally-caught error message to a client error code.
+
+    agent_node prefixes every error it swallows with "⚠️"; anything else is a
+    real reply. Returns None for non-errors. Keeps raw tracebacks off the wire —
+    the web client only ever sees the code, never the message body.
+    """
+    if not content or not content.startswith("⚠️"):
+        return None
+    low = content.lower()
+    if "429" in low or "quota" in low or "resourceexhausted" in low or ("resource" in low and "exhaust" in low):
+        return "quota_exceeded"
+    if "api key" in low or "api_key" in low or "permission" in low or "401" in low or ("invalid" in low and "key" in low):
+        return "invalid_key"
+    return "internal"
+
+
 def build_graph():
     """Assemble the PA graph.
 
@@ -163,6 +180,31 @@ async def stream_graph(user_text: str, chat_id: str, enabled_modules: list[str] 
             yield {"type": "tool_end", "name": event.get("name", "")}
 
     full_reply = "".join(reply_parts)
+
+    if not full_reply:
+        # Nothing streamed. The agent may have returned a non-streamed message,
+        # or caught an LLM error internally (⚠️-prefixed). Recover it so the user
+        # is never left with a silent spinner: surface real errors as a clean
+        # structured event, otherwise deliver the message as the reply.
+        recovered = ""
+        try:
+            snap = await graph.aget_state(config)
+            msgs = snap.values.get("messages", []) if snap else []
+            for m in reversed(msgs):
+                if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content.strip():
+                    recovered = m.content
+                    break
+        except Exception:
+            logger.exception("stream_graph: could not recover final message chat_id=%s", chat_id)
+        code = _classify_agent_error(recovered)
+        if code:
+            logger.info("graph: stream surfaced error code=%s chat_id=%s", code, chat_id)
+            yield {"type": "error", "code": code}
+            return
+        if recovered:
+            full_reply = recovered
+            yield {"type": "token", "content": recovered}
+
     duration_ms = round((time.monotonic() - t0) * 1000)
     logger.info(
         "graph: stream end chat_id=%s request_id=%s duration_ms=%d",
