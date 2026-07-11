@@ -1,0 +1,19 @@
+# Product API image: PA engine (as a library) + product layer.
+# No Ollama, no GPU, no WAHA — web-tenant stack only.
+FROM python:3.12-slim
+
+WORKDIR /srv
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
+
+COPY backend/app/ ./app/
+COPY product/ ./product/
+
+ENV PYTHONPATH=/srv
+EXPOSE 8000
+
+CMD ["uvicorn", "product.main:app", "--host", "0.0.0.0", "--port", "8000"]

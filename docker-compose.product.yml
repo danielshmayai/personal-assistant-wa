@@ -1,0 +1,74 @@
+# Multi-tenant product stack — postgres + API + SPA gateway.
+# No GPU/Ollama and no WAHA: web tenants only. The owner's WhatsApp stack
+# (docker-compose.yml) can run alongside, sharing the same Postgres if the
+# same DATABASE_URL is configured.
+#
+#   docker compose -f docker-compose.product.yml up --build
+#
+# Frontend must be built first: cd frontend && npm ci && npm run build
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-pa}
+    volumes:
+      - product-postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pa} -d ${POSTGRES_DB:-pa}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [pa-product-net]
+
+  product-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.product
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pa}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      SECRETS_MASTER_KEY: ${SECRETS_MASTER_KEY:?Set SECRETS_MASTER_KEY}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${PRODUCT_BASE_URL:-http://localhost:8080}/auth/google/callback
+      PRODUCT_BASE_URL: ${PRODUCT_BASE_URL:-http://localhost:8080}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      VAULT_BASE_DIR: /data/vaults
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      USER_TIMEZONE: ${USER_TIMEZONE:-Asia/Jerusalem}
+    volumes:
+      - product-vaults:/data/vaults
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [pa-product-net]
+
+  gateway:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/nginx.product.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - product-api
+    networks: [pa-product-net]
+
+volumes:
+  product-postgres-data:
+  product-vaults:
+
+networks:
+  pa-product-net:
+    driver: bridge
