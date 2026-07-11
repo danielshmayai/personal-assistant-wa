@@ -13,18 +13,29 @@ interface Message {
 const ERROR_TEXT: Record<string, JSX.Element | string> = {
   invalid_key: (
     <>
-      Your Gemini API key was rejected. Update it in{" "}
-      <Link to="/settings" className="underline">Settings</Link>.
+      Your Gemini API key was rejected. Add a valid key under{" "}
+      <Link to="/settings" className="underline">Settings → Secrets</Link>
+      {" "}— get one free at{" "}
+      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="underline">
+        Google AI Studio
+      </a>.
     </>
   ),
   quota_exceeded: (
     <>
-      Your Gemini API key is out of quota right now. Try again soon, or check your plan in{" "}
-      <Link to="/settings" className="underline">Settings</Link>.
+      Your Gemini key hit its usage limit. Free keys allow only ~20 requests/day —
+      wait for it to reset, or enable billing on your key's Google project for higher
+      limits. Manage it under{" "}
+      <Link to="/settings" className="underline">Settings → Secrets</Link>.
     </>
   ),
-  rate_limited: "You're sending messages a bit too fast — give it a few seconds.",
-  internal: "Something went wrong on our side. Please try again.",
+  rate_limited: "You're sending messages a bit too fast — wait a few seconds and try again.",
+  session_expired: (
+    <>
+      Your session expired. <a href="/login" className="underline">Sign in again</a> to continue.
+    </>
+  ),
+  internal: "Something went wrong on our side. Please try again in a moment.",
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -57,11 +68,24 @@ export default function Chat() {
     const ws = new WebSocket(`${proto}://${window.location.host}/ws/chat`);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => {
+    ws.onopen = () => {
+      setConnected(true);
+      setError("");
+    };
+    ws.onclose = (ev) => {
       setConnected(false);
       setBusy(false);
-      // Gentle auto-reconnect (session cookie may have expired → login redirect on next API call)
+      // Auth failures won't fix themselves by reconnecting — tell the user what
+      // to do instead of looping silently (4401 = dead session, 4403 = onboarding).
+      if (ev.code === 4401) {
+        setError(ERROR_TEXT.session_expired);
+        return;
+      }
+      if (ev.code === 4403) {
+        window.location.href = "/onboarding";
+        return;
+      }
+      // Transient drop → gentle auto-reconnect.
       setTimeout(() => {
         if (wsRef.current === ws) connect();
       }, 2500);
