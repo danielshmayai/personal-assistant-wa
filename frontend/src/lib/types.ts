@@ -164,6 +164,44 @@ export interface GarminStatus {
   } | null;
 }
 
+export interface TodayInfo {
+  weather: string;
+  jobs_count: number;
+}
+
+export interface CalendarEvent {
+  title: string;
+  time: string;
+  date: string;
+  full_day: boolean;
+}
+
+export interface CalendarToday {
+  events: CalendarEvent[];
+  connected: boolean;
+  error?: string;
+}
+
+export interface Job {
+  id: number;
+  action_type: string;
+  payload: Record<string, unknown>;
+  run_at: string;
+  status: string;
+  executed_at: string | null;
+}
+
+export interface ProactiveCard {
+  id: number;
+  card_type: string;
+  title: string;
+  detail: string;
+  action_label: string;
+  action_chat: string;
+  expires_at: string | null;
+  created_at: string;
+}
+
 export interface AdminTenant {
   id: string;
   email: string;

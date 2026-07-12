@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import Home from "./pages/Home";
 import Nutrition from "./pages/Nutrition";
 import Fitness from "./pages/Fitness";
 import ModulePlaceholder from "./pages/ModulePlaceholder";
@@ -41,7 +42,8 @@ export default function App() {
               </Guarded>
             }
           >
-            <Route path="/" element={<Chat />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/chat" element={<Chat />} />
             <Route path="/nutrition" element={<Nutrition />} />
             <Route path="/fitness" element={<Fitness />} />
             <Route

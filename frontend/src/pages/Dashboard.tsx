@@ -14,7 +14,8 @@ export default function Dashboard() {
 
   const enabledIds = new Set(me.modules.filter((m) => m.enabled).map((m) => m.id));
   const tabs = [
-    { path: "/", label: "Chat", icon: "💬" },
+    { path: "/", label: "Home", icon: "🏠" },
+    { path: "/chat", label: "Chat", icon: "💬" },
     ...Object.entries(MODULE_TABS)
       .filter(([id]) => enabledIds.has(id))
       .map(([, tab]) => tab),
