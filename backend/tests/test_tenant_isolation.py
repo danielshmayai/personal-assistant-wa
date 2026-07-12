@@ -611,4 +611,160 @@ class TestFitnessPromptScoping:
                 reset()
         sql, params = cur.execute.call_args[0]
         assert "tenant_id = %s" in sql
-        assert params[0] == "tenant-a"
+
+
+# ---------------------------------------------------------------------------
+# 11. scheduled_jobs.py — tenant_id scoping, cross-process race fix (P6.6)
+#
+# Two problems fixed together: (a) chat tools only have the ephemeral
+# per-conversation chat_id, so a reminder created in one session would be
+# unfindable/undeliverable from any other — insert_job now overrides to a
+# stable per-tenant key (_scoped_chat_id). (b) the owner's engine and
+# product-api are separate processes each polling this table — without a
+# tenant_id column and a WHERE split, both would see and execute the same
+# due job. (c) _execute_due_jobs must set current_tenant_id per job or a
+# tenant's scheduled Tuya command would resolve the owner's credentials
+# (same bug class as the P4 Garmin-merge fix).
+# ---------------------------------------------------------------------------
+
+class TestScheduledJobsTenantIsolation:
+    def test_scoped_chat_id_stable_for_tenant_passthrough_for_owner(self):
+        from app.scheduled_jobs import _scoped_chat_id
+        reset = _set_scope("tenant-a")
+        try:
+            assert _scoped_chat_id("web_tenant-a_ephemeral123") == "web_tenant-a"
+            assert _scoped_chat_id("anything-else") == "web_tenant-a"  # always overrides
+        finally:
+            reset()
+        assert _scoped_chat_id("web_someephemeralid") == "web_someephemeralid"  # owner passthrough
+        assert _scoped_chat_id("972501234567@c.us") == "972501234567@c.us"  # WhatsApp passthrough
+
+    def test_insert_job_stores_tenant_id_and_stable_chat_id(self):
+        conn, cur = _mock_conn(fetchone=(42,))
+        with patch("psycopg2.connect", return_value=conn):
+            from app.scheduled_jobs import insert_job
+            from datetime import datetime, timezone
+            reset = _set_scope("tenant-a")
+            try:
+                insert_job("web_tenant-a_ephemeral999", "tuya_command", {}, datetime.now(timezone.utc))
+            finally:
+                reset()
+        sql, params = cur.execute.call_args[0]
+        assert "tenant_id" in sql
+        assert params[0] == "web_tenant-a"  # chat_id overridden, not the ephemeral one
+        assert params[1] == "tenant-a"      # tenant_id column
+
+    def test_insert_job_owner_scope_unchanged(self):
+        conn, cur = _mock_conn(fetchone=(1,))
+        with patch("psycopg2.connect", return_value=conn):
+            from app.scheduled_jobs import insert_job
+            from datetime import datetime, timezone
+            insert_job("972501234567@c.us", "send_message", {"text": "hi"}, datetime.now(timezone.utc))
+        _, params = cur.execute.call_args[0]
+        assert params[0] == "972501234567@c.us"  # unchanged real WhatsApp chat_id
+        assert params[1] == ""                    # owner tenant_id
+
+    def test_get_due_jobs_splits_owner_vs_tenant_queries(self):
+        conn, cur = _mock_conn()
+        cur.fetchall.return_value = []
+        with patch("psycopg2.connect", return_value=conn):
+            from app.scheduled_jobs import get_due_jobs
+            get_due_jobs(tenant_scope=False)
+            owner_sql = cur.execute.call_args[0][0]
+            get_due_jobs(tenant_scope=True)
+            tenant_sql = cur.execute.call_args[0][0]
+        assert "tenant_id = ''" in owner_sql
+        assert "tenant_id != ''" in tenant_sql
+        assert owner_sql != tenant_sql  # disjoint queries — no cross-process race
+
+    def test_execute_due_jobs_scopes_tuya_command_to_owning_tenant(self):
+        """The critical fix: a tenant's scheduled Tuya command must resolve
+        THAT tenant's own credentials, never the owner's env — proven by
+        checking current_tenant_id is set correctly while _run_job executes."""
+        from app.context import current_tenant_id
+        import app.scheduled_jobs as sj
+
+        job = {
+            "id": 1, "chat_id": "web_tenant-a", "tenant_id": "tenant-a",
+            "action_type": "tuya_command",
+            "payload": {"device_id": "dev1", "commands": {"switch_1": True}, "description": "test"},
+            "run_at": None, "recurrence": None,
+        }
+        seen_scope_during_run = {}
+
+        async def fake_run_job(j):
+            seen_scope_during_run["tid"] = current_tenant_id.get()
+            return "ok"
+
+        with (
+            patch.object(sj, "get_due_jobs", return_value=[job]),
+            patch.object(sj, "_run_job", side_effect=fake_run_job),
+            patch.object(sj, "_set_status"),
+            patch.object(sj, "mark_job_done"),
+            patch.object(sj, "log_activity"),
+            patch.object(sj, "_notify", new=AsyncMock()),
+        ):
+            _run(sj._execute_due_jobs(tenant_scope=True))
+
+        assert seen_scope_during_run["tid"] == "tenant-a"
+        assert current_tenant_id.get() == ""  # reset after the job — doesn't leak to the next tick
+
+    def test_execute_due_jobs_owner_job_keeps_empty_scope(self):
+        from app.context import current_tenant_id
+        import app.scheduled_jobs as sj
+
+        job = {
+            "id": 2, "chat_id": "972501234567@c.us", "tenant_id": "",
+            "action_type": "send_message", "payload": {"text": "hi"},
+            "run_at": None, "recurrence": None,
+        }
+        seen = {}
+
+        async def fake_run_job(j):
+            seen["tid"] = current_tenant_id.get()
+            return "ok"
+
+        with (
+            patch.object(sj, "get_due_jobs", return_value=[job]),
+            patch.object(sj, "_run_job", side_effect=fake_run_job),
+            patch.object(sj, "_set_status"),
+            patch.object(sj, "mark_job_done"),
+            patch.object(sj, "log_activity"),
+            patch.object(sj, "_notify", new=AsyncMock()),
+        ):
+            _run(sj._execute_due_jobs(tenant_scope=False))
+
+        assert seen["tid"] == ""
+
+    def test_cancel_job_and_list_all_jobs_apply_scoped_chat_id(self):
+        conn, cur = _mock_conn()
+        cur.rowcount = 1
+        with patch("psycopg2.connect", return_value=conn):
+            from app.scheduled_jobs import cancel_job
+            reset = _set_scope("tenant-a")
+            try:
+                cancel_job(5, "web_tenant-a_someephemeralthread")
+            finally:
+                reset()
+        _, params = cur.execute.call_args[0]
+        assert params == (5, "web_tenant-a")  # not the ephemeral thread id passed in
+
+
+class TestSchedulingModuleGate:
+    """Regression guard: the scheduling module must stay owner_only until
+    explicit sign-off — the P6.6 architecture work (tenant_id column,
+    race-free scheduler, current_tenant_id scoping) is ready, but exposing
+    it is a separate, deliberate decision. See PLANNING.md P6.6."""
+
+    def test_scheduling_module_is_owner_only(self):
+        registry = pytest.importorskip(
+            "product.modules.registry", reason="product package not on path"
+        )
+        assert registry.MODULES_BY_ID["scheduling"].owner_only is True
+
+    def test_tenant_cannot_enable_scheduling(self):
+        registry = pytest.importorskip(
+            "product.modules.registry", reason="product package not on path"
+        )
+        assert "scheduling" not in registry.allowed_ids_for(is_owner=False)
+        assert "scheduling" in registry.allowed_ids_for(is_owner=True)

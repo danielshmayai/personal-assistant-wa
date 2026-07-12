@@ -30,9 +30,14 @@ MODULES: list[Module] = [
            secret_keys=("GARMIN_EMAIL", "GARMIN_PASSWORD")),
     Module("smart-home", "Smart Home", "Tuya device control",
            secret_keys=("TUYA_ACCESS_ID", "TUYA_ACCESS_KEY")),
-    # The scheduled-jobs executor is still owner-global and delivers over
-    # WhatsApp only, so web tenants can't receive results yet.
-    Module("scheduling", "Scheduling", "Reminders and scheduled actions (coming soon for web accounts)",
+    # P6.6 built the tenant-scoped scheduler (product-api runs its own
+    # instance, scheduled_jobs.start(tenant_scope=True), delivering over
+    # live WS + web push, never WhatsApp) and fixed the cross-process race +
+    # the Tuya-credential-scope gap — but flipping this open is a deliberate
+    # security-boundary decision (grants tenants scheduled device control)
+    # that needs explicit owner sign-off, not an incidental step of a
+    # broader task. Flip owner_only=False here once that's given.
+    Module("scheduling", "Scheduling", "Reminders and scheduled actions (owner-only pending sign-off)",
            owner_only=True),
     Module("tts", "Text-to-Speech", "Voice replies", secret_keys=("GOOGLE_TTS_API_KEY",)),
 ]

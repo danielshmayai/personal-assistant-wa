@@ -45,9 +45,20 @@ def init_table() -> None:
             cur.execute(
                 "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS recurrence TEXT"
             )
+            # Explicit scope column so the scheduler can query "mine only" per
+            # process (owner's backend vs product-api) with a plain WHERE —
+            # no guessing tenant-vs-owner from the chat_id string shape, and no
+            # race between two processes independently polling the same table.
+            cur.execute(
+                "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT ''"
+            )
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_run_at "
                 "ON scheduled_jobs (run_at) WHERE status = 'pending'"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_tenant "
+                "ON scheduled_jobs (tenant_id) WHERE status = 'pending'"
             )
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS pending_notifications (
@@ -147,6 +158,20 @@ def mark_notifications_delivered(chat_id: str) -> None:
 
 # ── DB CRUD ───────────────────────────────────────────────────────────────────
 
+def _scoped_chat_id(chat_id: str) -> str:
+    """Tenant scope always overrides to a stable per-tenant key, matching the
+    convention product/routers/dashboard.py and push.py already use
+    (f"web_{engine_scope}"). Chat tools only have the current conversation's
+    ephemeral thread id (a fresh uuid per WS connect) — without this, a
+    reminder created in one chat session would be stored/looked-up under an
+    id no other session (or the scheduler's notification/push delivery,
+    which uses the stable key) will ever see again. Owner scope passes
+    chat_id through unchanged — zero behavior change for WhatsApp/PWA."""
+    from app.context import current_tenant_id
+    tid = current_tenant_id.get()
+    return f"web_{tid}" if tid else chat_id
+
+
 def insert_job(
     chat_id: str,
     action_type: str,
@@ -154,16 +179,20 @@ def insert_job(
     run_at: datetime,
     recurrence: str | None = None,
 ) -> int:
+    from app.context import current_tenant_id
+
+    tenant_id = current_tenant_id.get()
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO scheduled_jobs (chat_id, action_type, payload, run_at, recurrence)
-                VALUES (%s, %s, %s::jsonb, %s, %s)
+                INSERT INTO scheduled_jobs (chat_id, tenant_id, action_type, payload, run_at, recurrence)
+                VALUES (%s, %s, %s, %s::jsonb, %s, %s)
                 RETURNING id
                 """,
-                (chat_id, action_type, json.dumps(payload), run_at, recurrence),
+                (chat_id, tenant_id, action_type, json.dumps(payload), run_at, recurrence),
             )
             job_id = cur.fetchone()[0]
         conn.commit()
@@ -172,25 +201,35 @@ def insert_job(
         conn.close()
 
 
-def get_due_jobs() -> list[dict]:
+def get_due_jobs(tenant_scope: bool = False) -> list[dict]:
+    """tenant_scope=False (owner's backend process): only tenant_id='' jobs.
+    tenant_scope=True (product-api process): only tenant_id!='' jobs.
+
+    The owner's engine and the product run as separate processes, each
+    polling this same table independently — without this split, both would
+    see and execute the same due job (double Tuya command fire, duplicate
+    reminder). Splitting by tenant_id (set once, correctly, by insert_job)
+    keeps the two processes' queries disjoint with no cross-process locking.
+    """
     if not DATABASE_URL:
         return []
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, chat_id, action_type, payload, run_at, recurrence
+                f"""
+                SELECT id, chat_id, tenant_id, action_type, payload, run_at, recurrence
                 FROM scheduled_jobs
                 WHERE status = 'pending' AND run_at <= NOW()
+                  AND tenant_id {'!=' if tenant_scope else '='} ''
                 ORDER BY run_at
                 """,
             )
             rows = cur.fetchall()
         return [
             {
-                "id": r[0], "chat_id": r[1], "action_type": r[2],
-                "payload": r[3], "run_at": r[4], "recurrence": r[5],
+                "id": r[0], "chat_id": r[1], "tenant_id": r[2], "action_type": r[3],
+                "payload": r[4], "run_at": r[5], "recurrence": r[6],
             }
             for r in rows
         ]
@@ -247,6 +286,7 @@ def mark_job_failed(job_id: int, error: str) -> None:
 def list_pending_jobs(chat_id: str) -> list[dict]:
     if not DATABASE_URL:
         return []
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -270,6 +310,7 @@ def list_pending_jobs(chat_id: str) -> list[dict]:
 
 def cancel_job(job_id: int, chat_id: str) -> bool:
     """Cancel a pending job. Returns True if a row was updated."""
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -293,6 +334,7 @@ def cancel_job(job_id: int, chat_id: str) -> bool:
 def log_activity(chat_id: str, event_type: str, summary: str, detail: dict | None = None) -> None:
     if not DATABASE_URL:
         return
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -310,6 +352,7 @@ def log_activity(chat_id: str, event_type: str, summary: str, detail: dict | Non
 def get_activity(chat_id: str, limit: int = 50, event_type: str | None = None) -> list[dict]:
     if not DATABASE_URL:
         return []
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -341,6 +384,7 @@ def upsert_card(chat_id: str, card_type: str, title: str, detail: str = "",
                 expires_at: datetime | None = None) -> int:
     if not DATABASE_URL:
         return -1
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -360,6 +404,7 @@ def upsert_card(chat_id: str, card_type: str, title: str, detail: str = "",
 def get_active_cards(chat_id: str) -> list[dict]:
     if not DATABASE_URL:
         return []
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -387,6 +432,7 @@ def get_active_cards(chat_id: str) -> list[dict]:
 def delete_card(card_id: int, chat_id: str) -> bool:
     if not DATABASE_URL:
         return False
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -405,6 +451,7 @@ def list_all_jobs(chat_id: str, include_done: bool = False) -> list[dict]:
     """Return all jobs for a chat_id, optionally including done/failed/cancelled."""
     if not DATABASE_URL:
         return []
+    chat_id = _scoped_chat_id(chat_id)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
@@ -504,40 +551,50 @@ async def _notify(chat_id: str, text: str) -> None:
             logger.warning("_notify: web push failed: %s", exc)
 
 
-async def _execute_due_jobs() -> None:
-    jobs = await asyncio.to_thread(get_due_jobs)
+async def _execute_due_jobs(tenant_scope: bool = False) -> None:
+    from app.context import current_tenant_id
+
+    jobs = await asyncio.to_thread(get_due_jobs, tenant_scope)
     for job in jobs:
         jid = job["id"]
-        # Mark running immediately so concurrent ticks don't double-execute
-        await asyncio.to_thread(_set_status, jid, "running")
+        # Scope every step of this job's execution to its owning tenant.
+        # Without this, _run_job's tuya_command path would resolve Tuya
+        # credentials via the ContextVar-unset (owner) default instead of
+        # the tenant's own BYO creds — same bug class as the P4 Garmin fix.
+        token = current_tenant_id.set(job["tenant_id"])
         try:
-            msg = await _run_job(job)
-            await asyncio.to_thread(mark_job_done, jid)
-            logger.info("Job %d done: %s", jid, msg)
-            await asyncio.to_thread(
-                log_activity, job["chat_id"], "job",
-                msg, {"job_id": jid, "action_type": job["action_type"]}
-            )
-            # Re-schedule if recurring
-            recurrence = job.get("recurrence")
-            if recurrence:
-                next_run = _next_run(job["run_at"], recurrence)
-                if next_run:
-                    new_id = await asyncio.to_thread(
-                        insert_job,
-                        job["chat_id"], job["action_type"], job["payload"],
-                        next_run, recurrence,
-                    )
-                    logger.info("Recurring job %d rescheduled → #%d at %s", jid, new_id, next_run)
-            await _notify(job["chat_id"], msg)
-        except Exception as exc:
-            logger.exception("Job %d failed", jid)
-            await asyncio.to_thread(mark_job_failed, jid, str(exc))
-            await asyncio.to_thread(
-                log_activity, job["chat_id"], "job",
-                f"❌ Job {jid} failed: {exc}", {"job_id": jid, "error": str(exc)}
-            )
-            await _notify(job["chat_id"], f"❌ הפעולה המתוזמנת נכשלה: {exc}")
+            # Mark running immediately so concurrent ticks don't double-execute
+            await asyncio.to_thread(_set_status, jid, "running")
+            try:
+                msg = await _run_job(job)
+                await asyncio.to_thread(mark_job_done, jid)
+                logger.info("Job %d done: %s", jid, msg)
+                await asyncio.to_thread(
+                    log_activity, job["chat_id"], "job",
+                    msg, {"job_id": jid, "action_type": job["action_type"]}
+                )
+                # Re-schedule if recurring
+                recurrence = job.get("recurrence")
+                if recurrence:
+                    next_run = _next_run(job["run_at"], recurrence)
+                    if next_run:
+                        new_id = await asyncio.to_thread(
+                            insert_job,
+                            job["chat_id"], job["action_type"], job["payload"],
+                            next_run, recurrence,
+                        )
+                        logger.info("Recurring job %d rescheduled → #%d at %s", jid, new_id, next_run)
+                await _notify(job["chat_id"], msg)
+            except Exception as exc:
+                logger.exception("Job %d failed", jid)
+                await asyncio.to_thread(mark_job_failed, jid, str(exc))
+                await asyncio.to_thread(
+                    log_activity, job["chat_id"], "job",
+                    f"❌ Job {jid} failed: {exc}", {"job_id": jid, "error": str(exc)}
+                )
+                await _notify(job["chat_id"], f"❌ הפעולה המתוזמנת נכשלה: {exc}")
+        finally:
+            current_tenant_id.reset(token)
 
 
 # ── Background loop ───────────────────────────────────────────────────────────
@@ -546,10 +603,13 @@ _task: asyncio.Task | None = None
 _POLL_INTERVAL = 30  # seconds
 
 
-async def start() -> None:
+async def start(tenant_scope: bool = False) -> None:
+    """tenant_scope=False (default): owner's engine entrypoint, unchanged
+    behavior. tenant_scope=True: product-api's own instance, polling only
+    tenant-owned jobs — see get_due_jobs for why the split matters."""
     global _task
-    _task = asyncio.create_task(_loop(), name="scheduler")
-    logger.info("Scheduler started (poll every %ds)", _POLL_INTERVAL)
+    _task = asyncio.create_task(_loop(tenant_scope), name="scheduler")
+    logger.info("Scheduler started (poll every %ds, tenant_scope=%s)", _POLL_INTERVAL, tenant_scope)
 
 
 async def stop() -> None:
@@ -564,10 +624,10 @@ async def stop() -> None:
     logger.info("Scheduler stopped")
 
 
-async def _loop() -> None:
+async def _loop(tenant_scope: bool = False) -> None:
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
         try:
-            await _execute_due_jobs()
+            await _execute_due_jobs(tenant_scope)
         except Exception:
             logger.exception("Scheduler tick error")

@@ -82,8 +82,16 @@ async def lifespan(app: FastAPI):
     from app.graph.checkpointer import setup_checkpointer
     await setup_checkpointer()
 
+    # Tenant-scoped scheduler instance: polls only tenant_id != '' jobs, so
+    # it never races with the owner's own scheduler running in the separate
+    # `backend` process/container against the same table (see
+    # scheduled_jobs.get_due_jobs's docstring).
+    from app.scheduled_jobs import start as start_scheduler, stop as stop_scheduler
+    await start_scheduler(tenant_scope=True)
+
     logger.info("Product backend ready (env=%s)", ENVIRONMENT)
     yield
+    await stop_scheduler()
 
 
 app = FastAPI(title="PA Product", version="0.1.0", lifespan=lifespan)

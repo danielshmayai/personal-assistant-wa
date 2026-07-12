@@ -6,15 +6,13 @@ instead of a shared TEST_TOKEN, and every call site is scoped correctly:
 - get_credentials("web") is safe for every tenant as-is: google.auth._token_key
   only checks the "web" prefix and resolves the real key from current_tenant_id
   (set by require_session), so the literal suffix doesn't matter.
-- scheduled_jobs.py's job/card/activity helpers have NO ContextVar awareness —
-  they trust the chat_id argument verbatim as the DB scope key. Passing "web"
-  for every tenant here (mirroring nutrition/fitness's vestigial "" pattern)
-  would collide every tenant's proactive cards into one shared row. Instead we
-  build a per-tenant key (_dashboard_chat_id) so tenants stay isolated from
-  each other and from the owner's existing "web"-keyed rows.
-- Jobs are gated by the 'scheduling' module, which is owner_only in the
-  registry — so /api/jobs is unreachable for tenants and can safely keep
-  passing the literal "web" key the owner's PWA has always used.
+- scheduled_jobs.py's job/card/activity functions (list_all_jobs, cancel_job,
+  get_active_cards, upsert_card, delete_card, get_activity, log_activity) all
+  resolve their real DB scope internally via _scoped_chat_id() / the
+  tenant_id column (P6.6) — the chat_id argument passed here (whether the
+  literal "web" or _dashboard_chat_id(tenant)) is a documentation aid, not
+  the source of truth; current_tenant_id is. Scheduling was owner_only in
+  the registry until P6.6 (see product/modules/registry.py).
 """
 from __future__ import annotations
 
@@ -73,11 +71,9 @@ async def get_today(tenant: Tenant = Depends(require_session)):
         except Exception as e:
             logger.warning("Weather fetch failed: %s", e)
 
-    # Only ever query jobs for a scope allowed to see them (owner today) —
-    # never pass a shared key on behalf of a tenant who can't reach /api/jobs.
     if "scheduling" in get_enabled_modules(tenant.id, tenant.is_owner):
         try:
-            jobs = list_all_jobs("web", include_done=False)
+            jobs = list_all_jobs(_dashboard_chat_id(tenant), include_done=False)
             result["jobs_count"] = len(jobs)
         except Exception:
             pass
@@ -143,17 +139,42 @@ async def get_calendar_today(
         return {"events": [], "connected": True, "error": str(e)}
 
 
-# ── Jobs (owner-only: 'scheduling' module is owner_only in the registry) ────
+# ── Jobs (gated by the 'scheduling' module toggle) ──────────────────────────
 
 @router.get("/api/jobs")
-async def list_jobs(include_done: bool = Query(False), _: Tenant = Depends(_jobs_gate)):
-    return {"jobs": list_all_jobs("web", include_done=include_done)}
+async def list_jobs(include_done: bool = Query(False), tenant: Tenant = Depends(_jobs_gate)):
+    return {"jobs": list_all_jobs(_dashboard_chat_id(tenant), include_done=include_done)}
 
 
 @router.delete("/api/jobs/{job_id}")
-async def cancel_job_endpoint(job_id: int, _: Tenant = Depends(_jobs_gate)):
-    if not cancel_job(job_id, "web"):
+async def cancel_job_endpoint(job_id: int, tenant: Tenant = Depends(_jobs_gate)):
+    if not cancel_job(job_id, _dashboard_chat_id(tenant)):
         raise HTTPException(status_code=404, detail="job_not_found")
+    return {"ok": True}
+
+
+# ── Activity log ─────────────────────────────────────────────────────────────
+
+class ActivityEntry(BaseModel):
+    event_type: str
+    summary: str
+    detail: dict | None = None
+
+
+@router.get("/api/activity")
+async def get_activity_log(
+    tenant: Tenant = Depends(require_session),
+    limit: int = Query(50, le=200),
+    event_type: str | None = Query(None),
+):
+    from app.scheduled_jobs import get_activity
+    return {"entries": get_activity(_dashboard_chat_id(tenant), limit=limit, event_type=event_type)}
+
+
+@router.post("/api/activity")
+async def post_activity(entry: ActivityEntry, tenant: Tenant = Depends(require_session)):
+    from app.scheduled_jobs import log_activity
+    log_activity(_dashboard_chat_id(tenant), entry.event_type, entry.summary, entry.detail)
     return {"ok": True}
 
 

@@ -162,6 +162,11 @@ export default function Chat() {
           setError(ERROR_TEXT[event.code] ?? ERROR_TEXT.internal);
           setMessages((prev) => prev.filter((m) => !(m.streaming && !m.text)));
           break;
+        case "notification":
+          // A scheduled reminder/automation fired while this tab was open.
+          setMessages((prev) => [...prev, { role: "assistant", text: event.message }]);
+          if (voiceRepliesRef.current) void playReply(event.message);
+          break;
       }
     };
   }, []);

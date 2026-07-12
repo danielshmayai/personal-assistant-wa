@@ -45,7 +45,8 @@ export type ChatEvent =
   | { type: "tool_start"; name: string; input: unknown }
   | { type: "tool_end"; name: string }
   | { type: "done"; full_reply: string }
-  | { type: "error"; code: "invalid_key" | "quota_exceeded" | "rate_limited" | "internal" };
+  | { type: "error"; code: "invalid_key" | "quota_exceeded" | "rate_limited" | "internal" }
+  | { type: "notification"; message: string };
 
 export interface Meal {
   id: number;

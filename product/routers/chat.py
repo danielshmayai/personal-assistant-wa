@@ -75,6 +75,14 @@ async def ws_chat(websocket: WebSocket):
     # per tenant, and offboarding can delete threads by prefix.
     chat_id = f"web_{scope}_{uuid.uuid4().hex[:12]}"
 
+    # Stable per-tenant key (not the ephemeral thread id above) — matches
+    # scheduled_jobs._scoped_chat_id / push.py's _push_chat_id, so a
+    # scheduled reminder fired from the tenant scheduler can reach this
+    # session via NotificationManager's live WS broadcast.
+    notify_key = f"web_{scope}" if scope else "web"
+    from app.broadcast import NotificationManager
+    NotificationManager.register(notify_key, websocket)
+
     from app.graph.graph import stream_graph  # deferred: heavy import
 
     try:
@@ -134,3 +142,5 @@ async def ws_chat(websocket: WebSocket):
         pass
     except Exception:
         logger.exception("chat websocket closed unexpectedly", extra={"tenant_id": tenant.id})
+    finally:
+        NotificationManager.unregister(notify_key)
