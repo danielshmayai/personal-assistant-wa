@@ -433,6 +433,95 @@ class TestOffboardingCoverage:
 
 
 # ---------------------------------------------------------------------------
+# 10. Voice (TTS) — GOOGLE_TTS_API_KEY resolved per tenant (P6 regression)
+#
+# backend/app/routers/web_chat.py used to import GOOGLE_TTS_API_KEY directly
+# from app.config (the same anti-pattern as the pre-P2 Tuya/Tavily bugs) —
+# any tenant with the "tts" module enabled would have silently used the
+# owner's Google TTS key. Fixed by extracting into app/voice.py and
+# resolving the key via runtime.get_secret() per call, like llm.py.
+# ---------------------------------------------------------------------------
+
+from unittest.mock import AsyncMock  # noqa: E402
+
+
+class TestVoiceTenantIsolation:
+    def test_tts_uses_tenant_key_not_owner_env(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_TTS_API_KEY", "owner-key")
+        from app import runtime
+        runtime.set_secret_resolver(_product_like_resolver({
+            "tenant-a": {"GOOGLE_TTS_API_KEY": "tenant-key"},
+        }))
+
+        fake_resp = MagicMock(status_code=200)
+        fake_resp.json.return_value = {"audioContent": "aGVsbG8="}  # base64 "hello"
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=fake_resp)
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        import asyncio
+        from app import voice
+        reset = _set_scope("tenant-a")
+        try:
+            with patch("httpx.AsyncClient", return_value=fake_client):
+                asyncio.run(voice.synthesize_speech("hello"))
+        finally:
+            reset()
+
+        _, kwargs = fake_client.post.call_args
+        assert kwargs["params"] == {"key": "tenant-key"}
+
+    def test_tts_falls_back_to_edge_tts_without_tenant_key(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_TTS_API_KEY", "owner-key")
+        from app import runtime
+        runtime.set_secret_resolver(_product_like_resolver({}))  # tenant has no key
+
+        async def fake_stream():
+            yield {"type": "audio", "data": b"chunk"}
+
+        fake_communicate = MagicMock()
+        fake_communicate.stream = fake_stream
+        edge_tts_mod = MagicMock()
+        edge_tts_mod.Communicate = MagicMock(return_value=fake_communicate)
+
+        import asyncio
+        from app import voice
+        reset = _set_scope("tenant-a")
+        try:
+            with (
+                patch.dict(sys.modules, {"edge_tts": edge_tts_mod}),
+                patch("httpx.AsyncClient") as httpx_client,
+            ):
+                result = asyncio.run(voice.synthesize_speech("hello"))
+        finally:
+            reset()
+
+        httpx_client.assert_not_called()  # never touched Google TTS at all
+        assert result == b"chunk"
+
+    def test_owner_keeps_env_key(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_TTS_API_KEY", "owner-key")
+        from app import runtime
+        runtime.set_secret_resolver(_product_like_resolver({}))
+
+        fake_resp = MagicMock(status_code=200)
+        fake_resp.json.return_value = {"audioContent": "aGVsbG8="}
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=fake_resp)
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        import asyncio
+        from app import voice
+        with patch("httpx.AsyncClient", return_value=fake_client):
+            asyncio.run(voice.synthesize_speech("hello"))  # owner scope — no _set_scope
+
+        _, kwargs = fake_client.post.call_args
+        assert kwargs["params"] == {"key": "owner-key"}
+
+
+# ---------------------------------------------------------------------------
 # 9. Fitness LLM prompts — owner medical PII (P4 regression)
 #
 # fitness_profile.render_profile_block was correctly gated since P0, but

@@ -5,7 +5,8 @@ import { cn } from "../components/ui";
 const MODULE_TABS: Record<string, { path: string; label: string; icon: string }> = {
   nutrition: { path: "/nutrition", label: "Nutrition", icon: "🥗" },
   fitness: { path: "/fitness", label: "Fitness", icon: "💪" },
-  "smart-home": { path: "/smart-home", label: "Smart Home", icon: "🏠" },
+  "smart-home": { path: "/smart-home", label: "Smart Home", icon: "💡" },
+  memory: { path: "/memory", label: "Memory", icon: "🧠" },
 };
 
 export default function Dashboard() {

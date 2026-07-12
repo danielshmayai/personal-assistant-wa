@@ -10,7 +10,8 @@ import Admin from "./pages/Admin";
 import Home from "./pages/Home";
 import Nutrition from "./pages/Nutrition";
 import Fitness from "./pages/Fitness";
-import ModulePlaceholder from "./pages/ModulePlaceholder";
+import SmartHome from "./pages/SmartHome";
+import Memory from "./pages/Memory";
 
 function Guarded({ children }: { children: React.ReactNode }) {
   const { me, loading } = useSession();
@@ -46,16 +47,8 @@ export default function App() {
             <Route path="/chat" element={<Chat />} />
             <Route path="/nutrition" element={<Nutrition />} />
             <Route path="/fitness" element={<Fitness />} />
-            <Route
-              path="/smart-home"
-              element={
-                <ModulePlaceholder
-                  icon="🏠"
-                  title="Smart Home"
-                  examples={["כבה את האור בסלון", "מה הסטטוס של המזגן?", "הדלק את הדוד"]}
-                />
-              }
-            />
+            <Route path="/smart-home" element={<SmartHome />} />
+            <Route path="/memory" element={<Memory />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admin" element={<Admin />} />
           </Route>

@@ -202,6 +202,38 @@ export interface ProactiveCard {
   created_at: string;
 }
 
+export interface TuyaDevice {
+  id: string;
+  name: string;
+  category: string;
+  online: boolean;
+}
+
+export interface MemoryCategory {
+  name: string;
+  count: number;
+}
+
+export interface MemoryEntitySummary {
+  entity: string;
+  file: string;
+  updated_at: number;
+  preview: string;
+}
+
+export interface MemoryEntityDetail {
+  entity: string;
+  category: string;
+  content: string;
+  meta: Record<string, unknown>;
+}
+
+export interface MemoryRule {
+  text: string;
+  added: string;
+  raw: string;
+}
+
 export interface AdminTenant {
   id: string;
   email: string;

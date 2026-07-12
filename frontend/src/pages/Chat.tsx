@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ChatEvent } from "../lib/types";
 import { api, ApiError } from "../lib/api";
+import { useSession } from "../lib/session";
 import { Button, Spinner, cn } from "../components/ui";
 
 interface Message {
@@ -62,6 +63,7 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 export default function Chat() {
+  const { me } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
@@ -69,11 +71,21 @@ export default function Chat() {
   const [error, setError] = useState<JSX.Element | string>("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceReplies, setVoiceReplies] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const chatIdRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+  const ttsEnabled = !!me?.modules.find((m) => m.id === "tts")?.enabled;
+  const voiceRepliesRef = useRef(false);
+  useEffect(() => { voiceRepliesRef.current = voiceReplies; }, [voiceReplies]);
 
   const connect = useCallback(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -143,6 +155,7 @@ export default function Chat() {
                 : m,
             ),
           );
+          if (voiceRepliesRef.current && event.full_reply) void playReply(event.full_reply);
           break;
         case "error":
           setBusy(false);
@@ -159,6 +172,7 @@ export default function Chat() {
       const ws = wsRef.current;
       wsRef.current = null;
       ws?.close();
+      audioPlayerRef.current?.pause();
     };
   }, [connect]);
 
@@ -225,8 +239,78 @@ export default function Chat() {
     clearAttachment();
   };
 
+  const playReply = async (text: string) => {
+    try {
+      audioPlayerRef.current?.pause();
+      const resp = await fetch(`/api/tts?text=${encodeURIComponent(text)}`, { credentials: "same-origin" });
+      if (!resp.ok) return;
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioPlayerRef.current = audio;
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch {
+      // Voice reply is a nice-to-have — never surface a TTS failure as a chat error.
+    }
+  };
+
+  const startRecording = async () => {
+    setError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        void transcribe();
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      setError("Microphone access denied or unavailable.");
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+  };
+
+  const transcribe = async () => {
+    const blob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || "audio/webm" });
+    if (blob.size === 0) return;
+    setTranscribing(true);
+    try {
+      const file = new File([blob], "recording.webm", { type: blob.type });
+      const res = await api.upload<{ text: string }>("/api/stt", file);
+      if (res.text) setInput((prev) => (prev ? `${prev} ${res.text}` : res.text));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Transcription failed");
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
+      {ttsEnabled && (
+        <div className="flex items-center justify-end border-b border-slate-800 px-3 py-1.5">
+          <button
+            onClick={() => setVoiceReplies((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs",
+              voiceReplies ? "bg-indigo-600/15 text-indigo-300" : "text-slate-500 hover:bg-slate-900",
+            )}
+            aria-label="Toggle voice replies"
+          >
+            {voiceReplies ? "🔊" : "🔇"} Voice replies
+          </button>
+        </div>
+      )}
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
@@ -307,6 +391,19 @@ export default function Chat() {
             ref={cameraRef} type="file" accept="image/*" capture="environment" hidden
             onChange={(e) => { void attachFile(e.target.files?.[0]); e.target.value = ""; }}
           />
+          <button
+            disabled={!connected || transcribing}
+            onClick={() => (recording ? stopRecording() : startRecording())}
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-lg disabled:opacity-50",
+              recording
+                ? "border-red-500 bg-red-500/15 text-red-400 animate-pulse"
+                : "border-slate-700 bg-slate-900 hover:bg-slate-800",
+            )}
+            aria-label={recording ? "Stop recording" : "Record voice message"}
+          >
+            {transcribing ? <Spinner className="h-4 w-4" /> : recording ? "⏹️" : "🎤"}
+          </button>
           <textarea
             dir="auto"
             rows={1}
