@@ -23,26 +23,31 @@ unblocking every dashboard.
 
 ## Full gap map (old → new)
 
+*(Table below reflects final status as of plan completion — see the Progress checklist above for how each row got there.)*
+
 | Feature (old) | New status | Backend data API |
 |---|---|---|
-| Home dashboard (rings, calendar, jobs, proactive cards) | ❌ shell only (`Dashboard.tsx`) | partial (`dashboard.py`) |
-| Nutrition dashboard | ❌ placeholder | ✅ `routers/nutrition.py` |
-| Fitness dashboard | ❌ placeholder | ✅ `routers/fitness.py` |
-| Image/file upload in Chat | ❌ text-only (`Chat.tsx`) | ✅ old `/api/upload` + media_cache |
-| Smart Home | ❌ placeholder | ✅ `routers/smart_home.py` |
-| Memory browser | ❌ none | ✅ `routers/memory_api.py` |
-| Schedule / Activity / Automations / Proactive cards | ❌ none | ✅ `routers/dashboard.py` |
-| Voice (STT/TTS), Push, PWA | ❌ none | ✅ old endpoints exist |
-| Agent tools — Google (Gmail/Calendar/Drive/Maps) | ⚠️ tools shared via engine; per-tenant Google connect works | ✅ `google/tools.py`, `drive_tools.py`, `maps_tool.py` |
+| Home dashboard (rings, calendar, jobs, proactive cards) | ✅ `Home.tsx` (P5) — jobs section owner-only pending the scheduling backlog item | ✅ `product/routers/dashboard.py` |
+| Nutrition dashboard | ✅ `Nutrition.tsx` (P1) | ✅ `product/routers/nutrition.py` |
+| Fitness dashboard | ✅ `Fitness.tsx` (P4) | ✅ `product/routers/fitness.py` |
+| Image/file upload in Chat | ✅ `Chat.tsx` attach/camera (P3) | ✅ `product/routers/chat.py` + media_cache |
+| Smart Home | ✅ `SmartHome.tsx` (P6.1) | ✅ `product/routers/smart_home.py` |
+| Memory browser | ✅ `Memory.tsx` (P6.2) | ✅ `product/routers/memory.py` |
+| Proactive cards | ✅ tenant-scoped, shown in `Home.tsx` (P5) — empty until the proactive-flows generator is ported (backlog) | ✅ `product/routers/dashboard.py` |
+| Activity log | ⚠️ backend done (P6.6), no frontend page yet — low value to build before the scheduler backlog item lands (nothing populates it for tenants until then) | ✅ `product/routers/dashboard.py` |
+| Schedule / Automations | ⚠️ architecture done (P6.6), gated closed — backlog item | ✅ `scheduled_jobs.py` |
+| Voice (STT/TTS) | ✅ `Chat.tsx` mic + voice-replies toggle (P6.4) | ✅ `product/routers/voice.py` |
+| Push, PWA | ✅ manifest/SW/subscribe (P6.5) — delivery blocked on the scheduler backlog item | ✅ `product/routers/push.py` |
+| Agent tools — Google (Gmail/Calendar/Drive/Maps) | ✅ per-tenant Google connect (P0) | ✅ `google/tools.py`, `drive_tools.py`, `maps_tool.py` |
 | Agent tools — web (search/wiki/fetch/weather) | ✅ per-tenant Tavily key (P2) | ✅ `web/tools.py` |
 | Agent tools — vault notes / image vision / TTS config | ✅ tenant-scoped (vault P0, app_settings P2) | ✅ `memory/manager.py`, `image_tools.py`, `tts_tool.py` |
-| Reminders & scheduled jobs (tools + runtime) | ❌ owner-only (`scheduling` module) | ✅ `schedule_tool.py`, `scheduled_jobs.py` |
-| Garmin (connect/MFA/wellness/push-workout) | ⚠️ token store tenant-keyed (P2); connect UI → P4 | ✅ `garmin/` |
-| InBody scan · exercise-GIF proxy | ⚠️ scan API ported (P0); GIF proxy → P4 | ✅ `routers/fitness.py` |
-| Drive image proxy | ❌ none | ✅ `routers/drive_proxy.py` |
-| Proactive flows generator (morning brief, Garmin sync) | ❌ owner-only | ✅ `proactive/flows.py` |
-| WhatsApp channel (per-tenant number) | ❌ owner-only → backlog, out of scope (WAHA multi-session) | ✅ `whatsapp.py` + WAHA |
-| Leads (watched contacts) | ❌ owner-only → backlog, out of scope | ✅ `routers/leads.py` |
+| Reminders & scheduled jobs (tools + runtime) | ⚠️ architecture done (P6.6), `scheduling` module gated closed — backlog item | ✅ `schedule_tool.py`, `scheduled_jobs.py` |
+| Garmin (connect/MFA/wellness/push-workout) | ✅ tenant connect/MFA/wellness/push-workout (P4) | ✅ `garmin/`, `product/routers/garmin.py` |
+| InBody scan · exercise-GIF proxy | ✅ both ported (P0, P4) | ✅ `product/routers/fitness.py` |
+| Drive image proxy | ✅ session-cookie auth (P6.3) | ✅ `product/routers/drive_proxy.py` |
+| Proactive flows generator (morning brief, Garmin sync) | ❌ owner-only — not addressed; same fix shape as the scheduler backlog item | `proactive/flows.py` |
+| WhatsApp channel (per-tenant number) | ❌ owner-only — backlog, explicitly out of scope for this plan (WAHA multi-session) | `whatsapp.py` + WAHA |
+| Leads (watched contacts) | ❌ owner-only — backlog, explicitly out of scope for this plan | `routers/leads.py` |
 | Self-review | ✅ tenant-scoped (P6.7a) | ✅ `/api/memory/self-review` |
 
 ## Plan status: COMPLETE (2026-07-12)
