@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  BodyMetricsResponse, DailyRec, FitnessDay, FitnessToday, GarminStatus, ProgressionPoint,
+  BodyMetricsResponse, DailyRec, Exercise, FitnessDay, FitnessToday, GarminStatus, ProgressionPoint,
 } from "../lib/types";
 import { api, ApiError } from "../lib/api";
 import { Badge, Button, Card, Input, Spinner } from "../components/ui";
@@ -78,6 +78,12 @@ export default function Fitness() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [logMode, setLogMode] = useState<"quick" | "structured">("quick");
+  const [structTitle, setStructTitle] = useState("");
+  const [structType, setStructType] = useState("strength");
+  const [structExercises, setStructExercises] = useState<Exercise[]>([
+    { name: "", sets: 3, reps: 10, weight_kg: 0 },
+  ]);
 
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -132,6 +138,33 @@ export default function Fitness() {
     void withBusy(() => api.upload("/api/fitness/log-image", file), "Analyzing photo… (up to 30s)");
   };
   const deleteWorkout = (id: number) => void withBusy(() => api.delete(`/api/fitness/${id}`), "Removing…");
+
+  const updateExerciseRow = (i: number, patch: Partial<Exercise>) => {
+    setStructExercises((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  };
+  const addExerciseRow = () => {
+    setStructExercises((rows) => [...rows, { name: "", sets: 3, reps: 10, weight_kg: 0 }]);
+  };
+  const removeExerciseRow = (i: number) => {
+    setStructExercises((rows) => rows.filter((_, idx) => idx !== i));
+  };
+  const logStructured = () => {
+    const exercises = structExercises.filter((e) => e.name.trim());
+    if (exercises.length === 0) return;
+    void withBusy(async () => {
+      await api.post("/api/fitness/log-structured", {
+        title: structTitle || exercises[0].name,
+        workout_type: structType,
+        duration_min: 0,
+        avg_rpe: 0,
+        exercises,
+        metrics: {},
+        source: "structured",
+      });
+      setStructTitle("");
+      setStructExercises([{ name: "", sets: 3, reps: 10, weight_kg: 0 }]);
+    }, "Saving workout…");
+  };
 
   const logBodyManual = () => {
     const body: Record<string, number> = {};
@@ -235,27 +268,79 @@ export default function Fitness() {
           )}
 
           <Card className="space-y-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Log a workout</div>
-            <div className="grid grid-cols-2 gap-2">
-              <button disabled={busy} onClick={() => galleryRef.current?.click()}
-                className="flex flex-col items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 py-4 text-sm hover:bg-slate-800 disabled:opacity-50">
-                <span className="text-2xl">🖼️</span> Gallery
-              </button>
-              <button disabled={busy} onClick={() => cameraRef.current?.click()}
-                className="flex flex-col items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 py-4 text-sm hover:bg-slate-800 disabled:opacity-50">
-                <span className="text-2xl">📷</span> Camera
-              </button>
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Log a workout</div>
+              <div className="flex rounded-lg border border-slate-800 p-0.5 text-xs">
+                {(["quick", "structured"] as const).map((m) => (
+                  <button key={m} onClick={() => setLogMode(m)}
+                    className={`rounded-md px-2 py-1 capitalize ${logMode === m ? "bg-slate-800 text-white" : "text-slate-400"}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
-            <input ref={galleryRef} type="file" accept="image/*" hidden
-              onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
-            <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden
-              onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
-            <div className="flex gap-2">
-              <Input dir="auto" placeholder="Or describe your workout…" value={workoutText} disabled={busy}
-                onChange={(e) => setWorkoutText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") logText(); }} />
-              <Button onClick={logText} disabled={busy || !workoutText.trim()}>+ Log</Button>
-            </div>
+
+            {logMode === "quick" ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button disabled={busy} onClick={() => galleryRef.current?.click()}
+                    className="flex flex-col items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 py-4 text-sm hover:bg-slate-800 disabled:opacity-50">
+                    <span className="text-2xl">🖼️</span> Gallery
+                  </button>
+                  <button disabled={busy} onClick={() => cameraRef.current?.click()}
+                    className="flex flex-col items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 py-4 text-sm hover:bg-slate-800 disabled:opacity-50">
+                    <span className="text-2xl">📷</span> Camera
+                  </button>
+                </div>
+                <input ref={galleryRef} type="file" accept="image/*" hidden
+                  onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden
+                  onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
+                <div className="flex gap-2">
+                  <Input dir="auto" placeholder="Or describe your workout…" value={workoutText} disabled={busy}
+                    onChange={(e) => setWorkoutText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") logText(); }} />
+                  <Button onClick={logText} disabled={busy || !workoutText.trim()}>+ Log</Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <Input className="col-span-2" placeholder="Workout title (optional)" value={structTitle} disabled={busy}
+                    onChange={(e) => setStructTitle(e.target.value)} />
+                  <select value={structType} disabled={busy} onChange={(e) => setStructType(e.target.value)}
+                    className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm">
+                    {["strength", "hiit", "cardio", "running", "swimming", "other"].map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  {structExercises.map((ex, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_3rem_3rem_4rem_2rem] items-center gap-1.5">
+                      <Input placeholder="Exercise" value={ex.name} disabled={busy}
+                        onChange={(e) => updateExerciseRow(i, { name: e.target.value })} />
+                      <input type="number" placeholder="Sets" value={ex.sets ?? ""} disabled={busy}
+                        onChange={(e) => updateExerciseRow(i, { sets: e.target.value ? Number(e.target.value) : undefined })}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-1.5 py-2 text-center text-sm" />
+                      <input type="number" placeholder="Reps" value={ex.reps ?? ""} disabled={busy}
+                        onChange={(e) => updateExerciseRow(i, { reps: e.target.value ? Number(e.target.value) : undefined })}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-1.5 py-2 text-center text-sm" />
+                      <input type="number" placeholder="kg" value={ex.weight_kg ?? ""} disabled={busy}
+                        onChange={(e) => updateExerciseRow(i, { weight_kg: e.target.value ? Number(e.target.value) : undefined })}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-1.5 py-2 text-center text-sm" />
+                      <button aria-label="remove exercise" disabled={busy || structExercises.length === 1}
+                        onClick={() => removeExerciseRow(i)}
+                        className="rounded-md px-1 py-2 text-slate-500 hover:bg-slate-800 hover:text-red-400 disabled:opacity-30">✕</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" disabled={busy} onClick={addExerciseRow}>+ Exercise</Button>
+                  <Button onClick={logStructured} disabled={busy || structExercises.every((e) => !e.name.trim())}>Save workout</Button>
+                </div>
+              </>
+            )}
             {note && <div className="flex items-center gap-2 text-sm text-slate-400"><Spinner className="h-4 w-4" /> {note}</div>}
           </Card>
 
