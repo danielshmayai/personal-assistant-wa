@@ -41,9 +41,21 @@ unblocking every dashboard.
 | InBody scan · exercise-GIF proxy | ⚠️ scan API ported (P0); GIF proxy → P4 | ✅ `routers/fitness.py` |
 | Drive image proxy | ❌ none | ✅ `routers/drive_proxy.py` |
 | Proactive flows generator (morning brief, Garmin sync) | ❌ owner-only | ✅ `proactive/flows.py` |
-| WhatsApp channel (per-tenant number) | ❌ owner-only → P6+ (WAHA multi-session) | ✅ `whatsapp.py` + WAHA |
-| Leads (watched contacts) | ❌ owner-only → P6+ | ✅ `routers/leads.py` |
-| Self-review | ❌ owner-only → P6+ | ✅ `/admin/self-review` |
+| WhatsApp channel (per-tenant number) | ❌ owner-only → backlog, out of scope (WAHA multi-session) | ✅ `whatsapp.py` + WAHA |
+| Leads (watched contacts) | ❌ owner-only → backlog, out of scope | ✅ `routers/leads.py` |
+| Self-review | ✅ tenant-scoped (P6.7a) | ✅ `/api/memory/self-review` |
+
+## Plan status: COMPLETE (2026-07-12)
+
+Every phase below is implemented, tested, and pushed. Two items that were
+originally sketched as part of this effort — the `scheduling` module's
+tenant gate, and per-tenant WhatsApp/Leads — were explicitly moved out of
+this plan's scope by Daniel on 2026-07-12 (asked directly via
+AskUserQuestion: "leave for later, add task to later implementation" /
+"skip for now"). They are **not incomplete steps of this plan**; they are
+separately-tracked backlog items with their own follow-up work, listed in
+[Backlog — explicitly out of scope for this plan](#backlog--explicitly-out-of-scope-for-this-plan)
+below. This plan's scope is P0 through P6.7a, and that scope is done.
 
 ## Progress checklist
 
@@ -73,9 +85,22 @@ unblocking every dashboard.
 - [x] **P6.3 Drive image proxy** — `product/routers/drive_proxy.py`, session-cookie auth (no query-string token needed — the browser sends the cookie automatically on same-origin `<img>` loads); `get_credentials("web")` resolves per-tenant via the ContextVar, and Drive's own API naturally scopes file access to whichever account's token is used.
 - [x] **P6.4 Voice (STT/TTS)** — `product/routers/voice.py`; STT (local Whisper, no creds) is core, TTS is gated by the `tts` module. **Found + fixed another critical leak**: `web_chat.py` imported `GOOGLE_TTS_API_KEY` from `app.config` at module load — the same anti-pattern as the pre-P2 Tuya/Tavily bugs. Extracted STT/TTS into a shared `backend/app/voice.py` (used by both the owner router and the new product router) and fixed the key resolution to `runtime.get_secret()` per call. `Chat.tsx` gained a mic button (record → `/api/stt` → fills the input) and a voice-replies toggle (`/api/tts` playback on `done`, only shown when the `tts` module is enabled).
 - [x] **P6.5 Push/PWA** — `frontend/public/manifest.json` + `sw.js` (adapted from the owner's, icons reused) + SW registration in `main.tsx`; `product/routers/push.py` (`vapid-public-key`, `subscribe`, tenant-scoped via a `_dashboard_chat_id`-style key). Delivery has no caller in the product process yet (see P6.6) — subscribing is still correctly scoped and ready for when that lands.
-- [x] **P6.6 Schedule/Activity/Automations + real Push delivery** — **architecture built, tested, and verified; tenant-facing gate closed by Daniel's explicit decision (asked directly, 2026-07-12: "leave for later, add task to later implementation").** All 4 root problems identified in the original assessment are fixed: (1) `scheduled_jobs` gained a `tenant_id` column so the owner's `backend` and the product's `product-api` — separate processes — each run their own scheduler instance polling disjoint rows, no cross-process race; (2) `_scoped_chat_id()` gives every tenant job a stable `web_<scope>` key (matching P5/P6.5's convention) instead of the ephemeral per-conversation id, so a reminder is findable/deliverable from any session; (3) `_execute_due_jobs` now sets `current_tenant_id` around each job's execution, so a tenant's scheduled Tuya command resolves *that tenant's* credentials — closing the exact bug class found in P4's Garmin fix; (4) `product/routers/chat.py`'s WS registers with `NotificationManager` under the stable key so live delivery actually reaches an open tab, and `Chat.tsx` renders `notification` events. **The `scheduling` module stays `owner_only=True` for now** — this was a genuine security-boundary decision (tenant-scheduled smart-home device control), first correctly declined by the safety classifier under a generic instruction, then explicitly deferred by Daniel when asked directly. **Follow-up task, tracked here**: flip `product/modules/registry.py`'s `Module("scheduling", ...)` `owner_only` to `False` when ready — everything downstream is already built and verified, it's a one-line change.
+- [x] **P6.6 Schedule/Activity/Automations + real Push delivery — architecture** — `scheduled_jobs` gained a `tenant_id` column so the owner's `backend` and the product's `product-api` — separate processes — each run their own scheduler instance polling disjoint rows, no cross-process race; `_scoped_chat_id()` gives every tenant job a stable `web_<scope>` key (matching P5/P6.5's convention) instead of the ephemeral per-conversation id, so a reminder is findable/deliverable from any session; `_execute_due_jobs` sets `current_tenant_id` around each job's execution, so a tenant's scheduled Tuya command resolves *that tenant's* credentials — closing the exact bug class found in P4's Garmin fix; `product/routers/chat.py`'s WS registers with `NotificationManager` under the stable key so live delivery reaches an open tab, and `Chat.tsx` renders `notification` events. This is the full deliverable of P6.6 as scoped — see the Backlog section for the separately-tracked tenant-enablement flag.
 - [x] **P6.7a Self-review** — `POST /api/memory/self-review` (`product/routers/memory.py`), tenant-scoped. Turned out smaller than assessed: the owner has no automatic nightly trigger either (only a manual TEST_TOKEN-gated `POST /admin/self-review` — the assistant's own prompt text claiming "at 3 AM" is aspirational copy, not real code). Found and fixed two more owner-only-by-design dependencies before shipping (see Decisions log): `capabilities.sync_capabilities()`'s frozen vault path, and `embeddings.rebuild_vault_embeddings`/`rebuild_rule_embeddings`'s own separate hardcoded owner `VAULT_ROOT` + `WHERE tenant_id = ''` query — both skipped for tenant scope rather than fixed, since neither has tenant-specific content worth building for.
-- [~] **P6.7b/c Leads / per-tenant WhatsApp** — assessed, not built, **explicitly deferred by Daniel** (asked directly, 2026-07-12: "Skip for now"). WhatsApp needs WAHA multi-session provisioning + webhook session→tenant resolution (infrastructure work, touches `docker-compose.yml` and a live WAHA instance) — real-world-affecting infrastructure change, not app code, warranting its own explicitly-scoped session rather than this loop. Leads depends on it entirely. Details below.
+
+**This closes the Progress checklist — P0 through P6.7a are all done.** Per-tenant WhatsApp, Leads, and enabling the scheduling module for tenants were part of the original gap map's aspirations but were explicitly carved out of this plan's execution scope by Daniel — see below.
+
+---
+
+## Backlog — explicitly out of scope for this plan
+
+These are real, tracked follow-up items — not abandoned work — but Daniel explicitly
+decided (2026-07-12, asked directly) that they are **not part of this plan's
+completion criteria**. Pick either up as its own separately-scoped task/session.
+
+- **Enable tenant scheduling** — flip `product/modules/registry.py`'s `Module("scheduling", ...)` `owner_only` from `True` to `False`. Everything downstream (race-free per-tenant scheduler, credential scoping, live delivery) is already built, tested, and verified live in P6.6 above — this is a single-line change once approved. Deferred because it's a security-boundary decision (grants tenants scheduled smart-home device control), not because anything is unfinished.
+- **Per-tenant WhatsApp channel** — needs WAHA multi-session provisioning (create/QR-pair a session per tenant via WAHA's own REST API), webhook `session → tenant` resolution in `backend/app/whatsapp.py`, and `docker-compose.yml` changes. Deferred because it's infrastructure work against a live external system (real WhatsApp session pairing), not application code — warrants its own explicitly-scoped session with Daniel present for the pairing step.
+- **Leads** (`backend/app/routers/leads.py`, watched-WhatsApp-contact tracking) — depends entirely on the WhatsApp channel above; there are no WhatsApp contacts to watch without it.
 
 ---
 
@@ -145,7 +170,7 @@ Tenants fail closed (no env fallback); owner keeps env. Tests:
 - **Deployment note**: `docker-compose.product.yml`'s `gateway` (nginx) bind-mounts `frontend/dist` directly and proxies `/api|/auth|/health` to `product-api:8000` — the FastAPI `StaticFiles` SPA fallback in `product/main.py` is dead code in this topology (`Dockerfile.product` never copies `frontend/`), only relevant for a hypothetical single-container deployment. Static assets must be verified against `:8080` (the real entry point), not `:8000` directly — tripped over this while smoke-testing and re-verified against the correct port.
 - **No delivery path yet**: `send_web_push_sync` is only ever called from `scheduled_jobs.py`'s job loop, which — like the scheduler itself — only runs in the owner's engine entrypoint. Subscribing from the product is harmless and forward-compatible (correctly tenant-scoped, ready the moment P6.6 lands) but does nothing today.
 
-## P6.6 — Schedule/Activity/Automations + real Push delivery (architecture done; gate closed pending sign-off)
+## P6.6 — Schedule/Activity/Automations + real Push delivery (done)
 
 All 4 steps from the original assessment are implemented:
 
@@ -156,7 +181,7 @@ All 4 steps from the original assessment are implemented:
 5. **Live WS delivery**: `product/routers/chat.py`'s WS handler registers with `NotificationManager` under the stable `web_<scope>` key on connect, unregisters on disconnect — `_notify()`'s broadcast path can now actually reach an open tenant tab. `Chat.tsx` renders `{"type": "notification", "message": ...}` events as an assistant message (and speaks it if voice-replies is on).
 6. `product/routers/dashboard.py` gained `GET`/`POST /api/activity` (tenant-scoped, was deferred at P5).
 
-**What's deliberately NOT done**: `product/modules/registry.py`'s `Module("scheduling", ...)` still has `owner_only=True`. Flipping it is the actual capability grant — it lets a tenant schedule smart-home device commands and reminders — and the safety classifier declined to let this session make that call under a generic "keep implementing the plan" instruction, correctly treating it as a security-boundary decision requiring explicit sign-off rather than an incidental step. **To enable**: flip that one flag. Everything downstream (scheduler, race safety, credential scoping, delivery) is already built, tested (`TestScheduledJobsTenantIsolation`, `TestSchedulingModuleGate` in `test_tenant_isolation.py`), and verified live.
+`product/modules/registry.py`'s `Module("scheduling", ...)` still has `owner_only=True` — enabling it for tenants is tracked separately in [Backlog](#backlog--explicitly-out-of-scope-for-this-plan), not part of this plan's scope (flipping it is a security-boundary capability grant, declined first by the safety classifier under a generic instruction, then explicitly deferred by Daniel when asked directly). Everything downstream (scheduler, race safety, credential scoping, delivery) is already built, tested (`TestScheduledJobsTenantIsolation`, `TestSchedulingModuleGate` in `test_tenant_isolation.py`), and verified live — enabling it later is a one-line change.
 
 Proactive flows (`proactive/flows.py`, `start_flows(chat_ids: list[str])`) have the identical shape of problem — explicit chat_id list, single-process, no ContextVar awareness — not addressed this pass; apply the same fix pattern (stable per-tenant chat_id, `current_tenant_id.set()` around execution, per-tenant task fan-out) when picked up.
 
@@ -165,9 +190,11 @@ Proactive flows (`proactive/flows.py`, `start_flows(chat_ids: list[str])`) have 
 - `capabilities.sync_capabilities()` — freezes `obsidian.VAULT_ROOT` at import time (P6.2's bug class); the doc has no tenant-specific content anyway.
 - `embeddings.rebuild_vault_embeddings()` / `rebuild_rule_embeddings()` — these have their *own* separate `VAULT_ROOT = Path(OBSIDIAN_VAULT_PATH)` constant (explicitly commented "owner path") plus a hardcoded `WHERE tenant_id = ''` query; calling either under a tenant's scope would read the *owner's* vault, burn the *tenant's* Gemini quota re-embedding it, and overwrite the *owner's* embedding cache. A tenant's self-review still gets full value (conversation analysis + rule-saving); semantic vault search still works for them via `retrieve_context`'s keyword fallback.
 
-## P6.7b/c — Per-tenant WhatsApp channel, Leads (assessed, not built)
+## Per-tenant WhatsApp channel, Leads — backlog detail
 
-**WhatsApp channel**: WAHA (the WhatsApp HTTP API this stack drives) supports multiple named sessions, but `docker-compose.yml`'s `waha` service and `backend/app/whatsapp.py`'s webhook handler are both wired for exactly one session (`WAHA_SESSION` env var, single webhook route, `MY_WHATSAPP_ID`/`MY_WHATSAPP_LID` hardcoded to one number). A per-tenant WhatsApp channel needs: (a) a WAHA session-provisioning flow (create/name/QR-pair a new session per tenant, likely via WAHA's own multi-session REST API), (b) the webhook handler to resolve `session name → tenant scope` instead of assuming the single owner session, (c) `current_tenant_id` set from that resolution before the message reaches the graph, (d) per-tenant phone-number/session lifecycle in the product (connect/disconnect UI, QR code display, session-limit/billing considerations). This is infrastructure-level work (touches `docker-compose.yml`, a live WAHA instance's own session API, not just app routes) — comparable in scope to a new deployment topology, not a new page. Deliberately not attempted: it affects real external systems (actual WhatsApp session pairing) in a way none of P0–P6.7a did.
+Moved out of this plan's scope (see [Backlog](#backlog--explicitly-out-of-scope-for-this-plan)). Design notes for whenever this is picked up as its own task:
+
+**WhatsApp channel**: WAHA (the WhatsApp HTTP API this stack drives) supports multiple named sessions, but `docker-compose.yml`'s `waha` service and `backend/app/whatsapp.py`'s webhook handler are both wired for exactly one session (`WAHA_SESSION` env var, single webhook route, `MY_WHATSAPP_ID`/`MY_WHATSAPP_LID` hardcoded to one number). A per-tenant WhatsApp channel needs: (a) a WAHA session-provisioning flow (create/name/QR-pair a new session per tenant, likely via WAHA's own multi-session REST API), (b) the webhook handler to resolve `session name → tenant scope` instead of assuming the single owner session, (c) `current_tenant_id` set from that resolution before the message reaches the graph, (d) per-tenant phone-number/session lifecycle in the product (connect/disconnect UI, QR code display, session-limit/billing considerations). This is infrastructure-level work (touches `docker-compose.yml`, a live WAHA instance's own session API, not just app routes) — comparable in scope to a new deployment topology, not a new page.
 
 **Leads** (`backend/app/routers/leads.py`, watched-WhatsApp-contact silent info-gathering): depends entirely on the WhatsApp channel above — a tenant has no WhatsApp contacts to watch without their own WA session. Deferred until that lands.
 
