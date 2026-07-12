@@ -5,12 +5,19 @@ product session (require_module → require_session → sets current_tenant_id +
 CSRF + rate limit + 'fitness' toggle). Data functions derive their scope from
 current_tenant_id, so the chat_id argument is vestigial — we always pass "".
 
-Garmin stays owner-only (single global account); the data layer already
-short-circuits its wellness overlay for non-owner scopes (_garmin_allowed).
+Garmin: a tenant only sees a wellness overlay if they connected their own
+account (product/routers/garmin.py) — garmin_tokens and garmin_wellness are
+tenant-keyed (P2/P4), and fitness._garmin_allowed() checks the calling
+tenant's own connection state, never the owner's.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import re
+import urllib.parse
+import urllib.request
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
@@ -253,3 +260,90 @@ async def delete_entry(workout_id: int, _: Tenant = Depends(_gate)):
     if not fitness.delete_workout(workout_id, ""):
         raise HTTPException(status_code=404, detail="workout_not_found")
     return {"ok": True}
+
+
+# ── Exercise GIF proxy (static asset lookup, no tenant scope needed) ────────
+
+_GIF_CACHE: dict[str, str | None] = {}
+_EQUIP_NOISE = {"machine", "barbell", "dumbbell", "cable", "smith", "kettlebell",
+                "band", "bodyweight", "lever", "weighted", "assisted"}
+
+
+def _norm_exercise_term(name: str) -> str:
+    n = re.sub(r"[^a-z0-9\s-]", " ", name.lower())
+    words = [w for w in n.split() if w]
+    core = [w for w in words if w not in _EQUIP_NOISE]
+    return " ".join(core if core else words).strip()
+
+
+def _gif_of(item: dict) -> str | None:
+    for k in ("gifUrl", "imageUrl", "image", "gif"):
+        v = item.get(k)
+        if isinstance(v, str) and v.startswith("http"):
+            return v
+    eid = item.get("exerciseId") or item.get("id")
+    if eid:
+        return f"https://static.exercisedb.dev/media/{eid}.gif"
+    return None
+
+
+def _pick_best(items: list[dict], term: str) -> dict | None:
+    if not items:
+        return None
+    t = term.lower()
+    for it in items:
+        if str(it.get("name", "")).lower() == t:
+            return it
+    for it in items:
+        if str(it.get("name", "")).lower().startswith(t):
+            return it
+    for it in items:
+        if t in str(it.get("name", "")).lower():
+            return it
+    return items[0]
+
+
+@router.get("/exercise-gif")
+async def exercise_gif(name: str = Query(""), _: Tenant = Depends(_gate)):
+    """Server-side proxy: fetch a demonstration GIF for an exercise from the
+    free open-source ExerciseDB V1 API (avoids browser CORS). Cached in-process —
+    a pure static-asset lookup, no tenant data involved."""
+    term = _norm_exercise_term(name or "")
+    if not term:
+        return {"gifUrl": None}
+    if term in _GIF_CACHE:
+        return {"gifUrl": _GIF_CACHE[term]}
+
+    q = urllib.parse.quote(term)
+    urls_to_try = [
+        f"https://oss.exercisedb.dev/api/v1/exercises/search?q={q}&limit=5",
+        f"https://oss.exercisedb.dev/api/v1/exercises/search?search={q}&limit=5",
+        f"https://exercisedb.dev/api/v1/exercises/search?q={q}&limit=5",
+    ]
+
+    def _fetch(url: str):
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "danidin-fitness/1.0", "Accept": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=6) as r:
+            return json.loads(r.read().decode())
+
+    loop = asyncio.get_event_loop()
+    for url in urls_to_try:
+        try:
+            data = await loop.run_in_executor(None, _fetch, url)
+            items = (
+                data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), list)
+                else data if isinstance(data, list) else []
+            )
+            best = _pick_best([i for i in items if isinstance(i, dict)], term)
+            gif = _gif_of(best) if best else None
+            if gif:
+                _GIF_CACHE[term] = gif
+                return {"gifUrl": gif}
+        except Exception:
+            logger.debug("exercise-gif lookup failed for %s via %s", term, url, exc_info=True)
+            continue
+
+    _GIF_CACHE[term] = None
+    return {"gifUrl": None}

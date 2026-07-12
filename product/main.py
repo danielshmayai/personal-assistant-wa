@@ -74,6 +74,8 @@ async def lifespan(app: FastAPI):
     init_nutrition_table()
     from app.fitness import init_table as init_fitness_table
     init_fitness_table()
+    from app.garmin.client import init_table as init_garmin_table
+    init_garmin_table()
 
     from app.graph.checkpointer import setup_checkpointer
     await setup_checkpointer()
@@ -99,7 +101,7 @@ async def health():
 
 
 from product.routers import (  # noqa: E402
-    admin, auth, chat, fitness, google_connect, me, modules, nutrition, onboarding, secrets,
+    admin, auth, chat, fitness, garmin, google_connect, me, modules, nutrition, onboarding, secrets,
 )
 
 app.include_router(auth.router)
@@ -112,6 +114,7 @@ app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(nutrition.router)
 app.include_router(fitness.router)
+app.include_router(garmin.router)
 
 # Optional single-container mode: serve the built SPA if present
 _SPA_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

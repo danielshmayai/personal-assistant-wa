@@ -81,6 +81,16 @@ def init_table() -> None:
                     synced_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            # Legacy single-row-per-day schema → tenant-keyed, same pattern as
+            # garmin_tokens above. Without this, two tenants (or a tenant and
+            # the owner) syncing Garmin on the same day would silently
+            # overwrite each other's sleep/HR/steps in this shared row.
+            cur.execute(
+                "ALTER TABLE garmin_wellness ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT ''"
+            )
+            if _pk_cols(cur, "garmin_wellness") != {"tenant_id", "log_date"}:
+                cur.execute("ALTER TABLE garmin_wellness DROP CONSTRAINT IF EXISTS garmin_wellness_pkey")
+                cur.execute("ALTER TABLE garmin_wellness ADD PRIMARY KEY (tenant_id, log_date)")
         conn.commit()
     finally:
         conn.close()

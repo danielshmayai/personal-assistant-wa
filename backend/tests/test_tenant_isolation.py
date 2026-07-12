@@ -430,3 +430,90 @@ class TestOffboardingCoverage:
             assert table in offboarding._ENGINE_TENANT_TABLES
         for table in ("nutrition_logs", "fitness_workouts", "fitness_body_metrics"):
             assert table in offboarding._ENGINE_CHAT_SCOPED_TABLES
+
+
+# ---------------------------------------------------------------------------
+# 9. Fitness LLM prompts — owner medical PII (P4 regression)
+#
+# fitness_profile.render_profile_block was correctly gated since P0, but
+# several separate hardcoded prompt fragments in fitness.py (evaluate_workout,
+# evaluate_body_metrics, suggest_workout) instructed the LLM to reference the
+# owner's Gilbert's-Syndrome/neck-injury constraints regardless of scope —
+# caught live when a tenant's workout evaluation surfaced "תסמונת גילברט".
+# These tests pin the fix: no owner medical terms leak into tenant prompts,
+# and the owner's prompt text is unchanged.
+# ---------------------------------------------------------------------------
+
+_OWNER_MEDICAL_TERMS = ("gilbert", "scapular", "neck")
+
+
+class TestFitnessPromptScoping:
+    def test_evaluate_body_instructions_tenant_vs_owner(self):
+        from app.fitness import _evaluate_body_instructions
+        owner_text = _evaluate_body_instructions()
+        assert "gilbert" in owner_text.lower()
+
+        reset = _set_scope("tenant-a")
+        try:
+            tenant_text = _evaluate_body_instructions()
+        finally:
+            reset()
+        assert "gilbert" not in tenant_text.lower()
+
+    def test_evaluate_workout_instructions_tenant_vs_owner(self):
+        from app.fitness import _evaluate_workout_instructions
+        owner_text = _evaluate_workout_instructions()
+        for term in _OWNER_MEDICAL_TERMS:
+            assert term in owner_text.lower()
+
+        reset = _set_scope("tenant-a")
+        try:
+            tenant_text = _evaluate_workout_instructions()
+        finally:
+            reset()
+        for term in _OWNER_MEDICAL_TERMS:
+            assert term not in tenant_text.lower()
+
+    def test_suggest_workout_constraints_tenant_vs_owner(self):
+        from app.fitness import _suggest_workout_constraints
+        owner_text = _suggest_workout_constraints()
+        assert "scapular" in owner_text.lower()
+        assert "back squat" in owner_text.lower()
+
+        reset = _set_scope("tenant-a")
+        try:
+            tenant_text = _suggest_workout_constraints()
+        finally:
+            reset()
+        assert "scapular" not in tenant_text.lower()
+        assert "back squat" not in tenant_text.lower()
+
+    def test_garmin_allowed_owner_true_tenant_checks_own_connection(self):
+        from app.fitness import _garmin_allowed
+        assert _garmin_allowed() is True  # owner scope: always allowed
+
+        reset = _set_scope("tenant-a")
+        try:
+            with patch("app.garmin.client.is_connected", return_value=False):
+                assert _garmin_allowed() is False
+            with patch("app.garmin.client.is_connected", return_value=True):
+                assert _garmin_allowed() is True
+        finally:
+            reset()
+
+    def test_garmin_wellness_scoped_by_tenant(self):
+        """garmin.sync.get_wellness/_upsert_wellness must filter by scope,
+        not just log_date — otherwise two tenants syncing the same day would
+        silently overwrite each other's sleep/HR/steps in one shared row."""
+        conn, cur = _mock_conn(fetchone=None)
+        with patch("psycopg2.connect", return_value=conn):
+            from app.garmin.sync import get_wellness
+            import datetime
+            reset = _set_scope("tenant-a")
+            try:
+                get_wellness(datetime.date(2026, 1, 1))
+            finally:
+                reset()
+        sql, params = cur.execute.call_args[0]
+        assert "tenant_id = %s" in sql
+        assert params[0] == "tenant-a"

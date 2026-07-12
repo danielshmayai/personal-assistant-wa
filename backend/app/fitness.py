@@ -35,10 +35,18 @@ def _fitness_key(_chat_id: str = "") -> str:
 
 
 def _garmin_allowed() -> bool:
-    """Garmin is a single owner-global account. Never surface its wellness data
-    for a non-owner tenant — that would leak the owner's steps/HR/sleep."""
+    """The owner always has Garmin available; a tenant only sees a Garmin
+    overlay if THEY connected their own account (garmin_tokens + garmin_wellness
+    are tenant-keyed — see P2/P4 hardening). Never falls back to the owner's
+    connection for a tenant scope."""
     from app.context import current_tenant_id
-    return not current_tenant_id.get()
+    if not current_tenant_id.get():
+        return True
+    from app.garmin.client import is_connected
+    try:
+        return is_connected()
+    except Exception:
+        return False
 
 
 def _user_today() -> date:
@@ -413,15 +421,20 @@ def update_workout_ai(workout_id: int, summary: str, next_rec: dict) -> None:
 
 
 def merge_garmin_metrics(workout_id: int, garmin_metrics: dict) -> bool:
-    """Merge Garmin activity data (HR, calories, activity id) into a workout's metrics."""
+    """Merge Garmin activity data (HR, calories, activity id) into a workout's metrics.
+
+    Scoped to the calling tenant so a Garmin sync can only ever enrich its
+    own scope's workout rows, never another tenant's or the owner's.
+    """
     if not DATABASE_URL or not garmin_metrics:
         return False
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE fitness_workouts SET metrics = COALESCE(metrics, '{}'::jsonb) || %s::jsonb WHERE id = %s",
-                (json.dumps(garmin_metrics, ensure_ascii=False), workout_id),
+                "UPDATE fitness_workouts SET metrics = COALESCE(metrics, '{}'::jsonb) || %s::jsonb "
+                "WHERE id = %s AND chat_id = %s",
+                (json.dumps(garmin_metrics, ensure_ascii=False), workout_id, _fitness_key("")),
             )
             updated = cur.rowcount > 0
         conn.commit()
@@ -805,7 +818,7 @@ def _body_metric_deltas(new: dict, prev: dict | None) -> dict:
     return deltas
 
 
-_EVALUATE_BODY_INSTRUCTIONS = """\
+_EVALUATE_BODY_INSTRUCTIONS_HEADER = """\
 You are a body-composition coach AI. Write a short Hebrew analysis of the user's new
 body measurement versus the previous one. The numeric deltas are ALREADY COMPUTED —
 do NOT recompute or contradict them. Respond with ONLY a single JSON object:
@@ -816,10 +829,27 @@ do NOT recompute or contradict them. Respond with ONLY a single JSON object:
                   actionable recommendation. If this is the first measurement, welcome the
                   baseline and say what to watch going forward.>"
 }
+"""
 
-MANDATORY: relate to LBM/SMM direction (muscle) and BF% direction (fat) explicitly when
-present; include the Gilbert's-Syndrome hydration reminder only if total body water or
-hydration appears low; keep an encouraging, professional tone."""
+
+def _evaluate_body_instructions() -> str:
+    """MANDATORY clause — owner's Gilbert's-Syndrome reminder is owner-only PII;
+    tenants get an equivalent generic hydration instruction instead."""
+    from app.context import current_tenant_id
+    if current_tenant_id.get():
+        tail = (
+            "MANDATORY: relate to LBM/SMM direction (muscle) and BF% direction (fat) "
+            "explicitly when present; include a brief hydration reminder only if total "
+            "body water or hydration appears low; keep an encouraging, professional tone."
+        )
+    else:
+        tail = (
+            "MANDATORY: relate to LBM/SMM direction (muscle) and BF% direction (fat) "
+            "explicitly when present; include the Gilbert's-Syndrome hydration reminder "
+            "only if total body water or hydration appears low; keep an encouraging, "
+            "professional tone."
+        )
+    return _EVALUATE_BODY_INSTRUCTIONS_HEADER + tail
 
 
 async def evaluate_body_metrics(new_metrics: dict, chat_id: str = "") -> dict:
@@ -848,7 +878,7 @@ async def evaluate_body_metrics(new_metrics: dict, chat_id: str = "") -> dict:
         llm = get_gemini_llm()
         profile = render_profile_block(None)
         messages = [
-            SystemMessage(content=f"{profile}\n\n{_EVALUATE_BODY_INSTRUCTIONS}"),
+            SystemMessage(content=f"{profile}\n\n{_evaluate_body_instructions()}"),
             HumanMessage(content=f"New body measurement (deltas already computed):\n{json.dumps(context, ensure_ascii=False, indent=2, default=str)}"),
         ]
         resp = await llm.ainvoke(messages)
@@ -1020,7 +1050,7 @@ def _compute_progression_targets(workout: dict) -> tuple[list, str]:
     return targets, focus
 
 
-_EVALUATE_INSTRUCTIONS = """\
+_EVALUATE_INSTRUCTIONS_HEADER = """\
 You are a personal trainer AI. Write a short Hebrew evaluation of the completed workout.
 The progressive-overload targets are ALREADY COMPUTED for you — do NOT recompute weights or reps.
 Respond with ONLY a single JSON object — no markdown, no code fences.
@@ -1035,12 +1065,31 @@ If "exercises" is empty but "session_metrics" has data (a cardio/cycling/running
 often auto-imported from a Garmin watch), base ai_summary on those metrics instead —
 comment on heart rate (avg/max), pace or speed, distance, and calories; do not say there
 is nothing to evaluate.
+"""
 
-MANDATORY (always include in ai_summary):
-- A hydration reminder (Gilbert's Syndrome).
-- If avg_rpe ≥ 9, mention recovery/rest is the priority.
-- If neck/shoulder exercises are present, add a neutral-neck form cue.
-- If this is a strength session, encourage scapular stabilizer work (face pulls, band pull-aparts, prone Y/T/W)."""
+
+def _evaluate_workout_instructions() -> str:
+    """MANDATORY clause — the owner's Gilbert's-Syndrome/neck-injury constraints
+    are owner-only PII/medical context; tenants get generic, non-injury-specific
+    coaching cues instead."""
+    from app.context import current_tenant_id
+    if current_tenant_id.get():
+        tail = (
+            "MANDATORY (always include in ai_summary):\n"
+            "- A brief hydration reminder.\n"
+            "- If avg_rpe ≥ 9, mention recovery/rest is the priority.\n"
+            "- If this is a strength session, encourage good form and balanced muscle group work."
+        )
+    else:
+        tail = (
+            "MANDATORY (always include in ai_summary):\n"
+            "- A hydration reminder (Gilbert's Syndrome).\n"
+            "- If avg_rpe ≥ 9, mention recovery/rest is the priority.\n"
+            "- If neck/shoulder exercises are present, add a neutral-neck form cue.\n"
+            "- If this is a strength session, encourage scapular stabilizer work "
+            "(face pulls, band pull-aparts, prone Y/T/W)."
+        )
+    return _EVALUATE_INSTRUCTIONS_HEADER + tail
 
 
 async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
@@ -1070,7 +1119,7 @@ async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
     try:
         llm = get_gemini_llm()
         messages = [
-            SystemMessage(content=f"{profile}\n\n{_EVALUATE_INSTRUCTIONS}"),
+            SystemMessage(content=f"{profile}\n\n{_evaluate_workout_instructions()}"),
             HumanMessage(content=f"Completed workout (targets already computed):\n{json.dumps(context, ensure_ascii=False, indent=2)}"),
         ]
         resp = await llm.ainvoke(messages)
@@ -1088,6 +1137,28 @@ async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
             "targets": targets,
         },
     }
+
+
+def _suggest_workout_constraints() -> str:
+    """The owner's neck-injury exercise restrictions are owner-only medical
+    context; suggesting them to a tenant without that injury would also just
+    be bad, unrelated advice, not merely a privacy issue."""
+    from app.context import current_tenant_id
+    if current_tenant_id.get():
+        return (
+            "MANDATORY CONSTRAINTS (always enforce):\n"
+            "- Prefer a balanced, well-rounded exercise selection appropriate for the "
+            "stated duration and workout type.\n"
+            "- Include a hydration note in the rationale."
+        )
+    return (
+        "MANDATORY CONSTRAINTS (always enforce):\n"
+        "- NEVER include heavy barbell back squat, conventional deadlift, or military press.\n"
+        "- ALWAYS include at least one scapular stabilizer exercise (face pulls, band "
+        "pull-aparts, prone Y/T/W, serratus wall slides).\n"
+        "- Prefer machine/cable work over heavy free-bar axial loading.\n"
+        "- Include a hydration note in the rationale."
+    )
 
 
 async def suggest_workout(
@@ -1150,11 +1221,7 @@ may include cardio/cycling/running sessions with HR/distance/pace in "metrics" b
 "exercises"). Treat these as real training load: factor recent cardio volume and intensity
 (duration, avg/max HR) into today's fatigue/recovery consideration and workout_type choice
 the same way you would a logged strength session.
-MANDATORY CONSTRAINTS (always enforce):
-- NEVER include heavy barbell back squat, conventional deadlift, or military press.
-- ALWAYS include at least one scapular stabilizer exercise (face pulls, band pull-aparts, prone Y/T/W, serratus wall slides).
-- Prefer machine/cable work over heavy free-bar axial loading.
-- Include a hydration note in the rationale."""
+{_suggest_workout_constraints()}"""
 
     llm = get_gemini_llm()
     history_summary = json.dumps(recent[:5], ensure_ascii=False, indent=2) if recent else "No history yet."
@@ -1216,16 +1283,21 @@ async def generate_morning_brief(chat_id: str) -> str:
         if rec.get("garmin_flags"):
             facts["garmin_readiness_flags"] = rec["garmin_flags"]
 
-    instructions = """\
+    from app.context import current_tenant_id as _ctv
+    _brief_reminders = (
+        "4. Hydration reminder (stay well hydrated today).\n"
+        if _ctv.get() else
+        "4. Hydration reminder (Gilbert's Syndrome — min 2.5L today).\n"
+        "5. Neck/scapula reminder if today is a strength session.\n"
+    )
+    instructions = f"""\
 You are a personal trainer AI giving a daily morning fitness brief in Hebrew.
 All stats below are ALREADY COMPUTED — do NOT change the numbers or the readiness decision.
 Write a concise WhatsApp-friendly brief (max 150 words) that covers, in this order:
 1. Weekly compliance (sessions done / target).
 2. Recovery status (days since last session + last avg RPE).
 3. Today's recommendation (readiness, type, duration, key exercises).
-4. Hydration reminder (Gilbert's Syndrome — min 2.5L today).
-5. Neck/scapula reminder if today is a strength session.
-Format: *bold* for headers, • for bullets, no # headers."""
+{_brief_reminders}Format: *bold* for headers, • for bullets, no # headers."""
 
     try:
         llm = get_gemini_llm()
@@ -1377,6 +1449,15 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
     # ── LLM writes ONLY the narrative (title + rationale), and fills exercises
     #    only when we have no prior targets to carry forward. ──
     need_exercises = readiness != "rest" and not key_exercises
+    # Owner's neck-injury exercise rule is owner-only medical context and
+    # would be wrong, unrelated advice for a tenant without that injury.
+    from app.context import current_tenant_id
+    key_exercise_rule = (
+        "Rules for key_exercises (3 items): prefer a balanced, well-rounded selection."
+        if current_tenant_id.get() else
+        "Rules for key_exercises (3 items): NEVER heavy back squat/deadlift/military press; "
+        "ALWAYS include one scapular stabilizer (face pulls / band pull-aparts / prone Y-T-W)."
+    )
     garmin_facts = ""
     if garmin_wellness:
         gparts = []
@@ -1405,7 +1486,7 @@ Return ONLY a JSON object (no markdown fences):
   "rationale": "<Hebrew 1-2 sentences — why this fits today, mention recovery + hydration>"{(''',
   "key_exercises": [{"name": "<name>", "sets": <int>, "reps": <int>, "weight_kg": <number>}]''') if need_exercises else ''}
 }}
-{('''Rules for key_exercises (3 items): NEVER heavy back squat/deadlift/military press; ALWAYS include one scapular stabilizer (face pulls / band pull-aparts / prone Y-T-W).''') if need_exercises else ''}"""
+{key_exercise_rule if need_exercises else ''}"""
 
     title = "מנוחה" if readiness == "rest" else "אימון מוצע"
     duration_min = 0 if readiness == "rest" else 45

@@ -76,6 +76,94 @@ export interface NutritionDay {
   water_ml: number;
 }
 
+export interface Exercise {
+  name: string;
+  sets?: number;
+  reps?: number;
+  weight_kg?: number;
+  rpe?: number;
+}
+
+export interface Workout {
+  id: number;
+  workout_type: string;
+  title: string;
+  duration_min: number;
+  avg_rpe: number;
+  total_volume: number;
+  exercises: Exercise[];
+  metrics: Record<string, unknown>;
+  ai_summary?: string;
+  ai_next_rec?: { summary?: string; focus?: string; targets?: string[] };
+  source: string; // "text" | "image" | "structured" | "garmin"
+  created_at: string;
+}
+
+export interface FitnessToday {
+  date: string;
+  workouts: Workout[];
+  total_volume: number;
+  total_duration_min: number;
+}
+
+export interface FitnessDay {
+  date: string;
+  total_volume: number;
+  total_duration: number;
+  avg_rpe: number;
+  session_count: number;
+  types: string[];
+}
+
+export interface BodyMetric {
+  id?: number;
+  weight_kg: number | null;
+  lbm_kg: number | null;
+  smm_kg: number | null;
+  bf_pct: number | null;
+  log_date: string;
+  source: string;
+  note?: string;
+  extras?: Record<string, unknown>;
+  ai_summary?: string;
+}
+
+export interface BodyMetricsResponse {
+  latest: BodyMetric | null;
+  history: BodyMetric[];
+}
+
+export interface DailyRec {
+  readiness: "ready" | "light" | "rest";
+  readiness_he: string;
+  workout_type: string;
+  title: string;
+  duration_min: number;
+  rationale: string;
+  weekly_done: number;
+  weekly_target: number;
+  key_exercises: Exercise[];
+  days_since_last: number;
+  last_avg_rpe: number | null;
+  garmin?: { sleep_score?: number; bb_high?: number; steps?: number } | null;
+}
+
+export interface ProgressionPoint {
+  date: string;
+  top_weight: number;
+  volume: number;
+}
+
+export interface GarminStatus {
+  connected: boolean;
+  today: {
+    sleep_score: number | null;
+    steps: number | null;
+    resting_hr: number | null;
+    bb_latest: number | null;
+  } | null;
+}
+
 export interface AdminTenant {
   id: string;
   email: string;

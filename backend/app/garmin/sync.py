@@ -23,6 +23,15 @@ def _user_today():
     return ut()
 
 
+def _scope() -> str:
+    """Matches garmin.client._scope(): '' for owner, tenant id otherwise.
+    (Not fitness._fitness_key's 'default' fallback — garmin_tokens already
+    established '' as the owner row's key, so garmin_wellness stays consistent
+    with it rather than with the nutrition/fitness data tables.)"""
+    from app import runtime
+    return runtime.tenant_id()
+
+
 # ── Wellness ────────────────────────────────────────────────────────────────
 
 def get_wellness(log_date) -> dict | None:
@@ -33,8 +42,8 @@ def get_wellness(log_date) -> dict | None:
             cur.execute(
                 """SELECT log_date, sleep_score, sleep_min, bb_high, bb_low, bb_latest,
                           stress_avg, resting_hr, steps, synced_at
-                   FROM garmin_wellness WHERE log_date = %s""",
-                (log_date,),
+                   FROM garmin_wellness WHERE tenant_id = %s AND log_date = %s""",
+                (_scope(), log_date),
             )
             row = cur.fetchone()
         if not row:
@@ -56,10 +65,10 @@ def _upsert_wellness(log_date, vals: dict, raw: dict) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO garmin_wellness
-                     (log_date, sleep_score, sleep_min, bb_high, bb_low, bb_latest,
+                     (tenant_id, log_date, sleep_score, sleep_min, bb_high, bb_low, bb_latest,
                       stress_avg, resting_hr, steps, raw, synced_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW())
-                   ON CONFLICT (log_date) DO UPDATE SET
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW())
+                   ON CONFLICT (tenant_id, log_date) DO UPDATE SET
                      sleep_score = COALESCE(EXCLUDED.sleep_score, garmin_wellness.sleep_score),
                      sleep_min   = COALESCE(EXCLUDED.sleep_min, garmin_wellness.sleep_min),
                      bb_high     = COALESCE(EXCLUDED.bb_high, garmin_wellness.bb_high),
@@ -69,7 +78,7 @@ def _upsert_wellness(log_date, vals: dict, raw: dict) -> None:
                      resting_hr  = COALESCE(EXCLUDED.resting_hr, garmin_wellness.resting_hr),
                      steps       = COALESCE(EXCLUDED.steps, garmin_wellness.steps),
                      raw = EXCLUDED.raw, synced_at = NOW()""",
-                (log_date, vals.get("sleep_score"), vals.get("sleep_min"),
+                (_scope(), log_date, vals.get("sleep_score"), vals.get("sleep_min"),
                  vals.get("bb_high"), vals.get("bb_low"), vals.get("bb_latest"),
                  vals.get("stress_avg"), vals.get("resting_hr"), vals.get("steps"),
                  json.dumps(raw, default=str)[:200000]),
@@ -139,14 +148,22 @@ async def sync_wellness(force: bool = False) -> dict | None:
 
 # ── Activity import / merge ─────────────────────────────────────────────────
 
+def _fitness_scope() -> str:
+    """fitness_workouts uses _fitness_key's convention ('default' for owner),
+    distinct from garmin_tokens/garmin_wellness's ('' for owner) — match it
+    exactly so these queries land in the same scope insert_workout writes to."""
+    from app.fitness import _fitness_key
+    return _fitness_key("")
+
+
 def _existing_garmin_ids(since_date) -> set:
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT metrics->>'garmin_activity_id' FROM fitness_workouts
-                   WHERE log_date >= %s AND metrics ? 'garmin_activity_id'""",
-                (since_date,),
+                   WHERE chat_id = %s AND log_date >= %s AND metrics ? 'garmin_activity_id'""",
+                (_fitness_scope(), since_date),
             )
             return {r[0] for r in cur.fetchall() if r[0]}
     finally:
@@ -154,16 +171,21 @@ def _existing_garmin_ids(since_date) -> set:
 
 
 def _find_merge_candidate(log_date, start_dt) -> int | None:
-    """An app-logged workout on the same date, near the activity start, without a garmin id."""
+    """An app-logged workout on the same date, near the activity start, without a garmin id.
+
+    Scoped to the calling tenant — without the chat_id filter this could
+    match (and then merge_garmin_metrics into) another tenant's or the
+    owner's unrelated workout that happens to share the log_date.
+    """
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT id, created_at FROM fitness_workouts
-                   WHERE log_date = %s AND source != 'garmin'
+                   WHERE chat_id = %s AND log_date = %s AND source != 'garmin'
                      AND NOT (metrics ? 'garmin_activity_id')
                    ORDER BY created_at DESC""",
-                (log_date,),
+                (_fitness_scope(), log_date),
             )
             rows = cur.fetchall()
         for wid, created_at in rows:

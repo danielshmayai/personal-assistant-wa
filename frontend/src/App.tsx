@@ -8,6 +8,7 @@ import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import Nutrition from "./pages/Nutrition";
+import Fitness from "./pages/Fitness";
 import ModulePlaceholder from "./pages/ModulePlaceholder";
 
 function Guarded({ children }: { children: React.ReactNode }) {
@@ -42,16 +43,7 @@ export default function App() {
           >
             <Route path="/" element={<Chat />} />
             <Route path="/nutrition" element={<Nutrition />} />
-            <Route
-              path="/fitness"
-              element={
-                <ModulePlaceholder
-                  icon="💪"
-                  title="Fitness"
-                  examples={["סיימתי אימון חזה: לחיצת שכיבה 4x8 על 60 קילו", "מה האימון המומלץ להיום?", "תראה לי את היסטוריית האימונים שלי"]}
-                />
-              }
-            />
+            <Route path="/fitness" element={<Fitness />} />
             <Route
               path="/smart-home"
               element={
