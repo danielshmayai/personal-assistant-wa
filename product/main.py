@@ -68,6 +68,13 @@ async def lifespan(app: FastAPI):
     from app.memory.store import init_memory_tables
     init_memory_tables()
 
+    # Module data tables (tenant-scoped via current_tenant_id). Safe + idempotent
+    # now that the destructive "collapse to default" migrations were removed.
+    from app.nutrition import init_table as init_nutrition_table
+    init_nutrition_table()
+    from app.fitness import init_table as init_fitness_table
+    init_fitness_table()
+
     from app.graph.checkpointer import setup_checkpointer
     await setup_checkpointer()
 
@@ -91,7 +98,9 @@ async def health():
     return JSONResponse({"ok": db_ok, "services": {"postgres": db_ok}}, status_code=status)
 
 
-from product.routers import admin, auth, chat, google_connect, me, modules, onboarding, secrets  # noqa: E402
+from product.routers import (  # noqa: E402
+    admin, auth, chat, fitness, google_connect, me, modules, nutrition, onboarding, secrets,
+)
 
 app.include_router(auth.router)
 app.include_router(me.router)
@@ -101,6 +110,8 @@ app.include_router(modules.router)
 app.include_router(google_connect.router)
 app.include_router(chat.router)
 app.include_router(admin.router)
+app.include_router(nutrition.router)
+app.include_router(fitness.router)
 
 # Optional single-container mode: serve the built SPA if present
 _SPA_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

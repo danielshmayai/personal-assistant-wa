@@ -47,6 +47,22 @@ async def require_owner(tenant: Tenant = Depends(require_session)) -> Tenant:
     return tenant
 
 
+def require_module(module_id: str):
+    """Dependency factory: require a live session AND that the tenant has the
+    given module enabled. Composes require_session, so the tenant ContextVar,
+    CSRF guard and per-tenant rate limit all still apply before any data
+    function runs. Returns 403 module_disabled otherwise.
+    """
+    from product.modules.store import get_enabled_modules
+
+    async def _dep(tenant: Tenant = Depends(require_session)) -> Tenant:
+        if module_id not in get_enabled_modules(tenant.id, tenant.is_owner):
+            raise HTTPException(status_code=403, detail="module_disabled")
+        return tenant
+
+    return _dep
+
+
 # ── Per-tenant token buckets (in-process; fine for single instance) ────────
 
 _buckets: dict[tuple[str, str], tuple[float, float]] = {}  # (tenant, scope) → (tokens, last_ts)

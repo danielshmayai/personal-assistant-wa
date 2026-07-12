@@ -83,14 +83,6 @@ def init_table() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_nutrition_chat_date "
                 "ON nutrition_logs (chat_id, log_date)"
             )
-            # Collapse all historic rows (web_*, web, WhatsApp phone numbers) into
-            # the single canonical key so every device sees the same data.
-            cur.execute(
-                "UPDATE nutrition_logs SET chat_id = 'default' WHERE chat_id != 'default'"
-            )
-            migrated = cur.rowcount
-            if migrated:
-                logger.info("nutrition init_table: migrated %d rows to 'default'", migrated)
         conn.commit()
     finally:
         conn.close()
@@ -98,9 +90,13 @@ def init_table() -> None:
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
 
-def _nutrition_key(_chat_id: str) -> str:
-    """Single-user PA — all sources (WhatsApp, web) share one nutrition store."""
-    return "default"
+def _nutrition_key(_chat_id: str = "") -> str:
+    """Data scope key. The owner (no tenant context, engine_scope '') shares the
+    legacy 'default' store across WhatsApp + web; every other tenant is isolated
+    under its own id. The chat_id arg is vestigial — the real scope comes from
+    the current_tenant_id ContextVar set by the product's require_session."""
+    from app.context import current_tenant_id
+    return current_tenant_id.get() or "default"
 
 
 def _user_today() -> date:

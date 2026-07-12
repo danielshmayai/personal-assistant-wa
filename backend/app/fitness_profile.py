@@ -29,8 +29,26 @@ GOAL = "Build lean muscle mass, reduce body fat %, preserve aerobic base. Primar
 
 
 def render_profile_block(latest_metrics: dict | None = None) -> str:
-    """Render the full profile block prepended into every fitness LLM call."""
+    """Render the profile block prepended into fitness LLM calls.
+
+    PHYSIO_BASELINE and CLINICAL_CONSTRAINTS are the OWNER's private medical data
+    (age, HbA1c, Gilbert's Syndrome, GERD, neck pain). They must never enter
+    another tenant's prompt. For any non-owner tenant we emit ONLY their own
+    measured body composition (if any) with a generic goal — no owner PII, no
+    owner-specific clinical constraints (which would also be clinically wrong).
+    """
+    from app.context import current_tenant_id
     m = latest_metrics or {}
+
+    if current_tenant_id.get():  # non-owner tenant scope
+        if not m:
+            return ""
+        return f"""\
+=== ATHLETE PROFILE ===
+Body composition (current):
+  Weight: {m.get('weight_kg', '?')} kg | LBM: {m.get('lbm_kg', '?')} kg | SMM: {m.get('smm_kg', '?')} kg | BF: {m.get('bf_pct', '?')}%
+Goal: general fitness — build lean muscle, reduce body fat, preserve aerobic base.
+=== END PROFILE ==="""
 
     weight = m.get("weight_kg") or PHYSIO_BASELINE["ref_weight_kg"]
     lbm    = m.get("lbm_kg")    or PHYSIO_BASELINE["ref_lbm_kg"]

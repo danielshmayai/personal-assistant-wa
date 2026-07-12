@@ -25,9 +25,20 @@ logger = logging.getLogger("pa.fitness")
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
 
-def _fitness_key(_chat_id: str) -> str:
-    """Single-user PA — all sources share one fitness store."""
-    return "default"
+def _fitness_key(_chat_id: str = "") -> str:
+    """Data scope key. The owner (no tenant context, engine_scope '') shares the
+    legacy 'default' store across WhatsApp + web; every other tenant is isolated
+    under its own id. The chat_id arg is vestigial — the real scope comes from
+    the current_tenant_id ContextVar set by the product's require_session."""
+    from app.context import current_tenant_id
+    return current_tenant_id.get() or "default"
+
+
+def _garmin_allowed() -> bool:
+    """Garmin is a single owner-global account. Never surface its wellness data
+    for a non-owner tenant — that would leak the owner's steps/HR/sleep."""
+    from app.context import current_tenant_id
+    return not current_tenant_id.get()
 
 
 def _user_today() -> date:
@@ -198,12 +209,6 @@ def init_table() -> None:
             )
             cur.execute(
                 "ALTER TABLE fitness_body_metrics ADD COLUMN IF NOT EXISTS ai_summary TEXT DEFAULT ''"
-            )
-            cur.execute(
-                "UPDATE fitness_workouts SET chat_id = 'default' WHERE chat_id != 'default'"
-            )
-            cur.execute(
-                "UPDATE fitness_body_metrics SET chat_id = 'default' WHERE chat_id != 'default'"
             )
         conn.commit()
     finally:
@@ -1279,7 +1284,7 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
         cached = _daily_rec_cache[cache_key]
         # Garmin may sync after the rec was generated — refresh the wellness snapshot
         # on cache hits (cheap DB read; the readiness decision itself stays cached).
-        if not cached.get("garmin"):
+        if not cached.get("garmin") and _garmin_allowed():
             try:
                 from app.garmin.sync import get_wellness as _garmin_get_wellness
                 cached["garmin"] = _garmin_get_wellness(_user_today())
@@ -1335,11 +1340,12 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
     # rules above stay authoritative for upgrades.
     garmin_wellness = None
     garmin_flags: list[str] = []
-    try:
-        from app.garmin.sync import get_wellness as _garmin_get_wellness
-        garmin_wellness = _garmin_get_wellness(today_date)
-    except Exception:
-        garmin_wellness = None
+    if _garmin_allowed():
+        try:
+            from app.garmin.sync import get_wellness as _garmin_get_wellness
+            garmin_wellness = _garmin_get_wellness(today_date)
+        except Exception:
+            garmin_wellness = None
     if garmin_wellness:
         sleep_score = garmin_wellness.get("sleep_score")
         bb_high = garmin_wellness.get("bb_high")
