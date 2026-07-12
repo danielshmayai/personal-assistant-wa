@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ChatEvent } from "../lib/types";
+import { api, ApiError } from "../lib/api";
 import { Button, Spinner, cn } from "../components/ui";
 
 interface Message {
@@ -8,6 +9,13 @@ interface Message {
   text: string;
   streaming?: boolean;
   toolNote?: string;
+}
+
+interface Attachment {
+  mediaId: string;
+  filename: string;
+  mimeType: string;
+  previewUrl: string;
 }
 
 const ERROR_TEXT: Record<string, JSX.Element | string> = {
@@ -59,9 +67,13 @@ export default function Chat() {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<JSX.Element | string>("");
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [uploading, setUploading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const chatIdRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const connect = useCallback(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -154,16 +166,63 @@ export default function Chat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  // Revoke the object URL when the attachment changes or the page unmounts —
+  // otherwise each picked photo leaks its blob URL for the tab's lifetime.
+  useEffect(() => {
+    return () => {
+      if (attachment) URL.revokeObjectURL(attachment.previewUrl);
+    };
+  }, [attachment]);
+
+  const clearAttachment = () => {
+    setAttachment((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  };
+
+  const attachFile = async (file?: File) => {
+    if (!file) return;
+    setError("");
+    setUploading(true);
+    try {
+      const res = await api.upload<{ media_id: string; filename: string; mime_type: string }>(
+        "/api/upload",
+        file,
+      );
+      clearAttachment();
+      setAttachment({
+        mediaId: res.media_id,
+        filename: res.filename,
+        mimeType: res.mime_type,
+        previewUrl: URL.createObjectURL(file),
+      });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const send = () => {
     const text = input.trim();
-    if (!text || !connected || busy) return;
+    if ((!text && !attachment) || !connected || busy) return;
     setError("");
     setBusy(true);
-    setMessages((prev) => [...prev, { role: "user", text }]);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: text || (attachment ? `📎 ${attachment.filename}` : "") },
+    ]);
     wsRef.current?.send(
-      JSON.stringify({ type: "message", text, chat_id: chatIdRef.current || undefined }),
+      JSON.stringify({
+        type: "message",
+        text,
+        media_id: attachment?.mediaId,
+        chat_id: chatIdRef.current || undefined,
+      }),
     );
     setInput("");
+    clearAttachment();
   };
 
   return (
@@ -206,7 +265,48 @@ export default function Chat() {
       </div>
 
       <div className="border-t border-slate-800 p-3">
+        {attachment && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm">
+            {attachment.mimeType.startsWith("image/") ? (
+              <img src={attachment.previewUrl} alt="" className="h-10 w-10 rounded-md object-cover" />
+            ) : (
+              <span className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-800 text-lg">📄</span>
+            )}
+            <span className="flex-1 truncate text-slate-300">{attachment.filename}</span>
+            <button
+              onClick={clearAttachment}
+              className="rounded-full px-2 py-0.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              aria-label="Remove attachment"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
+          <button
+            disabled={!connected || uploading}
+            onClick={() => galleryRef.current?.click()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-lg hover:bg-slate-800 disabled:opacity-50"
+            aria-label="Attach image"
+          >
+            {uploading ? <Spinner className="h-4 w-4" /> : "🖼️"}
+          </button>
+          <button
+            disabled={!connected || uploading}
+            onClick={() => cameraRef.current?.click()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-lg hover:bg-slate-800 disabled:opacity-50"
+            aria-label="Take photo"
+          >
+            📷
+          </button>
+          <input
+            ref={galleryRef} type="file" accept="image/*,application/pdf" hidden
+            onChange={(e) => { void attachFile(e.target.files?.[0]); e.target.value = ""; }}
+          />
+          <input
+            ref={cameraRef} type="file" accept="image/*" capture="environment" hidden
+            onChange={(e) => { void attachFile(e.target.files?.[0]); e.target.value = ""; }}
+          />
           <textarea
             dir="auto"
             rows={1}
@@ -222,7 +322,7 @@ export default function Chat() {
             }}
             className="max-h-40 flex-1 resize-none rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
           />
-          <Button onClick={send} disabled={!connected || busy || !input.trim()}>
+          <Button onClick={send} disabled={!connected || busy || (!input.trim() && !attachment)}>
             {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "Send"}
           </Button>
         </div>

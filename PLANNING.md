@@ -65,7 +65,7 @@ unblocking every dashboard.
   - [x] Step 7 — offboarding also deletes nutrition/fitness rows, app_settings, garmin_tokens + media purge (savepoint per table)
   - [x] Step 8 — WhatsApp body logging gated behind `LOG_MESSAGE_CONTENT` (default off)
   - [x] Verify — `test_tenant_isolation.py` 23/23 ✅, no regressions vs baseline; live two-cookie smoke ✅
-- [ ] **P3 Image upload in Chat**
+- [x] **P3 Image upload in Chat** — `POST /api/upload` in product (`chat.py`), tenant-scoped via `require_session`; WS accepts `media_id`, builds `[MEDIA...]` tag before `stream_graph`; `Chat.tsx` attach/camera buttons + preview chip. Verified live end-to-end.
 - [ ] **P4 Fitness dashboard** (React) — incl. tenant Garmin connect UI + exercise-GIF proxy
 - [ ] **P5 Home dashboard** content
 - [ ] **P6+** Smart Home UI · Memory browser · Schedule/Activity/Automations · Voice · Push/PWA · Drive proxy · proactive flows per tenant · per-tenant WhatsApp channel (WAHA multi-session) · Leads · self-review
@@ -110,9 +110,9 @@ fingerprint (mirrors `llm.py`); `clear_*_cache` wired into `runtime.on_secrets_c
 Tenants fail closed (no env fallback); owner keeps env. Tests:
 `backend/tests/test_tenant_isolation.py`.
 
-## P3 — Image upload in Chat
-- Backend: tenant-scoped `POST /api/upload` in product (media_cache `web_<uuid>`, reuse old `web_chat.py` flow); extend `chat.py` WS message to accept `media_id` and prepend `[MEDIA …]` tag. media_cache reads are scope-checked (P2).
-- Frontend `Chat.tsx`: attach + camera buttons, preview chip, send `media_id`.
+## P3 — Image upload in Chat (done)
+- Backend: `POST /api/upload` in `product/routers/chat.py`, `Depends(require_session)` (no module gate — chat itself isn't gated). Reuses `media_cache.store_web_upload`, 20MB cap, `web_<uuid4hex>` id. WS handler reads `media_id` from the incoming payload, moves `current_tenant_id.set(scope)` before the media lookup (retrieve() scope-checks), builds the same `[MEDIA id=... type=image|document filename=... mime=...]` tag the old `web_chat.py` uses, prepends it to the text before `stream_graph`.
+- Frontend `Chat.tsx`: gallery/camera buttons upload immediately via `api.upload("/api/upload", file)`, show a preview chip (thumbnail + filename + ✕, object-URL revoked on clear/unmount), `send()` includes `media_id` in the WS JSON and clears the chip.
 
 ## P4 — Fitness dashboard (React)
 - New `frontend/src/pages/Fitness.tsx` (route `/fitness`); mirrors Nutrition. Rings (volume/duration); log text/image/structured; body metrics (manual + InBody scan); progression + body-composition charts; suggest; today's sessions. Consumes `/api/fitness/*`.
@@ -147,3 +147,5 @@ Smart Home UI (`smart_home.py`; per-tenant Tuya creds work end-to-end since P2);
 - (P2) Offboarding deletes run in per-table SAVEPOINTs — one missing table previously aborted the whole transaction and Postgres silently rolled back *all* deletions at COMMIT.
 - (P2) `LOG_MESSAGE_CONTENT` (default **off**) — the only owner-visible change: WhatsApp log lines show `<N chars>` instead of message text unless enabled in `.env`.
 - (P2) Test gotcha: module-isolation fixtures must also wipe the `app` package root from `sys.modules`, otherwise `from app import X` returns a stale module with a *different* ContextVar instance and scope tests silently test nothing.
+- (P3) `_download_from_waha` (in `google/drive_tools.py`) is the generic media resolver despite its name — it checks `media_cache.retrieve()` first and only falls back to the WAHA REST API on a cache miss, so it transparently works for web-sourced `web_<hex>` media_ids with no changes needed.
+- (P3 verified) real HTTP upload + real WS round trip against the live rebuilt product stack: uploaded a 1×1 red-pixel PNG, sent `media_id` over `/ws/chat`, agent called `analyze_image` with the matching `message_id`, tool succeeded, model replied "אדום" (red) — proves `[MEDIA]` tag construction, tenant-scoped cache retrieval, and vision analysis all work end-to-end.
