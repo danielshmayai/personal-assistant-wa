@@ -172,10 +172,10 @@ def test_get_google_tools_has_correct_names():
 # ---------------------------------------------------------------------------
 
 def test_get_tuya_tools_returns_three_tools_when_configured():
-    """get_tuya_tools must return 3 tools when TUYA_ACCESS_ID/KEY are set."""
+    """get_tuya_tools must return 3 tools when TUYA_ACCESS_ID/KEY resolve."""
+    fake = {"TUYA_ACCESS_ID": "fake-id", "TUYA_ACCESS_KEY": "fake-key"}
     with (
-        patch("app.tuya.tools.TUYA_ACCESS_ID", "fake-id"),
-        patch("app.tuya.tools.TUYA_ACCESS_KEY", "fake-key"),
+        patch("app.runtime.get_secret", side_effect=lambda k: fake.get(k, "")),
         patch("tinytuya.Cloud", return_value=MagicMock()),
     ):
         from app.tuya.tools import get_tuya_tools
@@ -187,10 +187,7 @@ def test_get_tuya_tools_returns_three_tools_when_configured():
 
 def test_get_tuya_tools_returns_empty_when_not_configured():
     """get_tuya_tools must return [] when credentials are missing."""
-    with (
-        patch("app.tuya.tools.TUYA_ACCESS_ID", ""),
-        patch("app.tuya.tools.TUYA_ACCESS_KEY", ""),
-    ):
+    with patch("app.runtime.get_secret", return_value=""):
         from app.tuya.tools import get_tuya_tools
         tools = get_tuya_tools()
 
@@ -442,26 +439,21 @@ def test_web_tools_exist_with_correct_names():
 
 
 def test_web_search_uses_tavily_when_key_set(monkeypatch):
-    """web_search must call Tavily when TAVILY_API_KEY is configured."""
-    monkeypatch.setattr("app.web.tools.TAVILY_API_KEY", "fake-key")
-
-    fake_client = MagicMock()
-    fake_client.search.return_value = {
-        "answer": "Paris is the capital of France.",
-        "results": [{"title": "France", "url": "https://example.com", "content": "France info"}],
-    }
+    """web_search must call Tavily when TAVILY_API_KEY resolves for the scope."""
+    monkeypatch.setattr("app.runtime.get_secret", lambda k: "fake-key" if k == "TAVILY_API_KEY" else "")
 
     with patch("app.web.tools._tavily_search", return_value="Paris is the capital of France.") as mock_t:
         from app.web.tools import web_search
         result = web_search.invoke({"query": "capital of France"})
 
+    mock_t.assert_called_once_with("capital of France", "fake-key")
     assert isinstance(result, str)
     assert len(result) > 0
 
 
 def test_web_search_falls_back_to_ddg_without_key(monkeypatch):
     """web_search must fall back to DuckDuckGo when TAVILY_API_KEY is empty."""
-    monkeypatch.setattr("app.web.tools.TAVILY_API_KEY", "")
+    monkeypatch.setattr("app.runtime.get_secret", lambda k: "")
 
     with patch("app.web.tools._ddg_search", return_value="DDG result") as mock_ddg:
         from app.web.tools import web_search
@@ -473,7 +465,7 @@ def test_web_search_falls_back_to_ddg_without_key(monkeypatch):
 
 def test_web_search_ddg_handles_error(monkeypatch):
     """_ddg_search must return an error string (not raise) when DDGS fails."""
-    monkeypatch.setattr("app.web.tools.TAVILY_API_KEY", "")
+    monkeypatch.setattr("app.runtime.get_secret", lambda k: "")
 
     with patch("app.web.tools._ddg_search", return_value="Web search unavailable: connection error"):
         from app.web.tools import web_search

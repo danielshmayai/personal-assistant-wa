@@ -13,7 +13,6 @@ import socket
 import urllib.parse
 import httpx
 from langchain_core.tools import tool
-from app.config import TAVILY_API_KEY
 
 logger = logging.getLogger("pa.web")
 
@@ -65,8 +64,11 @@ def web_search(query: str) -> str:
     """Search the internet for current information: news, prices, events, facts, people, etc.
     Use this whenever the user asks about anything that might have changed recently
     or that requires up-to-date data. Prefer this over guessing."""
-    if TAVILY_API_KEY:
-        return _tavily_search(query)
+    from app import runtime
+
+    api_key = runtime.get_secret("TAVILY_API_KEY")
+    if api_key:
+        return _tavily_search(query, api_key)
     return _ddg_search(query)
 
 
@@ -285,10 +287,10 @@ def _day_label(date_str: str, index: int) -> str:
 
 # ── Private helpers ──────────────────────────────────────────────────────────
 
-def _tavily_search(query: str) -> str:
+def _tavily_search(query: str, api_key: str) -> str:
     try:
         from tavily import TavilyClient
-        client = TavilyClient(api_key=TAVILY_API_KEY)
+        client = TavilyClient(api_key=api_key)
         resp = client.search(query, max_results=3, include_answer=True)
 
         parts = []

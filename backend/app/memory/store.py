@@ -62,6 +62,13 @@ def _ensure_tenant_scoping(cur) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS episodes_tenant_idx ON episodes(tenant_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS conversation_log_tenant_idx ON conversation_log(tenant_id)")
 
+    cur.execute(
+        "ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT ''"
+    )
+    if _pk_cols(cur, "app_settings") != {"tenant_id", "key"}:
+        cur.execute("ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_pkey")
+        cur.execute("ALTER TABLE app_settings ADD PRIMARY KEY (tenant_id, key)")
+
 
 def init_memory_tables():
     """Create memory tables if they don't exist (idempotent)."""
@@ -619,11 +626,14 @@ def list_web_conversations() -> list[dict]:
 # ── app_settings ──────────────────────────────────────────────────────────────
 
 def get_app_setting(key: str):
-    """Return the JSONB value for *key*, or None if not set."""
+    """Return the JSONB value for *key* in the current tenant scope, or None."""
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
+            cur.execute(
+                "SELECT value FROM app_settings WHERE tenant_id = %s AND key = %s",
+                (_tid(), key),
+            )
             row = cur.fetchone()
             return row[0] if row else None
     finally:
@@ -631,17 +641,17 @@ def get_app_setting(key: str):
 
 
 def set_app_setting(key: str, value) -> None:
-    """Upsert a JSONB *value* for *key*."""
+    """Upsert a JSONB *value* for *key* in the current tenant scope."""
     import json as _json
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO app_settings (key, value, updated_at)
-                VALUES (%s, %s::jsonb, NOW())
-                ON CONFLICT (key) DO UPDATE
+                INSERT INTO app_settings (tenant_id, key, value, updated_at)
+                VALUES (%s, %s, %s::jsonb, NOW())
+                ON CONFLICT (tenant_id, key) DO UPDATE
                     SET value = EXCLUDED.value, updated_at = NOW()
-            """, (key, _json.dumps(value)))
+            """, (_tid(), key, _json.dumps(value)))
         conn.commit()
     finally:
         conn.close()

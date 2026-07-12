@@ -12,7 +12,7 @@ logger = logging.getLogger("pa.agent")
 
 # Base system prompt shared by all platforms
 _SYSTEM_BASE = """\
-You are danidin, a personal assistant.
+You are {assistant_identity}.
 {datetime_block}
 CRITICAL DATE RULE: The date/time block above is injected at runtime from the server clock. It is always correct. DO NOT use your training-data knowledge to determine the current date or day-of-week — always use the values above. When scheduling (tomorrow, day after tomorrow, next week, etc.) compute relative dates from TODAY's ISO date above.
 
@@ -64,12 +64,12 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 - cancel_scheduled(job_id): cancel a pending job (also stops future recurrences of that job).
 - CRITICAL: When the user asks to schedule anything — call the tool NOW in this turn. Do NOT write "I will schedule" or "אני אזמין" without having already called the appropriate tool in this same response. The tool call must happen before the reply.
 
-*Nutrition tracker — goal is high protein (target 110g/day) and low carbs:*
+*Nutrition tracker{nutrition_goal}:*
 - log_meal(description): log a meal the user ate; estimates protein, carbs, calories AND micronutrients (vitamins, minerals, fat, fiber…). Use whenever the user reports eating — "אכלתי…", "תרשום שאכלתי…", "log my lunch: …".
-- nutrition_today(): report how much the user consumed today so far — protein vs the 110g target, carbs, calories, and every micronutrient. Use for "כמה חלבון אכלתי היום?", "how much iron did I have today?", "מה התזונה שלי היום?".
+- nutrition_today(): report how much the user consumed today so far — protein vs {protein_target}, carbs, calories, and every micronutrient. Use for "כמה חלבון אכלתי היום?", "how much iron did I have today?", "מה התזונה שלי היום?".
 - When the user mentions eating something, call log_meal immediately, then confirm with the estimate. Don't ask for exact grams — estimate from the description.
 
-*Fitness & training tracker (personal medical constraints always apply — see profile):*
+*Fitness & training tracker{fitness_note}:*
 - log_workout(description): log a completed workout (exercises/sets/reps/weight/RPE/duration). Gets AI progressive-overload evaluation. Use for "עשיתי אימון", "תרשום אימון", "log my workout", "סיימתי אימון: …", "finished training".
 - suggest_workout(minutes, workout_type): generate a personalised workout plan WITHOUT logging it. Use for "תציע לי אימון", "suggest a workout", "מה כדאי לעשות היום?", "תכנן לי אימון כוח של 45 דקות", "תכנן שחייה". minutes default 45; workout_type: strength|hiit|cardio|running|swimming|other (default strength).
 - fitness_today(): report today's logged workouts — volume, duration, RPE, AI summary. Use for "כמה אימנתי היום?", "show today's fitness", "מה עשיתי היום?".
@@ -98,6 +98,22 @@ When the user says *"remember that…"* or *"note that…"* — save it immediat
 - When in doubt and there is ANY time word (מחר, היום, בשעה, בערב, בבוקר, בצהריים, עוד X, tomorrow, tonight, at, in X minutes/hours) → treat it as a reminder, not a memory fact.
 
 When asked what you can do, what your capabilities are, or how to use you — call read_note(filepath="System/Capabilities.md") and present the contents clearly. This file is auto-generated on every startup and always reflects the current set of features."""
+
+# Owner-specific fragments, templated so tenant prompts stay generic.
+# Owner values must reproduce the historical prompt byte-for-byte; tenants
+# must never see the owner's name, dietary targets, or medical framing.
+_OWNER_FRAGMENTS = {
+    "{assistant_identity}": "danidin, a personal assistant",
+    "{nutrition_goal}": " — goal is high protein (target 110g/day) and low carbs",
+    "{protein_target}": "the 110g target",
+    "{fitness_note}": " (personal medical constraints always apply — see profile)",
+}
+_TENANT_FRAGMENTS = {
+    "{assistant_identity}": "the user's personal assistant",
+    "{nutrition_goal}": "",
+    "{protein_target}": "the user's daily target",
+    "{fitness_note}": "",
+}
 
 _WA_FORMAT = """
 
@@ -142,6 +158,10 @@ def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
 
     addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
     prompt = (_SYSTEM_BASE + addendum).replace("{datetime_block}", datetime_block)
+    from app.context import current_tenant_id
+    fragments = _TENANT_FRAGMENTS if current_tenant_id.get() else _OWNER_FRAGMENTS
+    for placeholder, value in fragments.items():
+        prompt = prompt.replace(placeholder, value)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
     return prompt

@@ -19,9 +19,28 @@ logger = logging.getLogger("product.offboarding")
 _ENGINE_TENANT_TABLES = (
     "memory_facts", "memory_rules", "vault_embeddings", "rule_embeddings",
     "episodes", "conversation_log", "web_conversations",
+    "app_settings", "garmin_tokens",
 )
+# Engine tables whose chat_id column holds the tenant scope (owner = 'default')
+_ENGINE_CHAT_SCOPED_TABLES = ("nutrition_logs", "fitness_workouts", "fitness_body_metrics")
 # LangGraph checkpoint tables scoped by thread_id prefix
 _CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
+
+
+def _safe_delete(cur, sql: str, params: tuple) -> None:
+    """Run one DELETE inside a savepoint.
+
+    Without the savepoint a single missing table would abort the whole
+    transaction and Postgres would silently roll back every other deletion
+    at COMMIT — unacceptable for an offboarding path.
+    """
+    cur.execute("SAVEPOINT offboard_step")
+    try:
+        cur.execute(sql, params)
+        cur.execute("RELEASE SAVEPOINT offboard_step")
+    except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT offboard_step")
+        logger.warning("offboarding delete skipped: %s", sql.split("WHERE")[0].strip())
 
 
 async def delete_tenant_data(tenant_id: str, engine_scope: str) -> None:
@@ -35,18 +54,18 @@ async def delete_tenant_data(tenant_id: str, engine_scope: str) -> None:
     try:
         with conn.cursor() as cur:
             for table in _ENGINE_TENANT_TABLES:
-                cur.execute(f"DELETE FROM {table} WHERE tenant_id = %s", (engine_scope,))
+                _safe_delete(cur, f"DELETE FROM {table} WHERE tenant_id = %s", (engine_scope,))
+            for table in _ENGINE_CHAT_SCOPED_TABLES:
+                _safe_delete(cur, f"DELETE FROM {table} WHERE chat_id = %s", (engine_scope,))
             # Google resource tokens are keyed "tenant:<engine_scope>"
             cur.execute("DELETE FROM google_tokens WHERE chat_id = %s", (f"tenant:{engine_scope}",))
             # Conversation threads are chat_id = web_<engine_scope>_<session>
             for table in _CHECKPOINT_TABLES:
-                try:
-                    cur.execute(
-                        f"DELETE FROM {table} WHERE thread_id LIKE %s",
-                        (f"web_{engine_scope}_%",),
-                    )
-                except Exception:
-                    logger.debug("checkpoint table %s cleanup skipped", table, exc_info=True)
+                _safe_delete(
+                    cur,
+                    f"DELETE FROM {table} WHERE thread_id LIKE %s",
+                    (f"web_{engine_scope}_%",),
+                )
             # Product rows (sessions/modules/identity/secrets cascade on tenants FK,
             # but the tombstone keeps the tenants row — delete children explicitly).
             cur.execute("DELETE FROM sessions WHERE tenant_id = %s", (tenant_id,))
@@ -58,5 +77,7 @@ async def delete_tenant_data(tenant_id: str, engine_scope: str) -> None:
 
     get_secrets_backend().delete_all(tenant_id)
     get_vault_storage().delete_tenant_data(engine_scope)
+    from app import media_cache
+    media_cache.purge_scope(engine_scope)
     set_tenant_status(tenant_id, "deleted")
     logger.info("Tenant data deleted", extra={"tenant_id": tenant_id})

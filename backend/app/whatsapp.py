@@ -2,13 +2,28 @@ import asyncio
 import logging
 from fastapi import APIRouter, Query, Request, Response
 import httpx
-from app.config import WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION, MY_WHATSAPP_ID, MY_WHATSAPP_LID, WEBHOOK_SECRET
+from app.config import (
+    LOG_MESSAGE_CONTENT,
+    WAHA_BASE_URL,
+    WAHA_API_KEY,
+    WAHA_SESSION,
+    MY_WHATSAPP_ID,
+    MY_WHATSAPP_LID,
+    WEBHOOK_SECRET,
+)
 from app.worker import enqueue
 
 logger = logging.getLogger("pa.whatsapp")
 router = APIRouter()
 
 BOT_TRIGGERS = ("@danidin", "!danidin")
+
+
+def _body_for_log(text: str) -> str:
+    """Message text for log lines — redacted to a length unless opted in."""
+    if LOG_MESSAGE_CONTENT:
+        return text[:80]
+    return f"<{len(text)} chars>"
 
 # Own @lid — populated at startup from WAHA API or from MY_WHATSAPP_LID config.
 # Used to reliably detect self-chat when WhatsApp uses @lid instead of @c.us.
@@ -243,8 +258,9 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     body = await request.json()
     event = body.get("event", "")
     payload = body.get("payload", {})
-    logger.info("Webhook event=%s to=%s fromMe=%s id=%s body=%.60s",
-                event, payload.get("to"), payload.get("fromMe"), payload.get("id"), payload.get("body", ""))
+    logger.info("Webhook event=%s to=%s fromMe=%s id=%s body=%s",
+                event, payload.get("to"), payload.get("fromMe"), payload.get("id"),
+                _body_for_log(payload.get("body", "") or ""))
 
     # Accept both "message" and "message.any" (self-chat fires as message.any)
     if event not in ("message", "message.any"):
@@ -287,7 +303,7 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
         if _first_word(stripped) in ("approve", "deny", "pending"):
             asyncio.create_task(_handle_tenant_command(stripped, chat_id))
             return Response(status_code=202)
-        logger.info("Self-chat: %.80s...", full_text)
+        logger.info("Self-chat: %s...", _body_for_log(full_text))
         enqueue(message_id, chat_id, full_text)
         return Response(status_code=202)
 
@@ -295,7 +311,7 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
     from app import leads as _leads
     if _leads.is_watched(chat_id):
         direction = "outbound" if payload.get("fromMe", False) else "inbound"
-        logger.info("Lead message: chat=%s dir=%s %.60s", chat_id, direction, full_text)
+        logger.info("Lead message: chat=%s dir=%s %s", chat_id, direction, _body_for_log(full_text))
         asyncio.create_task(_leads.log_and_extract(chat_id, direction, full_text))
         return Response(status_code=200)
 
@@ -305,7 +321,7 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
         if text_lower.startswith(trigger):
             stripped = full_text[len(trigger):].strip()
             if stripped:
-                logger.info("Trigger '%s' in chat %s: %.80s...", trigger, chat_id, stripped)
+                logger.info("Trigger '%s' in chat %s: %s...", trigger, chat_id, _body_for_log(stripped))
                 enqueue(message_id, chat_id, stripped)
                 return Response(status_code=202)
             return Response(status_code=200)

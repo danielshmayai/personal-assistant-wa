@@ -33,6 +33,17 @@ unblocking every dashboard.
 | Memory browser | ❌ none | ✅ `routers/memory_api.py` |
 | Schedule / Activity / Automations / Proactive cards | ❌ none | ✅ `routers/dashboard.py` |
 | Voice (STT/TTS), Push, PWA | ❌ none | ✅ old endpoints exist |
+| Agent tools — Google (Gmail/Calendar/Drive/Maps) | ⚠️ tools shared via engine; per-tenant Google connect works | ✅ `google/tools.py`, `drive_tools.py`, `maps_tool.py` |
+| Agent tools — web (search/wiki/fetch/weather) | ✅ per-tenant Tavily key (P2) | ✅ `web/tools.py` |
+| Agent tools — vault notes / image vision / TTS config | ✅ tenant-scoped (vault P0, app_settings P2) | ✅ `memory/manager.py`, `image_tools.py`, `tts_tool.py` |
+| Reminders & scheduled jobs (tools + runtime) | ❌ owner-only (`scheduling` module) | ✅ `schedule_tool.py`, `scheduled_jobs.py` |
+| Garmin (connect/MFA/wellness/push-workout) | ⚠️ token store tenant-keyed (P2); connect UI → P4 | ✅ `garmin/` |
+| InBody scan · exercise-GIF proxy | ⚠️ scan API ported (P0); GIF proxy → P4 | ✅ `routers/fitness.py` |
+| Drive image proxy | ❌ none | ✅ `routers/drive_proxy.py` |
+| Proactive flows generator (morning brief, Garmin sync) | ❌ owner-only | ✅ `proactive/flows.py` |
+| WhatsApp channel (per-tenant number) | ❌ owner-only → P6+ (WAHA multi-session) | ✅ `whatsapp.py` + WAHA |
+| Leads (watched contacts) | ❌ owner-only → P6+ | ✅ `routers/leads.py` |
+| Self-review | ❌ owner-only → P6+ | ✅ `/admin/self-review` |
 
 ## Progress checklist
 
@@ -43,10 +54,21 @@ unblocking every dashboard.
   - [x] Step 3 — `require_module` gate + wire routers/init into `product/main.py`
   - [x] Verify — owner vs tenant isolation, module gating, PII gate ✅ (all passed)
 - [x] **P1 Nutrition dashboard** (React) — `frontend/src/pages/Nutrition.tsx`, route wired; verified log/water/delete/history end-to-end
-- [ ] **P2 Image upload in Chat**
-- [ ] **P3 Fitness dashboard** (React)
-- [ ] **P4 Home dashboard** content
-- [ ] **P5+** Smart Home · Memory browser · Schedule/Activity/Automations · Voice · Push/PWA
+- [x] **P2 Separation & privacy hardening** — full per-tenant BYO creds + close every audited leak path
+  - [x] Step 0 — `runtime.get_secret` fails closed for tenants on resolver error
+  - [x] Step 1 — Tuya full BYO (per-tenant client cache; LAN control owner-only; `clear_tuya_cache` on secret change)
+  - [x] Step 2 — Tavily key resolved per tenant (DDG fallback when absent)
+  - [x] Step 3 — tenant-neutral system prompt (owner prompt byte-identical; no danidin/110g/medical framing for tenants)
+  - [x] Step 4 — media_cache scope check on retrieve + `purge_scope`
+  - [x] Step 5 — `app_settings` tenant-scoped (PK `(tenant_id, key)`; TTS config per tenant)
+  - [x] Step 6 — `garmin_tokens` tenant-keyed (PK `tenant_id`; per-tenant client/MFA state; connect UI → P4)
+  - [x] Step 7 — offboarding also deletes nutrition/fitness rows, app_settings, garmin_tokens + media purge (savepoint per table)
+  - [x] Step 8 — WhatsApp body logging gated behind `LOG_MESSAGE_CONTENT` (default off)
+  - [x] Verify — `test_tenant_isolation.py` 23/23 ✅, no regressions vs baseline; live two-cookie smoke ✅
+- [ ] **P3 Image upload in Chat**
+- [ ] **P4 Fitness dashboard** (React) — incl. tenant Garmin connect UI + exercise-GIF proxy
+- [ ] **P5 Home dashboard** content
+- [ ] **P6+** Smart Home UI · Memory browser · Schedule/Activity/Automations · Voice · Push/PWA · Drive proxy · proactive flows per tenant · per-tenant WhatsApp channel (WAHA multi-session) · Leads · self-review
 
 ---
 
@@ -79,24 +101,35 @@ Owner → `"default"` (existing data preserved; WhatsApp unchanged). Tenant → 
 - New `frontend/src/pages/Nutrition.tsx`; route `/nutrition` → it (replace `ModulePlaceholder` in `App.tsx`).
 - Rings (protein/carbs/calories); Log-a-meal (text + Gallery/Camera file inputs); water quick-add; today's meals list (delete); micros chips; Today/History tabs. Consumes `/api/nutrition/*`. Reuse `ui.tsx`; lift SVG-ring pattern from old `static/index.html`.
 
-## P2 — Image upload in Chat
-- Backend: tenant-scoped `POST /api/upload` in product (media_cache `web_<uuid>`, reuse old `web_chat.py` flow); extend `chat.py` WS message to accept `media_id` and prepend `[MEDIA …]` tag.
+## P2 — Separation & privacy hardening (done)
+
+Origin: a full-code privacy audit (2026-07-12) verified all P0/P1 claims and found 8
+leak paths the plan didn't cover. All closed. Shared pattern: per-call
+`runtime.get_secret()` + per-tenant client cache keyed by tenant id + cred
+fingerprint (mirrors `llm.py`); `clear_*_cache` wired into `runtime.on_secrets_changed`.
+Tenants fail closed (no env fallback); owner keeps env. Tests:
+`backend/tests/test_tenant_isolation.py`.
+
+## P3 — Image upload in Chat
+- Backend: tenant-scoped `POST /api/upload` in product (media_cache `web_<uuid>`, reuse old `web_chat.py` flow); extend `chat.py` WS message to accept `media_id` and prepend `[MEDIA …]` tag. media_cache reads are scope-checked (P2).
 - Frontend `Chat.tsx`: attach + camera buttons, preview chip, send `media_id`.
 
-## P3 — Fitness dashboard (React)
-- New `frontend/src/pages/Fitness.tsx` (route `/fitness`); mirrors Nutrition. Rings (volume/duration); log text/image/structured; body metrics (manual + InBody scan); progression + body-composition charts; suggest; today's sessions. Consumes `/api/fitness/*`. Garmin stays owner-only for now.
+## P4 — Fitness dashboard (React)
+- New `frontend/src/pages/Fitness.tsx` (route `/fitness`); mirrors Nutrition. Rings (volume/duration); log text/image/structured; body metrics (manual + InBody scan); progression + body-composition charts; suggest; today's sessions. Consumes `/api/fitness/*`.
+- Tenant Garmin connect UI: routes calling `begin_login`/`finish_mfa` with `GARMIN_EMAIL`/`GARMIN_PASSWORD` from the secrets catalog (token store already tenant-keyed in P2); then lift `_garmin_allowed()` to allow tenants with their own connection. Exercise-GIF proxy.
 
-## P4 — Home dashboard content
+## P5 — Home dashboard content
 - Wire tenant-scoped `dashboard.py` routes into product (`/api/today`, `/api/calendar-today`, `/api/jobs`, `/api/proactive-cards`). Scheduled-jobs are owner-only today — gate. `Dashboard.tsx`: real Home view instead of routing `/` straight to Chat.
 
-## P5+ (later, one at a time)
-Smart Home (`smart_home.py`, per-tenant Tuya creds already in secrets catalog); Memory browser (`memory_api.py`, tenant vault already isolated); Schedule/Activity/Automations; voice STT/TTS; push/PWA.
+## P6+ (later, one at a time)
+Smart Home UI (`smart_home.py`; per-tenant Tuya creds work end-to-end since P2); Memory browser (`memory_api.py`, tenant vault already isolated); Schedule/Activity/Automations (needs per-tenant scheduler + delivery channel); voice STT/TTS; push/PWA; Drive image proxy; per-tenant proactive flows; **per-tenant WhatsApp channel** (WAHA multi-session — one WA session per tenant, webhook resolves session→tenant scope); **per-tenant Leads**; **per-tenant self-review**.
 
 ## Risks
-- **Destructive init UPDATEs** (critical) — remove before product lifespan calls `init_table`.
-- **fitness_profile PII leak** (high) — gate by scope in P0 Step 0.
-- **Garmin/Tuya owner-global creds** (medium) — drop `push_hydration`, short-circuit wellness; smart-home per-tenant creds in P5.
-- **ContextVar-not-set = owner scope** (by design) — every new route goes through `require_module` → `require_session`; never call data funcs bare.
+- **Destructive init UPDATEs** (critical) — ✅ removed in P0.
+- **fitness_profile PII leak** (high) — ✅ gated in P0.
+- **Garmin/Tuya/Tavily owner-global creds** (critical/medium) — ✅ closed in P2: per-tenant BYO via `runtime.get_secret`, fail-closed, LAN owner-only.
+- **ContextVar-not-set = owner scope** (by design) — every new route goes through `require_module` → `require_session`; never call data funcs bare. `runtime.get_secret` now also fails closed for tenants if the resolver errors.
+- **Remaining shared surfaces** (tracked): `garmin_wellness` table is owner-global (reads gated) until P4; dashboard.py routes are owner-only and must never be co-mounted into the product as-is (P5 re-wraps them).
 
 ## Decisions log
 - (P0) scope key = `current_tenant_id.get() or "default"` — preserves owner's `"default"` rows, isolates tenants.
@@ -106,3 +139,11 @@ Smart Home (`smart_home.py`, per-tenant Tuya creds already in secrets catalog); 
 - (P0 verified) owner `default` rows unaffected by tenant writes; tenant isolated; module-disabled → 403; tenant fitness prompt carries no owner PII.
 - (P1) Added `api.upload()` (multipart) to `frontend/src/lib/api.ts` for meal photos; `Nutrition.tsx` reuses `ui.tsx` primitives + an inline SVG `Ring`. Route `/nutrition` now renders the real page (was `ModulePlaceholder`).
 - (P1 verified) tenant log-text "2 eggs and a coffee" → Gemini parsed 12g P / 155 kcal; today/water/history/delete all 200 and update correctly. Image upload path shares the same insert; not driven with a real file.
+- (P2 audit, 2026-07-12) read-only verification confirmed every P0/P1 claim in code; privacy audit found 8 leak paths (worst: Tuya tools read owner env creds — a tenant with smart-home enabled on a shared-env box could control the owner's home). Full gap map extended with agent-tool rows + owner-only features.
+- (P2) BYO credential pattern = per-call `runtime.get_secret` + per-tenant client cache keyed by `(tenant_id, cred-fingerprint)` — copied from `llm.py`. Never import creds from `app.config` at module load in tenant-reachable code.
+- (P2) `runtime.get_secret` exception path now returns `""` for tenants (was: env fallback = owner's keys on a DB blip).
+- (P2) Tuya LAN control (`TUYA_PREFER_LOCAL`) gated owner-only — the server's LAN is the owner's network.
+- (P2) Garmin connect UI deferred to P4; `garmin_tokens` re-keyed to `tenant_id` (legacy `id=1` row becomes owner row `''`); `_garmin_allowed()` stays as the read gate until P4.
+- (P2) Offboarding deletes run in per-table SAVEPOINTs — one missing table previously aborted the whole transaction and Postgres silently rolled back *all* deletions at COMMIT.
+- (P2) `LOG_MESSAGE_CONTENT` (default **off**) — the only owner-visible change: WhatsApp log lines show `<N chars>` instead of message text unless enabled in `.env`.
+- (P2) Test gotcha: module-isolation fixtures must also wipe the `app` package root from `sys.modules`, otherwise `from app import X` returns a stale module with a *different* ContextVar instance and scope tests silently test nothing.

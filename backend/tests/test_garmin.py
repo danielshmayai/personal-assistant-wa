@@ -223,7 +223,7 @@ class TestTokenPersistence:
         assert calls["encrypted"] == "raw-token-blob"
         cur = fake_conn.cursor.return_value
         args = cur.execute.call_args[0][1]
-        assert args[0] == "ENC:raw-token-blob"
+        assert args == ("", "ENC:raw-token-blob")  # owner scope + encrypted blob
         fake_conn.commit.assert_called_once()
 
     def test_load_token_blob_decrypts_row(self):
@@ -436,7 +436,9 @@ class TestDisconnect:
             from app.garmin.client import disconnect, is_connected
             disconnect()
             assert is_connected() is False
-        fake_conn.cursor.return_value.execute.assert_any_call("DELETE FROM garmin_tokens WHERE id = 1")
+        fake_conn.cursor.return_value.execute.assert_any_call(
+            "DELETE FROM garmin_tokens WHERE tenant_id = %s", ("",)
+        )
 
 
 # ---------------------------------------------------------------------------

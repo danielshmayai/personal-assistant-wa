@@ -15,40 +15,78 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from functools import lru_cache
 from typing import Any
 
 import tinytuya
 from langchain_core.tools import tool
 
-from app.config import (
-    TUYA_ACCESS_ID,
-    TUYA_ACCESS_KEY,
-    TUYA_API_ENDPOINT,
-    TUYA_PREFER_LOCAL,
-)
+from app.config import TUYA_PREFER_LOCAL
 
 logger = logging.getLogger("pa.tuya")
 
 
 # ---------------------------------------------------------------------------
-# Cloud client singleton
+# Cloud client — one per (tenant, creds), never shared across tenants
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=1)
+_DEFAULT_ENDPOINT = "https://openapi.tuyaeu.com"
+
+# tenant_id -> (cred_fingerprint, client); same pattern as llm._gemini_cache.
+_cloud_cache: dict[str, tuple[str, tinytuya.Cloud]] = {}
+
+
+def _creds() -> tuple[str, str, str]:
+    """Resolve Tuya credentials for the current tenant (BYO via secrets)."""
+    from app import runtime
+
+    access_id = runtime.get_secret("TUYA_ACCESS_ID")
+    access_key = runtime.get_secret("TUYA_ACCESS_KEY")
+    endpoint = runtime.get_secret("TUYA_API_ENDPOINT") or _DEFAULT_ENDPOINT
+    return access_id, access_key, endpoint
+
+
+def _lan_allowed() -> bool:
+    """LAN control reaches devices on the server's network — owner only."""
+    from app import runtime
+
+    return TUYA_PREFER_LOCAL and not runtime.tenant_id()
+
+
 def _cloud() -> tinytuya.Cloud:
-    """Return a cached Tuya Cloud client. Parses region from endpoint URL."""
+    """Return the current tenant's Tuya Cloud client (cached per tenant)."""
+    from app import runtime
+
+    access_id, access_key, endpoint = _creds()
+    if not access_id or not access_key:
+        raise RuntimeError(
+            "Tuya is not configured for this account — add TUYA_ACCESS_ID/"
+            "TUYA_ACCESS_KEY in Settings"
+        )
+    fingerprint = f"{access_id}:{access_key}:{endpoint}"
+    tid = runtime.tenant_id()
+    cached = _cloud_cache.get(tid)
+    if cached and cached[0] == fingerprint:
+        return cached[1]
     region = "eu"
-    endpoint = TUYA_API_ENDPOINT.lower()
     for r in ("us", "eu", "cn", "in"):
-        if f"tuya{r}" in endpoint:
+        if f"tuya{r}" in endpoint.lower():
             region = r
             break
-    return tinytuya.Cloud(
+    client = tinytuya.Cloud(
         apiRegion=region,
-        apiKey=TUYA_ACCESS_ID,
-        apiSecret=TUYA_ACCESS_KEY,
+        apiKey=access_id,
+        apiSecret=access_key,
     )
+    _cloud_cache[tid] = (fingerprint, client)
+    return client
+
+
+def clear_tuya_cache(tenant_id: str | None = None) -> None:
+    """Drop cached Cloud clients (call after a tenant's creds change)."""
+    if tenant_id is None:
+        _cloud_cache.clear()
+    else:
+        _cloud_cache.pop(tenant_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +195,7 @@ async def get_device_status(device_id: str) -> str:
     """Get current status of a Tuya device. Args: device_id (from list_tuya_devices)."""
     try:
         status: dict[str, Any] | None = None
-        if TUYA_PREFER_LOCAL:
+        if _lan_allowed():
             status = await asyncio.to_thread(_fetch_status_local, device_id)
         if status is None:
             status = await asyncio.to_thread(_fetch_status_cloud, device_id)
@@ -187,7 +225,7 @@ async def control_device(device_id: str, commands_json: str) -> str:
         return f"commands_json is not valid JSON: {exc}"
     try:
         result: dict[str, Any] | None = None
-        if TUYA_PREFER_LOCAL:
+        if _lan_allowed():
             result = await asyncio.to_thread(_send_command_local, device_id, commands)
         if result is None:
             result = await asyncio.to_thread(_send_command_cloud, device_id, commands)
@@ -199,7 +237,8 @@ async def control_device(device_id: str, commands_json: str) -> str:
 
 
 def get_tuya_tools() -> list:
-    """Return Tuya tools. Only included when credentials are configured."""
-    if not TUYA_ACCESS_ID or not TUYA_ACCESS_KEY:
+    """Return Tuya tools. Only included when the current tenant has creds."""
+    access_id, access_key, _ = _creds()
+    if not access_id or not access_key:
         return []
     return [list_tuya_devices, get_device_status, control_device]

@@ -30,10 +30,17 @@ def set_secret_resolver(fn: Callable[[str], str | None]) -> None:
 
 
 def get_secret(key: str) -> str:
-    """Resolve a secret for the current tenant (falls back to env)."""
+    """Resolve a secret for the current tenant.
+
+    Fail-closed for tenants: if the resolver errors, a tenant gets ""
+    (never the platform env, which holds the owner's credentials).
+    Owner scope keeps the env fallback.
+    """
     try:
         return _secret_resolver(key) or ""
     except Exception:
+        if current_tenant_id.get():
+            return ""
         return os.getenv(key, "")
 
 
@@ -65,9 +72,11 @@ def on_secrets_changed(tenant_id: str) -> None:
     """Bust per-tenant caches after a secret is added/rotated/removed."""
     from app.llm import clear_llm_cache
     from app.graph.tools_registry import clear_tools_cache_for_tenant
+    from app.tuya.tools import clear_tuya_cache
 
     clear_llm_cache(tenant_id)
     clear_tools_cache_for_tenant(tenant_id)
+    clear_tuya_cache(tenant_id)
 
 
 def tenant_id() -> str:

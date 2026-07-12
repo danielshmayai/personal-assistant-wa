@@ -14,6 +14,8 @@ import base64
 import logging
 from collections import OrderedDict
 
+from app.context import current_tenant_id
+
 logger = logging.getLogger("pa.media_cache")
 
 # LRU-style eviction: oldest entry is dropped when cache is full
@@ -46,7 +48,11 @@ def store_from_payload(message_id: str, payload: dict) -> bool:
         try:
             data = base64.b64decode(b64)
             _evict()
-            _cache[message_id] = {"data": data, "mime_type": mime_type}
+            _cache[message_id] = {
+                "data": data,
+                "mime_type": mime_type,
+                "scope": current_tenant_id.get(),
+            }
             logger.debug(
                 "media_cache: cached %d bytes (base64) for msg %s",
                 len(data),
@@ -64,7 +70,11 @@ def store_from_payload(message_id: str, payload: dict) -> bool:
     media_url = payload.get("mediaUrl", "")
     if media_url:
         _evict()
-        _cache[message_id] = {"media_url": media_url, "mime_type": mime_type}
+        _cache[message_id] = {
+            "media_url": media_url,
+            "mime_type": mime_type,
+            "scope": current_tenant_id.get(),
+        }
         logger.debug(
             "media_cache: cached mediaUrl for msg %s", message_id[-12:]
         )
@@ -74,15 +84,40 @@ def store_from_payload(message_id: str, payload: dict) -> bool:
 
 
 def retrieve(message_id: str) -> dict | None:
-    """Return the cached entry dict (keys: 'data'|'media_url', 'mime_type') or None."""
-    return _cache.get(message_id)
+    """Return the cached entry dict (keys: 'data'|'media_url', 'mime_type') or None.
+
+    Entries are scoped to the tenant that stored them: a tenant can only read
+    its own uploads; the owner ('' scope) reads WhatsApp + owner-web entries.
+    """
+    entry = _cache.get(message_id)
+    if entry is None:
+        return None
+    if entry.get("scope", "") != current_tenant_id.get():
+        logger.warning(
+            "media_cache: cross-scope retrieve blocked for msg %s", message_id[-12:]
+        )
+        return None
+    return entry
 
 
 def store_web_upload(media_id: str, data: bytes, mime_type: str, filename: str) -> None:
     """Cache bytes uploaded via the web UI under a synthetic media_id."""
     _evict()
-    _cache[media_id] = {"data": data, "mime_type": mime_type, "filename": filename}
+    _cache[media_id] = {
+        "data": data,
+        "mime_type": mime_type,
+        "filename": filename,
+        "scope": current_tenant_id.get(),
+    }
     logger.debug("media_cache: web upload cached %d bytes for media_id=%s", len(data), media_id)
+
+
+def purge_scope(scope: str) -> None:
+    """Drop every cached entry stored under the given tenant scope."""
+    if not scope:
+        return
+    for key in [k for k, v in _cache.items() if v.get("scope", "") == scope]:
+        _cache.pop(key, None)
 
 
 def _evict() -> None:

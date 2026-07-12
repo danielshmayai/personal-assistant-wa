@@ -19,8 +19,14 @@ from app.config import DATABASE_URL
 logger = logging.getLogger("pa.garmin")
 
 _lock = threading.Lock()
-_client_cache = None          # cached garminconnect.Garmin instance
-_pending_mfa: tuple | None = None  # (Garmin instance, login state) awaiting an MFA code
+# Per-tenant state ('' = owner). One Garmin session per tenant, never shared.
+_client_cache: dict[str, object] = {}       # tenant_id -> garminconnect.Garmin
+_pending_mfa: dict[str, tuple] = {}          # tenant_id -> (Garmin, login state)
+
+
+def _scope() -> str:
+    from app import runtime
+    return runtime.tenant_id()
 
 
 class GarminNotConnected(Exception):
@@ -29,17 +35,37 @@ class GarminNotConnected(Exception):
 
 # ── Tables ──────────────────────────────────────────────────────────────────
 
+def _pk_cols(cur, table: str) -> set[str]:
+    cur.execute(
+        """
+        SELECT a.attname FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = %s::regclass AND i.indisprimary
+        """,
+        (table,),
+    )
+    return {r[0] for r in cur.fetchall()}
+
+
 def init_table() -> None:
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS garmin_tokens (
-                    id INT PRIMARY KEY DEFAULT 1,
+                    tenant_id TEXT PRIMARY KEY DEFAULT '',
                     token_blob TEXT NOT NULL,
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            # Legacy single-row schema (id=1) → tenant-keyed; the existing
+            # row becomes the owner row (tenant_id='').
+            cur.execute(
+                "ALTER TABLE garmin_tokens ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT ''"
+            )
+            if _pk_cols(cur, "garmin_tokens") != {"tenant_id"}:
+                cur.execute("ALTER TABLE garmin_tokens DROP CONSTRAINT IF EXISTS garmin_tokens_pkey")
+                cur.execute("ALTER TABLE garmin_tokens ADD PRIMARY KEY (tenant_id)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS garmin_wellness (
                     log_date DATE PRIMARY KEY,
@@ -67,11 +93,11 @@ def save_token_blob(blob: str) -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO garmin_tokens (id, token_blob, updated_at)
-                   VALUES (1, %s, NOW())
-                   ON CONFLICT (id) DO UPDATE SET token_blob = EXCLUDED.token_blob,
-                                                  updated_at = NOW()""",
-                (crypto.encrypt(blob),),
+                """INSERT INTO garmin_tokens (tenant_id, token_blob, updated_at)
+                   VALUES (%s, %s, NOW())
+                   ON CONFLICT (tenant_id) DO UPDATE SET token_blob = EXCLUDED.token_blob,
+                                                         updated_at = NOW()""",
+                (_scope(), crypto.encrypt(blob)),
             )
         conn.commit()
     finally:
@@ -82,7 +108,9 @@ def load_token_blob() -> str | None:
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT token_blob FROM garmin_tokens WHERE id = 1")
+            cur.execute(
+                "SELECT token_blob FROM garmin_tokens WHERE tenant_id = %s", (_scope(),)
+            )
             row = cur.fetchone()
         return crypto.decrypt(row[0]) if row else None
     finally:
@@ -93,7 +121,7 @@ def _delete_token_blob() -> None:
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM garmin_tokens WHERE id = 1")
+            cur.execute("DELETE FROM garmin_tokens WHERE tenant_id = %s", (_scope(),))
         conn.commit()
     finally:
         conn.close()
@@ -109,11 +137,12 @@ def is_connected() -> bool:
 # ── Client lifecycle (all blocking; call via asyncio.to_thread) ─────────────
 
 def get_client():
-    """Return a logged-in Garmin client, resuming from the stored token blob."""
-    global _client_cache
+    """Return a logged-in Garmin client for the current tenant scope."""
+    tid = _scope()
     with _lock:
-        if _client_cache is not None:
-            return _client_cache
+        cached = _client_cache.get(tid)
+        if cached is not None:
+            return cached
         blob = load_token_blob()
         if not blob:
             raise GarminNotConnected("No Garmin session — connect first")
@@ -124,7 +153,7 @@ def get_client():
         except Exception as exc:
             logger.warning("Garmin token resume failed: %s", exc)
             raise GarminNotConnected(f"Garmin session expired: {exc}") from exc
-        _client_cache = g
+        _client_cache[tid] = g
         return g
 
 
@@ -137,9 +166,8 @@ def _refresh_saved_tokens(g) -> None:
 
 
 def invalidate_client() -> None:
-    global _client_cache
     with _lock:
-        _client_cache = None
+        _client_cache.pop(_scope(), None)
 
 
 def _friendly_login_error(exc: Exception) -> str:
@@ -156,7 +184,7 @@ def _friendly_login_error(exc: Exception) -> str:
 
 def begin_login(email: str, password: str) -> dict:
     """Start a login. Returns {'connected': True} or {'mfa_required': True}."""
-    global _pending_mfa, _client_cache
+    tid = _scope()
     from garminconnect import Garmin
     g = Garmin(email=email, password=password, return_on_mfa=True)
     try:
@@ -165,21 +193,21 @@ def begin_login(email: str, password: str) -> dict:
         raise RuntimeError(_friendly_login_error(exc)) from exc
     if result1 == "needs_mfa":
         with _lock:
-            _pending_mfa = (g, result2)
+            _pending_mfa[tid] = (g, result2)
         return {"mfa_required": True}
     save_token_blob(g.client.dumps())
     with _lock:
-        _client_cache = g
-        _pending_mfa = None
+        _client_cache[tid] = g
+        _pending_mfa.pop(tid, None)
     logger.info("Garmin connected")
     return {"connected": True}
 
 
 def finish_mfa(code: str) -> dict:
     """Complete a pending MFA login with the emailed/app code."""
-    global _pending_mfa, _client_cache
+    tid = _scope()
     with _lock:
-        pending = _pending_mfa
+        pending = _pending_mfa.get(tid)
     if not pending:
         raise GarminNotConnected("No pending Garmin login — start again")
     g, state = pending
@@ -189,18 +217,17 @@ def finish_mfa(code: str) -> dict:
         raise RuntimeError(_friendly_login_error(exc)) from exc
     save_token_blob(g.client.dumps())
     with _lock:
-        _client_cache = g
-        _pending_mfa = None
+        _client_cache[tid] = g
+        _pending_mfa.pop(tid, None)
     logger.info("Garmin connected (MFA)")
     return {"connected": True}
 
 
 def disconnect() -> None:
-    global _pending_mfa
     _delete_token_blob()
     invalidate_client()
     with _lock:
-        _pending_mfa = None
+        _pending_mfa.pop(_scope(), None)
     logger.info("Garmin disconnected")
 
 
