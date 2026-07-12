@@ -47,6 +47,35 @@ export type ChatEvent =
   | { type: "done"; full_reply: string }
   | { type: "error"; code: "invalid_key" | "quota_exceeded" | "rate_limited" | "internal" };
 
+export interface Meal {
+  id: number;
+  meal_description: string;
+  protein: number;
+  carbs: number;
+  calories: number;
+  micros: Record<string, number>;
+  source: string; // "text" | "image" | "water"
+  created_at: string;
+}
+
+export interface NutritionToday {
+  date: string;
+  protein_target: number;
+  meals: Meal[];
+  totals: { protein: number; carbs: number; calories: number; micros: Record<string, number> };
+  water_ml: number;
+  water_target_ml: number;
+}
+
+export interface NutritionDay {
+  date: string;
+  protein: number;
+  carbs: number;
+  calories: number;
+  meals: number;
+  water_ml: number;
+}
+
 export interface AdminTenant {
   id: string;
   email: string;

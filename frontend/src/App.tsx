@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import Nutrition from "./pages/Nutrition";
 import ModulePlaceholder from "./pages/ModulePlaceholder";
 
 function Guarded({ children }: { children: React.ReactNode }) {
@@ -40,16 +41,7 @@ export default function App() {
             }
           >
             <Route path="/" element={<Chat />} />
-            <Route
-              path="/nutrition"
-              element={
-                <ModulePlaceholder
-                  icon="🥗"
-                  title="Nutrition"
-                  examples={["אכלתי חביתה עם סלט וקפה הפוך", "כמה חלבון אכלתי היום?", "שתיתי כוס מים"]}
-                />
-              }
-            />
+            <Route path="/nutrition" element={<Nutrition />} />
             <Route
               path="/fitness"
               element={

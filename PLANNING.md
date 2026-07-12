@@ -42,7 +42,7 @@ unblocking every dashboard.
   - [x] Step 2 — `product/routers/nutrition.py` + `fitness.py` (session-auth, reuse data funcs)
   - [x] Step 3 — `require_module` gate + wire routers/init into `product/main.py`
   - [x] Verify — owner vs tenant isolation, module gating, PII gate ✅ (all passed)
-- [ ] **P1 Nutrition dashboard** (React)
+- [x] **P1 Nutrition dashboard** (React) — `frontend/src/pages/Nutrition.tsx`, route wired; verified log/water/delete/history end-to-end
 - [ ] **P2 Image upload in Chat**
 - [ ] **P3 Fitness dashboard** (React)
 - [ ] **P4 Home dashboard** content
@@ -104,3 +104,5 @@ Smart Home (`smart_home.py`, per-tenant Tuya creds already in secrets catalog); 
 - (P0) `exercise-gif` endpoint deferred to P3 (fitness UI) — it's a static-asset GIF proxy with no tenant scope, not needed for the data foundation.
 - (P0) Product routers are thin wrappers over `app.nutrition`/`app.fitness`, passing `""` for the now-vestigial `chat_id`; auth via `require_module()` (composes `require_session`).
 - (P0 verified) owner `default` rows unaffected by tenant writes; tenant isolated; module-disabled → 403; tenant fitness prompt carries no owner PII.
+- (P1) Added `api.upload()` (multipart) to `frontend/src/lib/api.ts` for meal photos; `Nutrition.tsx` reuses `ui.tsx` primitives + an inline SVG `Ring`. Route `/nutrition` now renders the real page (was `ModulePlaceholder`).
+- (P1 verified) tenant log-text "2 eggs and a coffee" → Gemini parsed 12g P / 155 kcal; today/water/history/delete all 200 and update correctly. Image upload path shares the same insert; not driven with a real file.
