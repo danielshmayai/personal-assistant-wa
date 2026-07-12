@@ -768,3 +768,55 @@ class TestSchedulingModuleGate:
         )
         assert "scheduling" not in registry.allowed_ids_for(is_owner=False)
         assert "scheduling" in registry.allowed_ids_for(is_owner=True)
+
+
+# ---------------------------------------------------------------------------
+# 12. self_review — skips owner-only vault-embedding rebuild for tenants (P6.7)
+#
+# capabilities.sync_capabilities() and embeddings.rebuild_vault_embeddings/
+# rebuild_rule_embeddings were never designed to be tenant-aware (their own
+# separate VAULT_ROOT constant + a hardcoded `WHERE tenant_id = ''` query) —
+# calling them under a tenant's scope would read the OWNER's vault, burn the
+# TENANT's Gemini quota, and overwrite the OWNER's embedding cache.
+# ---------------------------------------------------------------------------
+
+class TestSelfReviewTenantIsolation:
+    def test_tenant_scope_skips_owner_only_rebuild_calls(self):
+        import app.memory.self_review as sr
+        import app.memory.capabilities as caps
+        import app.memory.embeddings as emb
+
+        with (
+            patch.object(sr, "get_recent_conversations", return_value=[]),
+            patch.object(caps, "sync_capabilities") as fake_sync,
+            patch.object(emb, "rebuild_vault_embeddings") as fake_rebuild_vault,
+            patch.object(emb, "rebuild_rule_embeddings") as fake_rebuild_rules,
+        ):
+            reset = _set_scope("tenant-a")
+            try:
+                result = _run(sr.run_self_review(hours=24))
+            finally:
+                reset()
+
+        fake_sync.assert_not_called()
+        fake_rebuild_vault.assert_not_called()
+        fake_rebuild_rules.assert_not_called()
+        assert result == "No conversations to review."
+
+    def test_owner_scope_still_calls_rebuild(self):
+        import app.memory.self_review as sr
+        import app.memory.capabilities as caps
+        import app.memory.embeddings as emb
+
+        async def fake_rebuild():
+            return 0
+
+        with (
+            patch.object(sr, "get_recent_conversations", return_value=[]),
+            patch.object(caps, "sync_capabilities") as fake_sync,
+            patch.object(emb, "rebuild_vault_embeddings", side_effect=fake_rebuild),
+            patch.object(emb, "rebuild_rule_embeddings", side_effect=fake_rebuild),
+        ):
+            _run(sr.run_self_review(hours=24))  # owner scope — no _set_scope
+
+        fake_sync.assert_called_once()

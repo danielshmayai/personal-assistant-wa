@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.memory import obsidian
-from product.deps import require_module
+from product.deps import _rate_limit, require_module
 from product.tenancy.models import Tenant
 
 logger = logging.getLogger("product.memory")
@@ -163,3 +163,23 @@ async def hide_fact(body: HideFact, _: Tenant = Depends(_gate)):
 @router.post("/rule/hide")
 async def hide_rule(body: HideRule, _: Tenant = Depends(_gate)):
     return {"result": obsidian.hide_rule(body.instruction)}
+
+
+# ── Self-review ──────────────────────────────────────────────────────────────
+#
+# The owner's engine has no automatic nightly trigger either (despite the
+# assistant's own prompt text claiming "at 3 AM" — that's aspirational
+# copy, not real code) — it's manually invoked via POST /admin/self-review
+# (TEST_TOKEN-gated). This is the same thing, tenant-scoped: analyses the
+# calling tenant's own conversation_log (already tenant-scoped, P0) with
+# their own Gemini key, writes rules/insights into their own vault.
+# get_recent_conversations/obsidian.update_rule/vault_root() are all
+# already ContextVar-safe — only capabilities.py's frozen VAULT_ROOT import
+# needed guarding (done in self_review.py itself).
+
+@router.post("/self-review")
+async def trigger_self_review(hours: int = 24, tenant: Tenant = Depends(_gate)):
+    _rate_limit(tenant.id, "self_review", per_minute=2)
+    from app.memory.self_review import run_self_review
+    result = await run_self_review(hours=min(max(hours, 1), 168))
+    return {"result": result}

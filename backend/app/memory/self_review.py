@@ -39,15 +39,33 @@ NOTHING_TO_REVIEW
 
 async def run_self_review(hours: int = 24) -> str:
     """Analyze conversations from the last `hours` hours and rebuild vault embeddings."""
-    from app.memory.capabilities import sync_capabilities
-    sync_capabilities()
+    from app.context import current_tenant_id
+    if not current_tenant_id.get():
+        # Both of these are deliberately owner-only, not just forgetful of
+        # tenants: capabilities.py freezes obsidian.VAULT_ROOT at module load
+        # (see PLANNING.md P6.2), and embeddings.rebuild_vault_embeddings/
+        # rebuild_rule_embeddings use their OWN separate VAULT_ROOT constant
+        # (Path(OBSIDIAN_VAULT_PATH), commented "used only by the startup
+        # rebuild jobs (owner path)") plus a hardcoded `WHERE tenant_id = ''`
+        # query. Running either under a tenant's scope would read the OWNER's
+        # vault/rules, burn the TENANT's Gemini quota re-embedding it, and
+        # overwrite the OWNER's embedding cache — skip both for tenants
+        # rather than call functions that were never designed to be
+        # tenant-aware. Tenant self-review still gets its full value
+        # (conversation analysis + rule-saving, both already tenant-scoped);
+        # semantic vault search still works for them via the keyword
+        # fallback in retrieve_context.
+        from app.memory.capabilities import sync_capabilities
+        sync_capabilities()
 
-    from app.memory.embeddings import rebuild_vault_embeddings, rebuild_rule_embeddings
-    embedded, rules_embedded = await asyncio.gather(
-        rebuild_vault_embeddings(),
-        rebuild_rule_embeddings(),
-        return_exceptions=True,
-    )
+        from app.memory.embeddings import rebuild_vault_embeddings, rebuild_rule_embeddings
+        embedded, rules_embedded = await asyncio.gather(
+            rebuild_vault_embeddings(),
+            rebuild_rule_embeddings(),
+            return_exceptions=True,
+        )
+    else:
+        embedded = rules_embedded = 0
     if isinstance(embedded, int) and embedded:
         logger.info("Rebuilt %d vault embeddings", embedded)
     if isinstance(rules_embedded, int) and rules_embedded:
