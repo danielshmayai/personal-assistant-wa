@@ -445,6 +445,15 @@ class TestOffboardingCoverage:
 from unittest.mock import AsyncMock  # noqa: E402
 
 
+def _run(coro):
+    """Drive a coroutine to completion without asyncio.run() — this codebase's
+    test suite doesn't use pytest-asyncio, and asyncio.run() closes the loop
+    it creates, which breaks other tests' bare asyncio.get_event_loop() calls
+    later in the same pytest session (test_sanity.py's established idiom)."""
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
 class TestVoiceTenantIsolation:
     def test_tts_uses_tenant_key_not_owner_env(self, monkeypatch):
         monkeypatch.setenv("GOOGLE_TTS_API_KEY", "owner-key")
@@ -460,12 +469,11 @@ class TestVoiceTenantIsolation:
         fake_client.__aenter__ = AsyncMock(return_value=fake_client)
         fake_client.__aexit__ = AsyncMock(return_value=False)
 
-        import asyncio
         from app import voice
         reset = _set_scope("tenant-a")
         try:
             with patch("httpx.AsyncClient", return_value=fake_client):
-                asyncio.run(voice.synthesize_speech("hello"))
+                _run(voice.synthesize_speech("hello"))
         finally:
             reset()
 
@@ -485,7 +493,6 @@ class TestVoiceTenantIsolation:
         edge_tts_mod = MagicMock()
         edge_tts_mod.Communicate = MagicMock(return_value=fake_communicate)
 
-        import asyncio
         from app import voice
         reset = _set_scope("tenant-a")
         try:
@@ -493,7 +500,7 @@ class TestVoiceTenantIsolation:
                 patch.dict(sys.modules, {"edge_tts": edge_tts_mod}),
                 patch("httpx.AsyncClient") as httpx_client,
             ):
-                result = asyncio.run(voice.synthesize_speech("hello"))
+                result = _run(voice.synthesize_speech("hello"))
         finally:
             reset()
 
@@ -512,10 +519,9 @@ class TestVoiceTenantIsolation:
         fake_client.__aenter__ = AsyncMock(return_value=fake_client)
         fake_client.__aexit__ = AsyncMock(return_value=False)
 
-        import asyncio
         from app import voice
         with patch("httpx.AsyncClient", return_value=fake_client):
-            asyncio.run(voice.synthesize_speech("hello"))  # owner scope — no _set_scope
+            _run(voice.synthesize_speech("hello"))  # owner scope — no _set_scope
 
         _, kwargs = fake_client.post.call_args
         assert kwargs["params"] == {"key": "owner-key"}
