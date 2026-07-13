@@ -1,5 +1,5 @@
 // Bump VERSION with every deployment to invalidate the old cache.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `pa-product-${VERSION}`;
 
 const PRECACHE_URLS = [
