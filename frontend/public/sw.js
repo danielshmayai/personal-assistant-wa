@@ -1,5 +1,7 @@
-// Bump VERSION with every deployment to invalidate the old cache.
-const VERSION = 'v2';
+// VERSION is stamped with the build timestamp by vite.config.ts's
+// stampServiceWorkerVersion plugin on every `npm run build` — no manual
+// bump needed. This placeholder is only what a raw dev-server load sees.
+const VERSION = 'dev';
 const CACHE = `pa-product-${VERSION}`;
 
 const PRECACHE_URLS = [
