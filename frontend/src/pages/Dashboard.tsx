@@ -56,7 +56,7 @@ export default function Dashboard() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top nav */}
-        <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 p-2 sm:hidden">
+        <nav className="pt-safe flex gap-1 overflow-x-auto border-b border-slate-800 p-2 sm:hidden">
           {tabs.map((tab) => (
             <NavLink
               key={tab.path}
