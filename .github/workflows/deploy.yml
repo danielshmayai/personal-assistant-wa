@@ -214,8 +214,14 @@ jobs:
           # SECRETS_MASTER_KEY, GOOGLE_CLIENT_ID/SECRET, etc.). Skip quietly
           # until the operator has set it up and started it at least once, so
           # a fresh clone or an operator who hasn't opted in yet never fails CI.
+          #
+          # Ask compose for the pa-product PROJECT's containers rather than
+          # filtering by our own container_name — the very first run after
+          # container_name was added to the compose file would otherwise never
+          # find a match (the already-running container still has Compose's
+          # old auto-generated name at that point) and silently skip forever.
           $envExists = Test-Path ".env"
-          $containerExists = [bool](docker ps -a --filter "name=^pa-product-api$" --format "{{.Names}}")
+          $containerExists = [bool](docker compose -f docker-compose.product.yml -p pa-product ps -q)
           if (-not $envExists -or -not $containerExists) {
             Write-Host "Product stack not yet initialised (env exists=$envExists, container exists=$containerExists) - skipping."
             "skip=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
