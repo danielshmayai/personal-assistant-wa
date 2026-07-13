@@ -17,6 +17,7 @@
 
 services:
   product-api:
+    container_name: pa-product-api
     build:
       context: .
       dockerfile: Dockerfile.product
@@ -53,6 +54,7 @@ services:
     networks: [pa-net, pa-product-net]
 
   gateway:
+    container_name: pa-product-gateway
     image: nginx:alpine
     ports:
       - "8080:80"

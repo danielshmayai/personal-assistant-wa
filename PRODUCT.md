@@ -57,6 +57,18 @@ The first sign-in from `OWNER_EMAIL` (or the first ever sign-in when unset)
 becomes the owner/admin, sees the Admin tab, and maps onto the legacy
 single-user data scope — so the owner keeps their existing memory.
 
+## CI/CD
+
+`.github/workflows/deploy.yml` redeploys both assistants on every push to
+`main`: the old assistant's `deploy` job runs first (sanity tests → rebuild →
+health check), then `deploy-product` rebuilds the frontend (in a throwaway
+Node container, no host Node.js required) and runs
+`docker compose -f docker-compose.product.yml -p pa-product up --build -d`,
+verified via `product-api`'s health check and an end-to-end `/health` request
+through the gateway. It's a no-op until the product stack has been started at
+least once on that host (detects `.env` + the `pa-product-api` container) —
+safe to merge before you've opted in on a given machine.
+
 ## Dev mode
 
 ```bash

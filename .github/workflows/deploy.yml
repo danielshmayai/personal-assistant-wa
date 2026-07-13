@@ -178,3 +178,138 @@ jobs:
           } catch {
             Write-Host "WhatsApp notification skipped: $_"
           }
+
+  deploy-product:
+    name: Pull & Rebuild Product Stack (new assistant)
+    runs-on: [self-hosted, pa]
+    needs: deploy
+    # Require the DEPLOY_GATE secret to match a known value — same gate as
+    # the old-assistant deploy job above.
+    env:
+      DEPLOY_GATE: ${{ secrets.DEPLOY_GATE }}
+
+    steps:
+      - name: Verify deploy gate
+        shell: powershell
+        run: |
+          if (-not $env:DEPLOY_GATE) {
+            Write-Host "DEPLOY_GATE secret is not set - deployment blocked."
+            exit 1
+          }
+          Write-Host "Deploy gate verified."
+
+      - name: Pull latest code
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Check product stack is initialised on this host
+        id: check
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          # The product stack is opt-in (its own .env values: SESSION_SECRET,
+          # SECRETS_MASTER_KEY, GOOGLE_CLIENT_ID/SECRET, etc.). Skip quietly
+          # until the operator has set it up and started it at least once, so
+          # a fresh clone or an operator who hasn't opted in yet never fails CI.
+          $envExists = Test-Path ".env"
+          $containerExists = [bool](docker ps -a --filter "name=^pa-product-api$" --format "{{.Names}}")
+          if (-not $envExists -or -not $containerExists) {
+            Write-Host "Product stack not yet initialised (env exists=$envExists, container exists=$containerExists) - skipping."
+            "skip=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "skip=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Build frontend (Vite SPA)
+        if: steps.check.outputs.skip != 'true'
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          # Build inside a throwaway Node container — no Node.js install
+          # required on the runner host, matches the old assistant's
+          # container-first deploy approach.
+          docker run --rm -v "${PWD}/frontend:/app" -w /app node:20-alpine sh -c "npm ci && npm run build"
+
+      - name: Rebuild and restart product stack
+        if: steps.check.outputs.skip != 'true'
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          $env:DOCKER_BUILDKIT = "1"
+          $env:COMPOSE_DOCKER_CLI_BUILD = "1"
+          docker compose -f docker-compose.product.yml -p pa-product up --build -d
+
+      - name: Verify product stack is healthy
+        if: steps.check.outputs.skip != 'true'
+        shell: powershell
+        run: |
+          cd D:\Claude\pa
+          Write-Host "Waiting for product-api health check..."
+          $healthy = $false
+          for ($i = 1; $i -le 12; $i++) {
+            $status = docker inspect --format='{{.State.Health.Status}}' pa-product-api 2>$null
+            Write-Host "  attempt $i`: $status"
+            if ($status -eq "healthy") {
+              $healthy = $true
+              break
+            }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $healthy) {
+            Write-Host "Product API did not become healthy within 60s."
+            docker logs pa-product-api --tail 40
+            exit 1
+          }
+          Write-Host "Verifying gateway proxies /health end-to-end..."
+          try {
+            $resp = Invoke-WebRequest -Uri "http://localhost:8080/health" -UseBasicParsing -TimeoutSec 10
+            Write-Host "Gateway /health -> $($resp.StatusCode)"
+          } catch {
+            Write-Host "Gateway health check failed: $_"
+            docker logs pa-product-gateway --tail 40
+            exit 1
+          }
+
+      - name: Notify WhatsApp (success)
+        if: success() && steps.check.outputs.skip != 'true'
+        shell: powershell
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          $apiKey  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_API_KEY=' })  -replace '^WAHA_API_KEY=',''
+          $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
+          $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
+          if (-not $session) { $session = "default" }
+          $sha = $env:COMMIT_SHA.Substring(0, 7)
+          $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
+          $body = @{ chatId = $chatId; text = "[PA Product Deploy] SUCCESS`n${sha}: ${msg}"; session = $session } | ConvertTo-Json
+          try {
+            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$apiKey} -Body $body
+          } catch {
+            Write-Host "WhatsApp notification skipped: $_"
+          }
+
+      - name: Notify WhatsApp (failure)
+        if: failure() && steps.check.outputs.skip != 'true'
+        shell: powershell
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          REPO: ${{ github.repository }}
+        run: |
+          $apiKey  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_API_KEY=' })  -replace '^WAHA_API_KEY=',''
+          $chatId  = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^MY_WHATSAPP_ID=' }) -replace '^MY_WHATSAPP_ID=',''
+          $session = (Get-Content D:\Claude\pa\.env | Where-Object { $_ -match '^WAHA_SESSION=' })   -replace '^WAHA_SESSION=',''
+          if (-not $session) { $session = "default" }
+          $sha = $env:COMMIT_SHA.Substring(0, 7)
+          $msg = $env:COMMIT_MSG -split "`n" | Select-Object -First 1
+          $body = @{ chatId = $chatId; text = "[PA Product Deploy] FAILED`n${sha}: ${msg}`nCheck: https://github.com/$env:REPO/actions"; session = $session } | ConvertTo-Json
+          try {
+            Invoke-RestMethod -Uri "http://localhost:3000/api/sendText" -Method Post -ContentType "application/json" -Headers @{"X-Api-Key"=$apiKey} -Body $body
+          } catch {
+            Write-Host "WhatsApp notification skipped: $_"
+          }
