@@ -61,7 +61,7 @@ def resolve_gemini_access_sync(api_key: str, preferred: str | None = None) -> di
                 try:
                     resp = client.post(
                         f"{GENLANG_BASE}/{model}:generateContent",
-                        params={"key": api_key}, json=_PROBE_BODY,
+                        headers={"x-goog-api-key": api_key}, json=_PROBE_BODY,
                     )
                 except Exception:
                     return {"ok": True, "reason": "unverified_network", "model": preferred, "limited": False}
@@ -89,7 +89,7 @@ async def resolve_gemini_access(api_key: str, preferred: str | None = None) -> d
                 try:
                     resp = await client.post(
                         f"{GENLANG_BASE}/{model}:generateContent",
-                        params={"key": api_key}, json=_PROBE_BODY,
+                        headers={"x-goog-api-key": api_key}, json=_PROBE_BODY,
                     )
                 except Exception:
                     return {"ok": True, "reason": "unverified_network", "model": preferred, "limited": False}

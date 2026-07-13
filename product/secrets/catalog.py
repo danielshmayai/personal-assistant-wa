@@ -27,7 +27,7 @@ SECRET_SPECS: list[SecretSpec] = [
     SecretSpec(
         key="GEMINI_API_KEY", label="Google Gemini API Key", module="chat",
         required=True, help_url="https://aistudio.google.com/apikey",
-        placeholder="AIza...",
+        placeholder="AIza... or AQ....",
     ),
     SecretSpec(
         key="TAVILY_API_KEY", label="Tavily Search API Key", module="web-search",
