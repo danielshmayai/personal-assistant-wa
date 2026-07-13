@@ -70,7 +70,13 @@ export default function Nutrition() {
   };
 
   const logImage = (file?: File) => {
-    if (!file) return;
+    if (!file) {
+      // Some mobile browsers fire onChange with an empty FileList in edge
+      // cases (e.g. an iCloud photo still downloading) — surface it instead
+      // of silently doing nothing, which looked like a dead button.
+      setError("No file was received from the picker — please try again.");
+      return;
+    }
     void withBusy(() => api.upload("/api/nutrition/log-image", file), "Analyzing photo… (up to 30s)");
   };
 
@@ -122,10 +128,13 @@ export default function Nutrition() {
                 <span className="text-2xl">📷</span> Camera
               </button>
             </div>
-            <input ref={galleryRef} type="file" accept="image/*" hidden
-              onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
-            <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden
-              onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
+            {/* sr-only (not `hidden`/display:none) — some mobile browser
+                engines don't reliably dispatch the picker or the change
+                event to a display:none input triggered via ref.click(). */}
+            <input ref={galleryRef} type="file" accept="image/*" className="sr-only"
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; logImage(f); }} />
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only"
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; logImage(f); }} />
             <div className="flex gap-2">
               <Input dir="auto" placeholder="Or type a meal…" value={meal} disabled={busy}
                 onChange={(e) => setMeal(e.target.value)}

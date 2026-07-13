@@ -134,7 +134,13 @@ export default function Fitness() {
     void withBusy(async () => { await api.post("/api/fitness/log-text", { text }); setWorkoutText(""); }, "Analyzing workout…");
   };
   const logImage = (file?: File) => {
-    if (!file) return;
+    if (!file) {
+      // Some mobile browsers fire onChange with an empty FileList in edge
+      // cases (e.g. an iCloud photo still downloading) — surface it instead
+      // of silently doing nothing, which looked like a dead button.
+      setError("No file was received from the picker — please try again.");
+      return;
+    }
     void withBusy(() => api.upload("/api/fitness/log-image", file), "Analyzing photo… (up to 30s)");
   };
   const deleteWorkout = (id: number) => void withBusy(() => api.delete(`/api/fitness/${id}`), "Removing…");
@@ -179,7 +185,10 @@ export default function Fitness() {
     }, "Saving measurement…", "body");
   };
   const logBodyScan = (file?: File) => {
-    if (!file) return;
+    if (!file) {
+      setError("No file was received from the picker — please try again.");
+      return;
+    }
     void withBusy(() => api.upload("/api/fitness/body-metrics-image", file), "Reading scan… (up to 30s)", "body");
   };
   const deleteMetric = (id?: number) => {
@@ -292,10 +301,13 @@ export default function Fitness() {
                     <span className="text-2xl">📷</span> Camera
                   </button>
                 </div>
-                <input ref={galleryRef} type="file" accept="image/*" hidden
-                  onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
-                <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden
-                  onChange={(e) => { logImage(e.target.files?.[0]); e.target.value = ""; }} />
+                {/* sr-only (not `hidden`/display:none) — some mobile browser
+                    engines don't reliably dispatch the picker or the change
+                    event to a display:none input triggered via ref.click(). */}
+                <input ref={galleryRef} type="file" accept="image/*" className="sr-only"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; logImage(f); }} />
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; logImage(f); }} />
                 <div className="flex gap-2">
                   <Input dir="auto" placeholder="Or describe your workout…" value={workoutText} disabled={busy}
                     onChange={(e) => setWorkoutText(e.target.value)}
@@ -478,10 +490,10 @@ export default function Fitness() {
                 <span className="text-2xl">📷</span> InBody scan (camera)
               </button>
             </div>
-            <input ref={scanGalleryRef} type="file" accept="image/*" hidden
-              onChange={(e) => { logBodyScan(e.target.files?.[0]); e.target.value = ""; }} />
-            <input ref={scanCameraRef} type="file" accept="image/*" capture="environment" hidden
-              onChange={(e) => { logBodyScan(e.target.files?.[0]); e.target.value = ""; }} />
+            <input ref={scanGalleryRef} type="file" accept="image/*" className="sr-only"
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; logBodyScan(f); }} />
+            <input ref={scanCameraRef} type="file" accept="image/*" capture="environment" className="sr-only"
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; logBodyScan(f); }} />
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {(["weight_kg", "lbm_kg", "smm_kg", "bf_pct"] as const).map((k) => (
                 <Input key={k} type="number" inputMode="decimal" placeholder={k.replace("_kg", "").replace("_pct", " %")}

@@ -204,7 +204,13 @@ export default function Chat() {
   };
 
   const attachFile = async (file?: File) => {
-    if (!file) return;
+    if (!file) {
+      // Some mobile browsers fire onChange with an empty FileList in edge
+      // cases (e.g. an iCloud photo still downloading) — surface it instead
+      // of silently doing nothing, which looked like a dead button.
+      setError("No file was received from the picker — please try again.");
+      return;
+    }
     setError("");
     setUploading(true);
     try {
@@ -414,13 +420,24 @@ export default function Chat() {
           >
             📷
           </button>
+          {/* sr-only (not `hidden`/display:none) — some mobile browser engines
+              don't reliably dispatch the picker or the change event to a
+              display:none input triggered via ref.click(). */}
           <input
-            ref={galleryRef} type="file" accept="image/*,application/pdf" hidden
-            onChange={(e) => { void attachFile(e.target.files?.[0]); e.target.value = ""; }}
+            ref={galleryRef} type="file" accept="image/*,application/pdf" className="sr-only"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              void attachFile(file);
+            }}
           />
           <input
-            ref={cameraRef} type="file" accept="image/*" capture="environment" hidden
-            onChange={(e) => { void attachFile(e.target.files?.[0]); e.target.value = ""; }}
+            ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              void attachFile(file);
+            }}
           />
           <button
             disabled={!connected || transcribing}
