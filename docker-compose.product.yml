@@ -34,6 +34,19 @@ services:
       VAULT_BASE_DIR: /data/vaults
       LOG_FORMAT: ${LOG_FORMAT:-json}
       USER_TIMEZONE: ${USER_TIMEZONE:-Asia/Jerusalem}
+      # Owner-scope BYO secrets (product/main.py's resolve_secret falls back
+      # to os.getenv for the owner, so they transparently reuse whatever's
+      # already configured for the WhatsApp assistant instead of re-entering
+      # it in product Settings). Compose's .env file is ONLY used for ${...}
+      # interpolation in this YAML, never auto-injected into a container —
+      # these must be listed explicitly or the owner's key is invisible here
+      # even though it's sitting right there in the shared .env.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      TUYA_ACCESS_ID: ${TUYA_ACCESS_ID:-}
+      TUYA_ACCESS_KEY: ${TUYA_ACCESS_KEY:-}
+      TUYA_API_ENDPOINT: ${TUYA_API_ENDPOINT:-}
+      GOOGLE_TTS_API_KEY: ${GOOGLE_TTS_API_KEY:-}
       # Reaches the owner's WhatsApp stack (over pa-net) to notify + let the
       # owner approve new sign-ups by reply. Optional: unset → no notification.
       WAHA_BASE_URL: ${WAHA_BASE_URL:-http://waha:3000}
