@@ -66,6 +66,28 @@ def get_vault_root() -> Path:
         return _default_vault_root()
 
 
+# ── Model pinning ───────────────────────────────────────────────────────────
+
+# Lets llm.py's self-heal probe (for a tenant whose key was saved before
+# model-pinning existed, or whose pin never landed) persist the result so
+# future requests read the pin directly instead of re-probing every time.
+_model_pin_writer: Callable[[str, bool], None] | None = None
+
+
+def set_model_pin_writer(fn: Callable[[str, bool], None]) -> None:
+    global _model_pin_writer
+    _model_pin_writer = fn
+
+
+def persist_resolved_model(model: str, limited: bool) -> None:
+    if _model_pin_writer is None:
+        return
+    try:
+        _model_pin_writer(model, limited)
+    except Exception:
+        pass
+
+
 # ── Cache invalidation ──────────────────────────────────────────────────────
 
 def on_secrets_changed(tenant_id: str) -> None:

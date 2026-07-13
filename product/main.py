@@ -47,8 +47,15 @@ def _wire_engine_seam() -> None:
         owner_vault.mkdir(parents=True, exist_ok=True)
         return owner_vault
 
+    def persist_resolved_model(model: str, limited: bool) -> None:
+        tid = current_tenant_id.get()
+        if tid:
+            secrets_backend.set(tid, "GEMINI_MODEL", model)
+            secrets_backend.set(tid, "GEMINI_TIER", "free" if limited else "standard")
+
     runtime.set_secret_resolver(resolve_secret)
     runtime.set_vault_root_resolver(resolve_vault_root)
+    runtime.set_model_pin_writer(persist_resolved_model)
 
 
 @asynccontextmanager

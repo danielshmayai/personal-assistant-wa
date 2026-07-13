@@ -9,18 +9,54 @@ logger = logging.getLogger("pa.llm")
 # surviving a key rotation that raced the cache bust.
 _gemini_cache: dict[str, tuple[str, object]] = {}
 
+# Self-heal cache: tenant_id -> (api_key, resolved_model). Covers a tenant
+# whose key was saved before model-pinning existed (or whose pin write
+# failed) — probed once per process lifetime, not once per message.
+_resolved_model_cache: dict[str, tuple[str, str]] = {}
+
 
 def _gemini_key() -> str:
     from app import runtime
     return runtime.get_secret("GEMINI_API_KEY")
 
 
-def _gemini_model() -> str:
-    """Per-tenant model. Free-tier keys get a fallback model resolved at
-    key-save time (stored as the tenant's GEMINI_MODEL secret); the owner
-    and unresolved tenants use the platform default."""
+def _gemini_model_for(tid: str, api_key: str) -> str:
+    """Which model to use for this request.
+
+    Owner scope (tid == "") always uses the platform default — unchanged
+    behaviour, no probing, zero added latency for the working WhatsApp path.
+
+    Tenant scope: use the pinned GEMINI_MODEL secret if the key was already
+    probed (normal path, set at save time in Settings/onboarding). If no pin
+    exists — the key was saved before model-pinning shipped — self-heal: probe
+    once, cache it in-process, and persist the pin so future requests (and
+    process restarts) read it directly instead of re-probing.
+    """
+    if not tid:
+        return GEMINI_MODEL
+
     from app import runtime
-    return runtime.get_secret("GEMINI_MODEL") or GEMINI_MODEL
+    pinned = runtime.get_secret("GEMINI_MODEL")
+    if pinned:
+        return pinned
+
+    cached = _resolved_model_cache.get(tid)
+    if cached and cached[0] == api_key:
+        return cached[1]
+
+    if not api_key:
+        return GEMINI_MODEL  # nothing to probe; the real call will fail as before
+
+    from app.gemini_probe import resolve_gemini_access_sync
+    access = resolve_gemini_access_sync(api_key)
+    model = access["model"] or GEMINI_MODEL
+    _resolved_model_cache[tid] = (api_key, model)
+    if access["ok"]:
+        runtime.persist_resolved_model(model, access["limited"])
+    # else: key is broken on every candidate model — fall through and let the
+    # real Gemini call fail with the actual provider error below, which
+    # agent_node's except-clause classifies via _classify_agent_error.
+    return model
 
 
 def get_llm() -> ChatOllama:
@@ -39,8 +75,8 @@ def get_gemini_llm():
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     api_key = _gemini_key()
-    model = _gemini_model()
     tid = runtime.tenant_id()
+    model = _gemini_model_for(tid, api_key)
     fingerprint = f"{api_key}:{model}"
     cached = _gemini_cache.get(tid)
     if cached and cached[0] == fingerprint:
