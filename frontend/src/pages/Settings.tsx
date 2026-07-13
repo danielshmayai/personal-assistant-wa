@@ -89,6 +89,16 @@ export default function Settings() {
         <p className="mb-3 text-sm text-slate-400">
           Stored encrypted per account. Saved values are never shown again.
         </p>
+        {me.gemini && (
+          <p className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+            Assistant model: <Badge tone={me.gemini.limited ? "warn" : "ok"}>{me.gemini.model}</Badge>
+            {me.gemini.limited && (
+              <span className="text-xs text-amber-400">
+                free-tier key — daily limits apply; enable billing and re-save your key for the stronger model
+              </span>
+            )}
+          </p>
+        )}
         <Card className="space-y-5">
           {me.secrets.map((s) => (
             <SecretField key={s.key} secret={s} onSaved={refresh} />

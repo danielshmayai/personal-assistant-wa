@@ -16,9 +16,16 @@ router = APIRouter(prefix="/api")
 
 @router.get("/me")
 async def me(tenant: Tenant = Depends(require_session)):
-    present = get_secrets_backend().list_present(tenant.id)
+    backend = get_secrets_backend()
+    present = backend.list_present(tenant.id)
     enabled = set(get_enabled_modules(tenant.id, tenant.is_owner))
     allowed = allowed_ids_for(tenant.is_owner)
+
+    # Which Gemini model this account runs on (pinned at key-save time for
+    # free-tier keys). Not a sensitive value — safe to show in the UI.
+    from app.config import GEMINI_MODEL
+    gemini_model = backend.get(tenant.id, "GEMINI_MODEL") or GEMINI_MODEL
+    gemini_limited = backend.get(tenant.id, "GEMINI_TIER") == "free"
 
     # _token_key resolves "web*" chat_ids via the tenant ContextVar that
     # require_session just set, so any web-prefixed probe id works here.
@@ -49,6 +56,7 @@ async def me(tenant: Tenant = Depends(require_session)):
             for s in SECRET_SPECS
         ],
         "google_connected": google_connected,
+        "gemini": {"model": gemini_model, "limited": gemini_limited},
     }
 
 

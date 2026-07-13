@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from app import runtime
 from product.deps import require_session
 from product.secrets import get_secrets_backend
-from product.secrets.catalog import ALLOWED_KEYS, SECRET_SPECS, validate_secret
+from product.secrets.catalog import ALLOWED_KEYS, SECRET_SPECS, resolve_gemini_access, validate_secret
 from product.tenancy.models import Tenant
 
 logger = logging.getLogger("product.secrets.api")
@@ -38,11 +38,30 @@ async def put_secret(body: SecretWrite, tenant: Tenant = Depends(require_session
     if not value:
         raise HTTPException(status_code=400, detail="empty_value")
 
+    backend = get_secrets_backend()
+
+    if body.key == "GEMINI_API_KEY":
+        # Probe which model this key can actually run (free-tier keys often
+        # can't use the preferred model) and pin the tenant to it.
+        access = await resolve_gemini_access(value)
+        if not access["ok"]:
+            raise HTTPException(status_code=422, detail=access["reason"])
+        backend.set(tenant.id, "GEMINI_API_KEY", value)
+        backend.set(tenant.id, "GEMINI_MODEL", access["model"])
+        backend.set(tenant.id, "GEMINI_TIER", "free" if access["limited"] else "standard")
+        runtime.on_secrets_changed(tenant.engine_scope)
+        return {
+            "ok": True,
+            "validation": access["reason"],
+            "model": access["model"],
+            "limited": access["limited"],
+        }
+
     ok, message = await validate_secret(body.key, value)
     if not ok:
         raise HTTPException(status_code=422, detail=message)
 
-    get_secrets_backend().set(tenant.id, body.key, value)
+    backend.set(tenant.id, body.key, value)
     # A stale LLM client / tool binding must not keep using the old key.
     runtime.on_secrets_changed(tenant.engine_scope)
     return {"ok": True, "validation": message}
