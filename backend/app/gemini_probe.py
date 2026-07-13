@@ -42,6 +42,15 @@ def _classify_response(model: str, preferred: str, status_code: int, body: dict)
         pass
     if "api key not valid" in detail or "api_key_invalid" in detail or status_code == 401:
         return {"ok": False, "reason": "invalid_key", "model": None, "limited": False}
+    if status_code == 403:
+        return {"ok": False, "reason": "permission_denied", "model": None, "limited": False}
+    # Unrecognized response — log it so an unclassified failure (e.g. a new
+    # key type returning an error shape we don't handle yet) is diagnosable
+    # from server logs instead of only surfacing as a generic message.
+    logger.warning(
+        "gemini_probe: unclassified response for model=%s status=%s detail=%s",
+        model, status_code, detail or body,
+    )
     return None  # model not available for this key/tier/region — try the next one
 
 
