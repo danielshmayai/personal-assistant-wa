@@ -1,6 +1,14 @@
 import logging
+import os
 import secrets
 import datetime
+
+# Google's consent screen always appends openid/userinfo.profile/userinfo.email
+# to whatever scopes are requested. oauthlib treats that superset as a fatal
+# "scope has changed" error unless told to relax the check -- must be set
+# before Flow.fetch_token() runs.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
