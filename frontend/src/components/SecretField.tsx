@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { SecretInfo } from "../lib/types";
+import type { SecretInfo, SecretSaveResponse } from "../lib/types";
 import { api, ApiError } from "../lib/api";
 import { Badge, Button, Input } from "./ui";
 
 const ERROR_TEXT: Record<string, string> = {
   invalid_key: "This key was rejected by the provider — double-check and try again.",
+  no_supported_model: "This key can't run any supported Gemini model — check that the Generative Language API is enabled for it.",
   empty_value: "Value cannot be empty.",
 };
 
@@ -19,16 +20,28 @@ export function SecretField({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [tierNote, setTierNote] = useState("");
 
   const save = async () => {
     if (!value.trim()) return;
     setBusy(true);
     setError("");
+    setTierNote("");
     try {
-      await api.put("/api/secrets", { key: secret.key, value: value.trim() });
+      const res = await api.put<SecretSaveResponse>("/api/secrets", {
+        key: secret.key,
+        value: value.trim(),
+      });
       setValue("");
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+      if (res.limited && res.model) {
+        setTierNote(
+          `Free-tier key detected — your assistant will run on ${res.model}. ` +
+          "Daily request limits apply and responses may be slower. " +
+          "Enable billing on your Google project to unlock the stronger model.",
+        );
+      }
       onSaved();
     } catch (e) {
       const detail = e instanceof ApiError ? e.detail : "save_failed";
@@ -69,6 +82,11 @@ export function SecretField({
         </Button>
       </div>
       {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      {tierNote && (
+        <p className="mt-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          {tierNote}
+        </p>
+      )}
     </div>
   );
 }

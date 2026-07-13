@@ -31,11 +31,24 @@ export interface SecretInfo {
   set: boolean;
 }
 
+export interface GeminiAccess {
+  model: string;
+  limited: boolean; // free-tier key: fallback model and/or daily quotas apply
+}
+
 export interface Me {
   tenant: TenantInfo;
   modules: ModuleInfo[];
   secrets: SecretInfo[];
   google_connected: boolean;
+  gemini: GeminiAccess;
+}
+
+export interface SecretSaveResponse {
+  ok: boolean;
+  validation: string;
+  model?: string;
+  limited?: boolean;
 }
 
 export type ChatEvent =

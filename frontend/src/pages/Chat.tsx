@@ -64,6 +64,9 @@ const TOOL_LABELS: Record<string, string> = {
 
 export default function Chat() {
   const { me } = useSession();
+  const [tierBannerDismissed, setTierBannerDismissed] = useState(
+    () => sessionStorage.getItem("pa_tier_banner_dismissed") === "1",
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
@@ -290,7 +293,10 @@ export default function Chat() {
     if (blob.size === 0) return;
     setTranscribing(true);
     try {
-      const file = new File([blob], "recording.webm", { type: blob.type });
+      // iOS Safari records audio/mp4 (no webm support) — name the file to
+      // match so the STT backend sniffs the container correctly.
+      const ext = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
+      const file = new File([blob], `recording.${ext}`, { type: blob.type });
       const res = await api.upload<{ text: string }>("/api/stt", file);
       if (res.text) setInput((prev) => (prev ? `${prev} ${res.text}` : res.text));
     } catch (e) {
@@ -302,6 +308,26 @@ export default function Chat() {
 
   return (
     <div className="flex h-full flex-col">
+      {me?.gemini?.limited && !tierBannerDismissed && (
+        <div className="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          <span className="flex-1">
+            Running on <b>{me.gemini.model}</b> — your Gemini key is free-tier, so daily
+            limits apply and answers may be slower. Enable billing on your Google project
+            to unlock the stronger model, then re-save your key in{" "}
+            <Link to="/settings" className="underline">Settings</Link>.
+          </span>
+          <button
+            onClick={() => {
+              setTierBannerDismissed(true);
+              sessionStorage.setItem("pa_tier_banner_dismissed", "1");
+            }}
+            className="rounded px-1.5 text-amber-400 hover:bg-amber-500/20"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {ttsEnabled && (
         <div className="flex items-center justify-end border-b border-slate-800 px-3 py-1.5">
           <button
@@ -316,7 +342,7 @@ export default function Chat() {
           </button>
         </div>
       )}
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
             <div className="text-4xl">⚡</div>
@@ -353,7 +379,7 @@ export default function Chat() {
         )}
       </div>
 
-      <div className="border-t border-slate-800 p-3">
+      <div className="border-t border-slate-800 p-3 pb-safe">
         {attachment && (
           <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm">
             {attachment.mimeType.startsWith("image/") ? (

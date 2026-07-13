@@ -15,6 +15,14 @@ def _gemini_key() -> str:
     return runtime.get_secret("GEMINI_API_KEY")
 
 
+def _gemini_model() -> str:
+    """Per-tenant model. Free-tier keys get a fallback model resolved at
+    key-save time (stored as the tenant's GEMINI_MODEL secret); the owner
+    and unresolved tenants use the platform default."""
+    from app import runtime
+    return runtime.get_secret("GEMINI_MODEL") or GEMINI_MODEL
+
+
 def get_llm() -> ChatOllama:
     return ChatOllama(
         base_url=OLLAMA_BASE_URL,
@@ -31,25 +39,31 @@ def get_gemini_llm():
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     api_key = _gemini_key()
+    model = _gemini_model()
     tid = runtime.tenant_id()
+    fingerprint = f"{api_key}:{model}"
     cached = _gemini_cache.get(tid)
-    if cached and cached[0] == api_key:
+    if cached and cached[0] == fingerprint:
         return cached[1]
-    llm = ChatGoogleGenerativeAI(
-        model=GEMINI_MODEL,
-        google_api_key=api_key,
-        temperature=0.3,
+    kwargs = {}
+    if model.startswith("gemini-2.5"):
         # Gemini 2.5-flash bug: with tools bound AND a system prompt, thinking
         # mode swallows the whole turn — it returns empty content and no tool
         # call (finish_reason=STOP). Disabling thinking restores normal tool
         # calling and text replies. (Verified: budget=0 → proper tool_calls.)
-        thinking_budget=0,
+        # Non-2.5 fallback models reject the thinking config entirely.
+        kwargs["thinking_budget"] = 0
+    llm = ChatGoogleGenerativeAI(
+        model=model,
+        google_api_key=api_key,
+        temperature=0.3,
         # Fail fast: without this the client retries a 429/quota for ~30s and it
         # surfaces as an opaque timeout. 2 retries lets the real error reach the
         # UI quickly so the user is told what's wrong (e.g. quota exceeded).
         max_retries=2,
+        **kwargs,
     )
-    _gemini_cache[tid] = (api_key, llm)
+    _gemini_cache[tid] = (fingerprint, llm)
     return llm
 
 
