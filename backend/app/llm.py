@@ -123,3 +123,24 @@ def llm_with_fallback():
         return ollama
     gemini = get_gemini_llm()
     return ollama.with_fallbacks([gemini])
+
+
+def response_text(resp) -> str:
+    """Plain text from an LLM response.
+
+    Most models return `.content` as a string, but some Gemini model
+    generations (e.g. gemini-flash-latest) return a list of content blocks
+    instead — either plain strings or {"type": "text", "text": ...} dicts.
+    Flattening here means every caller gets a plain string regardless of
+    which model answered.
+    """
+    content = resp.content if hasattr(resp, "content") else resp
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content)

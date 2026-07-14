@@ -338,7 +338,7 @@ def _normalize(parsed: dict) -> dict:
 async def parse_meal_text(text: str) -> dict:
     """Estimate macros + micros from a textual meal description via Gemini."""
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
 
     llm = get_gemini_llm()
     messages = [
@@ -346,7 +346,7 @@ async def parse_meal_text(text: str) -> dict:
         HumanMessage(content=f"Meal description:\n{text}"),
     ]
     resp = await llm.ainvoke(messages)
-    return _normalize(_extract_json(resp.content if hasattr(resp, "content") else str(resp)))
+    return _normalize(_extract_json(response_text(resp)))
 
 
 async def parse_meal_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
@@ -354,7 +354,7 @@ async def parse_meal_image(image_bytes: bytes, mime_type: str = "image/jpeg") ->
     import base64
 
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
 
     b64 = base64.b64encode(image_bytes).decode("ascii")
     data_uri = f"data:{mime_type or 'image/jpeg'};base64,{b64}"
@@ -367,7 +367,7 @@ async def parse_meal_image(image_bytes: bytes, mime_type: str = "image/jpeg") ->
         ]),
     ]
     resp = await llm.ainvoke(messages)
-    return _normalize(_extract_json(resp.content if hasattr(resp, "content") else str(resp)))
+    return _normalize(_extract_json(response_text(resp)))
 
 
 async def suggest_meals(chat_id: str) -> dict:
@@ -378,7 +378,7 @@ async def suggest_meals(chat_id: str) -> dict:
     Returns structured JSON so the UI can render it as cards.
     """
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.config import USER_TIMEZONE
     from zoneinfo import ZoneInfo
     from datetime import datetime
@@ -453,7 +453,7 @@ Rules:
         HumanMessage(content=f"Today's intake so far:\n{json.dumps(facts, ensure_ascii=False, indent=2)}"),
     ]
     resp = await llm.ainvoke(messages)
-    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    raw = _extract_json(response_text(resp))
     return {
         "intro": str(raw.get("intro") or ""),
         "suggestions": [
