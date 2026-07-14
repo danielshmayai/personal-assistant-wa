@@ -11,15 +11,21 @@ from app.config import GEMINI_MODEL
 
 logger = logging.getLogger("pa.gemini_probe")
 
-# Order matters: strongest first. The pinned dated names (gemini-2.5-flash,
-# gemini-2.0-flash, ...) 404 with "no longer available to new users" for
-# accounts created after Google's cutover — existing accounts (e.g. the
-# owner's) keep working with them, so they stay first. The "-latest" aliases
-# are Google's floating pointers to whatever's current, and work for new
-# accounts too — verified live against a real new-user AQ.-format key.
+# Order matters: strongest first, but "lite" tiers are tried before their
+# full counterpart at each rung — Flash-Lite has been the cheaper variant
+# every generation so far, so a restricted/free-tier account settles on
+# the cheaper option rather than the first thing that happens to work.
+#
+# The pinned dated names (gemini-2.5-flash, gemini-2.0-flash, ...) 404 with
+# "no longer available to new users" for accounts created after Google's
+# cutover — existing accounts (e.g. the owner's) keep working with them, so
+# they stay first. The "-latest" aliases are Google's floating pointers to
+# whatever's current, and work for new accounts too — verified live against
+# a real new-user AQ.-format key (and gemini-flash-lite-latest specifically,
+# after gemini-flash-latest turned out to route to the pricier full model).
 FALLBACK_MODELS = [
     "gemini-2.5-flash-lite", "gemini-2.0-flash",
-    "gemini-flash-latest", "gemini-flash-lite-latest",
+    "gemini-flash-lite-latest", "gemini-flash-latest",
 ]
 
 GENLANG_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
