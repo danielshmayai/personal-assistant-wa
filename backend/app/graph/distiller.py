@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
-from app.llm import get_gemini_llm
+from app.llm import get_chat_llm
 from app.graph.state import PAState
 from app.config import USER_TIMEZONE
 
@@ -129,7 +129,19 @@ Formatting: use full Markdown — **bold**, _italic_, # headers, ```code blocks`
 Responses may be longer and well-structured when helpful."""
 
 
-def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
+_OLLAMA_FALLBACK_NOTE = (
+    "\n\nIMPORTANT: No Gemini model is currently usable for this account (the "
+    "configured API key doesn't work), so you are running on a local fallback "
+    "model with NO TOOLS available — no web search, email, calendar, memory, "
+    "smart-home, scheduling, nutrition, or fitness logging. Have a plain "
+    "conversation only. If asked to do something requiring a tool, say you "
+    "can't right now and that the user should add a valid Gemini API key "
+    "under Settings → Secrets to restore full functionality. Never claim to "
+    "have performed an action you cannot actually take."
+)
+
+
+def _build_system_prompt(memory_context: str, chat_id: str = "", ollama_fallback: bool = False) -> str:
     tz = ZoneInfo(USER_TIMEZONE)
     now = datetime.now(tz=tz)
 
@@ -164,6 +176,8 @@ def _build_system_prompt(memory_context: str, chat_id: str = "") -> str:
         prompt = prompt.replace(placeholder, value)
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
+    if ollama_fallback:
+        prompt += _OLLAMA_FALLBACK_NOTE
     return prompt
 
 
@@ -266,7 +280,15 @@ async def agent_node(state: PAState) -> dict:
     logger.info("agent_node: binding %d tools: %s", len(tool_names), tool_names)
 
     try:
-        llm = get_gemini_llm().bind_tools(tools)
+        llm, engine, model = get_chat_llm()
+        logger.info("agent_node: engine=%s model=%s chat_id=%s", engine, model, chat_id)
+        if engine == "ollama":
+            # Local fallback model's function-calling support is unreliable —
+            # a plain conversational reply beats a broken tool-calling attempt.
+            # (Reached only when no Gemini model works for this tenant's key.)
+            logger.warning("agent_node: no usable Gemini model for chat_id=%s — falling back to Ollama without tools", chat_id)
+        else:
+            llm = llm.bind_tools(tools)
     except Exception as e:
         tb = traceback.format_exc()
         logger.error("bind_tools FAILED: %s\n%s", e, tb)
@@ -278,7 +300,9 @@ async def agent_node(state: PAState) -> dict:
         )
         return {"messages": [AIMessage(content=error_msg)]}
 
-    system = _build_system_prompt(state.get("memory_context", ""), state.get("chat_id", ""))
+    system = _build_system_prompt(
+        state.get("memory_context", ""), state.get("chat_id", ""), ollama_fallback=(engine == "ollama"),
+    )
 
     sanitized = _sanitize_for_gemini(state["messages"])
     logger.info("agent_node: sending %d messages to Gemini", len(sanitized))

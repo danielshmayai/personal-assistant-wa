@@ -71,19 +71,19 @@ def get_vault_root() -> Path:
 # Lets llm.py's self-heal probe (for a tenant whose key was saved before
 # model-pinning existed, or whose pin never landed) persist the result so
 # future requests read the pin directly instead of re-probing every time.
-_model_pin_writer: Callable[[str, bool], None] | None = None
+_model_pin_writer: Callable[[str, bool, str], None] | None = None
 
 
-def set_model_pin_writer(fn: Callable[[str, bool], None]) -> None:
+def set_model_pin_writer(fn: Callable[[str, bool, str], None]) -> None:
     global _model_pin_writer
     _model_pin_writer = fn
 
 
-def persist_resolved_model(model: str, limited: bool) -> None:
+def persist_resolved_model(model: str, limited: bool, engine: str = "gemini") -> None:
     if _model_pin_writer is None:
         return
     try:
-        _model_pin_writer(model, limited)
+        _model_pin_writer(model, limited, engine)
     except Exception:
         pass
 

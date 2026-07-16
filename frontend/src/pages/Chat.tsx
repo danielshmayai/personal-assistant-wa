@@ -312,15 +312,54 @@ export default function Chat() {
     }
   };
 
+  const gemini = me?.gemini;
+  const isFallback = gemini?.engine === "ollama";
+  const showTierWarning = (gemini?.limited || isFallback) && !tierBannerDismissed;
+
   return (
     <div className="flex h-full flex-col">
-      {me?.gemini?.limited && !tierBannerDismissed && (
+      {/* Always visible — which model is actually answering right now, per
+          product policy: the tenant should never have to guess. */}
+      {gemini && (
+        <div className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-1 text-[11px] text-slate-500">
+          <span className="flex items-center gap-1.5">
+            <span className={cn("h-1.5 w-1.5 rounded-full", isFallback ? "bg-amber-400" : "bg-emerald-400")} />
+            Model: <b className="text-slate-400">{gemini.model}</b>
+            {isFallback && " (local fallback — no tools)"}
+          </span>
+          {ttsEnabled && (
+            <button
+              onClick={() => setVoiceReplies((v) => !v)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs",
+                voiceReplies ? "bg-indigo-600/15 text-indigo-300" : "text-slate-500 hover:bg-slate-900",
+              )}
+              aria-label="Toggle voice replies"
+            >
+              {voiceReplies ? "🔊" : "🔇"} Voice replies
+            </button>
+          )}
+        </div>
+      )}
+      {showTierWarning && (
         <div className="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           <span className="flex-1">
-            Running on <b>{me.gemini.model}</b> — your Gemini key is free-tier, so daily
-            limits apply and answers may be slower. Enable billing on your Google project
-            to unlock the stronger model, then re-save your key in{" "}
-            <Link to="/settings" className="underline">Settings</Link>.
+            {isFallback ? (
+              <>
+                Your Gemini key doesn't work on any supported model, so you're running on a
+                local fallback model with <b>no tools</b> (no web search, email, memory,
+                etc.) — just plain conversation. Add a valid key under{" "}
+                <Link to="/settings" className="underline">Settings → Secrets</Link>{" "}
+                to restore full functionality.
+              </>
+            ) : (
+              <>
+                Running on <b>{gemini!.model}</b> — your Gemini key is free-tier, so daily
+                limits apply and answers may be slower. Enable billing on your Google project
+                to unlock the stronger model, then re-save your key in{" "}
+                <Link to="/settings" className="underline">Settings</Link>.
+              </>
+            )}
           </span>
           <button
             onClick={() => {
@@ -331,20 +370,6 @@ export default function Chat() {
             aria-label="Dismiss"
           >
             ✕
-          </button>
-        </div>
-      )}
-      {ttsEnabled && (
-        <div className="flex items-center justify-end border-b border-slate-800 px-3 py-1.5">
-          <button
-            onClick={() => setVoiceReplies((v) => !v)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs",
-              voiceReplies ? "bg-indigo-600/15 text-indigo-300" : "text-slate-500 hover:bg-slate-900",
-            )}
-            aria-label="Toggle voice replies"
-          >
-            {voiceReplies ? "🔊" : "🔇"} Voice replies
           </button>
         </div>
       )}

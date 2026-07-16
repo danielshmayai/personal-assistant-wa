@@ -4,7 +4,7 @@ import { useSession } from "../lib/session";
 import { api } from "../lib/api";
 import { ModuleToggleGrid } from "../components/ModuleToggleGrid";
 import { SecretField } from "../components/SecretField";
-import { Badge, Button, Card } from "../components/ui";
+import { Badge, Button, Card, Switch } from "../components/ui";
 
 export default function Settings() {
   const { me, refresh, logout } = useSession();
@@ -32,6 +32,11 @@ export default function Settings() {
   const deleteAccount = async () => {
     await api.delete("/api/me");
     window.location.href = "/login";
+  };
+
+  const setAllowPremium = async (allow_premium: boolean) => {
+    await api.put("/api/me/model-preference", { allow_premium });
+    await refresh();
   };
 
   return (
@@ -90,14 +95,37 @@ export default function Settings() {
           Stored encrypted per account. Saved values are never shown again.
         </p>
         {me.gemini && (
-          <p className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-            Assistant model: <Badge tone={me.gemini.limited ? "warn" : "ok"}>{me.gemini.model}</Badge>
-            {me.gemini.limited && (
-              <span className="text-xs text-amber-400">
-                free-tier key — daily limits apply; enable billing and re-save your key for the stronger model
-              </span>
+          <Card className="mb-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              Currently running on:{" "}
+              <Badge tone={me.gemini.engine === "ollama" ? "warn" : me.gemini.limited ? "warn" : "ok"}>
+                {me.gemini.model}
+              </Badge>
+              {me.gemini.engine === "ollama" && (
+                <span className="text-xs text-amber-400">
+                  local fallback — your Gemini key doesn't work on any supported model, so tools
+                  (web search, email, memory, etc.) are unavailable until you fix it below
+                </span>
+              )}
+              {me.gemini.engine === "gemini" && me.gemini.limited && (
+                <span className="text-xs text-amber-400">
+                  free-tier key — daily limits apply; enable billing and re-save your key for the stronger model
+                </span>
+              )}
+            </div>
+            {me.gemini.can_set_premium && (
+              <div className="flex items-center justify-between border-t border-slate-800 pt-2">
+                <div>
+                  <div className="text-sm">Allow models stronger than Gemini 2.5 Flash</div>
+                  <div className="text-xs text-slate-500">
+                    By default the assistant only ever uses 2.5 Flash and below (cheaper, faster).
+                    Turning this on lets it try Gemini 2.5 Pro first if your key supports it.
+                  </div>
+                </div>
+                <Switch checked={me.gemini.allow_premium} onChange={setAllowPremium} />
+              </div>
             )}
-          </p>
+          </Card>
         )}
         <Card className="space-y-5">
           {me.secrets.map((s) => (

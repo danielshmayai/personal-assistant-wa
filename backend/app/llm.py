@@ -9,10 +9,15 @@ logger = logging.getLogger("pa.llm")
 # surviving a key rotation that raced the cache bust.
 _gemini_cache: dict[str, tuple[str, object]] = {}
 
-# Self-heal cache: tenant_id -> (api_key, resolved_model). Covers a tenant
-# whose key was saved before model-pinning existed (or whose pin write
-# failed) — probed once per process lifetime, not once per message.
-_resolved_model_cache: dict[str, tuple[str, str]] = {}
+# One Ollama client per tenant — stateless/local, safe to share the same
+# client across tenants that fall back to it, but keyed by tenant anyway for
+# symmetry with the cache-busting path in clear_llm_cache.
+_ollama_cache: dict[str, object] = {}
+
+# Self-heal cache: tenant_id -> ((api_key, allow_premium), (engine, model)).
+# Covers a tenant whose key was saved before model-pinning existed (or whose
+# pin write failed) — probed once per process lifetime, not once per message.
+_resolved_llm_cache: dict[str, tuple[tuple[str, bool], tuple[str, str]]] = {}
 
 
 def _gemini_key() -> str:
@@ -20,43 +25,57 @@ def _gemini_key() -> str:
     return runtime.get_secret("GEMINI_API_KEY")
 
 
-def _gemini_model_for(tid: str, api_key: str) -> str:
-    """Which model to use for this request.
+def _allow_premium() -> bool:
+    from app import runtime
+    return runtime.get_secret("GEMINI_ALLOW_PREMIUM") == "1"
 
-    Owner scope (tid == "") always uses the platform default — unchanged
-    behaviour, no probing, zero added latency for the working WhatsApp path.
 
-    Tenant scope: use the pinned GEMINI_MODEL secret if the key was already
-    probed (normal path, set at save time in Settings/onboarding). If no pin
-    exists — the key was saved before model-pinning shipped — self-heal: probe
-    once, cache it in-process, and persist the pin so future requests (and
-    process restarts) read it directly instead of re-probing.
+def _resolve_engine_and_model(tid: str, api_key: str) -> tuple[str, str]:
+    """Which engine+model to use for this request: ("gemini", <model>) or
+    ("ollama", <model>) if no Gemini model works for this key at all.
+
+    Owner scope (tid == "") always uses the platform default Gemini model —
+    unchanged behaviour, no probing, no premium cap, no Ollama fallback. This
+    policy (tier ceiling + fallback) is a product/tenant-facing feature; the
+    already-working WhatsApp path is untouched.
+
+    Tenant scope: use the pinned GEMINI_MODEL/LLM_ENGINE secrets if the key
+    was already probed (normal path, set at save time in Settings/onboarding,
+    or by this self-heal). If no pin exists, probe once, cache in-process,
+    and persist so future requests (and process restarts) read it directly.
     """
     if not tid:
-        return GEMINI_MODEL
+        return "gemini", GEMINI_MODEL
 
     from app import runtime
-    pinned = runtime.get_secret("GEMINI_MODEL")
-    if pinned:
-        return pinned
+    pinned_engine = runtime.get_secret("LLM_ENGINE")
+    pinned_model = runtime.get_secret("GEMINI_MODEL")
+    if pinned_engine and pinned_model:
+        return pinned_engine, pinned_model
 
-    cached = _resolved_model_cache.get(tid)
-    if cached and cached[0] == api_key:
+    allow_premium = _allow_premium()
+    cache_key = (api_key, allow_premium)
+    cached = _resolved_llm_cache.get(tid)
+    if cached and cached[0] == cache_key:
         return cached[1]
 
-    if not api_key:
-        return GEMINI_MODEL  # nothing to probe; the real call will fail as before
+    result: tuple[str, str] | None = None
+    if api_key:
+        from app.gemini_probe import resolve_gemini_access_sync
+        access = resolve_gemini_access_sync(api_key, allow_premium=allow_premium)
+        if access["ok"]:
+            result = ("gemini", access["model"])
+            runtime.persist_resolved_model(access["model"], access["limited"], engine="gemini")
+        # else: no Gemini model works for this key at all — fall through to
+        # the local Ollama fallback below instead of hard-failing every
+        # message with the same "key rejected" error forever.
 
-    from app.gemini_probe import resolve_gemini_access_sync
-    access = resolve_gemini_access_sync(api_key)
-    model = access["model"] or GEMINI_MODEL
-    _resolved_model_cache[tid] = (api_key, model)
-    if access["ok"]:
-        runtime.persist_resolved_model(model, access["limited"])
-    # else: key is broken on every candidate model — fall through and let the
-    # real Gemini call fail with the actual provider error below, which
-    # agent_node's except-clause classifies via _classify_agent_error.
-    return model
+    if result is None:
+        result = ("ollama", OLLAMA_MODEL)
+        runtime.persist_resolved_model(OLLAMA_MODEL, False, engine="ollama")
+
+    _resolved_llm_cache[tid] = (cache_key, result)
+    return result
 
 
 def get_llm() -> ChatOllama:
@@ -71,12 +90,21 @@ def get_llm() -> ChatOllama:
 
 
 def get_gemini_llm():
+    """Always Gemini — for vision/specialised tools that require it
+    specifically (image analysis, structured extraction). Does not fall
+    back to Ollama; callers that need graceful degradation should use
+    get_chat_llm() instead."""
     from app import runtime
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     api_key = _gemini_key()
     tid = runtime.tenant_id()
-    model = _gemini_model_for(tid, api_key)
+    engine, model = _resolve_engine_and_model(tid, api_key)
+    if engine != "gemini":
+        # No usable Gemini model for this key — nothing sensible to return
+        # for a vision-only tool; let the caller's own error handling react
+        # to a real (informative) Gemini auth failure.
+        model = GEMINI_MODEL
     fingerprint = f"{api_key}:{model}"
     cached = _gemini_cache.get(tid)
     if cached and cached[0] == fingerprint:
@@ -103,12 +131,42 @@ def get_gemini_llm():
     return llm
 
 
+def get_chat_llm() -> tuple[object, str, str]:
+    """Primary conversational LLM for agent_node.
+
+    Returns (llm, engine, model). engine is "gemini" or "ollama" — the agent
+    node uses this to decide whether to bind tools (Ollama's local model
+    doesn't reliably support function-calling, so tools are skipped rather
+    than attempted and silently mishandled).
+    """
+    from app import runtime
+
+    api_key = _gemini_key()
+    tid = runtime.tenant_id()
+    engine, model = _resolve_engine_and_model(tid, api_key)
+
+    if engine == "ollama":
+        cached = _ollama_cache.get(tid)
+        if cached is not None:
+            return cached, "ollama", model
+        llm = get_llm()
+        _ollama_cache[tid] = llm
+        return llm, "ollama", model
+
+    return get_gemini_llm(), "gemini", model
+
+
 def clear_llm_cache(tenant_id: str | None = None) -> None:
-    """Drop cached Gemini clients (call after a tenant's key changes)."""
+    """Drop cached LLM clients and the self-heal resolution cache (call
+    after a tenant's key or model preference changes)."""
     if tenant_id is None:
         _gemini_cache.clear()
+        _ollama_cache.clear()
+        _resolved_llm_cache.clear()
     else:
         _gemini_cache.pop(tenant_id, None)
+        _ollama_cache.pop(tenant_id, None)
+        _resolved_llm_cache.pop(tenant_id, None)
 
 
 def get_smart_llm():

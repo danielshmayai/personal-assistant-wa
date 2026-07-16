@@ -9,7 +9,8 @@ from dataclasses import dataclass
 # product/routers/onboarding.py) don't need to change. The probe logic lives
 # in the engine (app.gemini_probe) so llm.py's self-heal path and this
 # save-time validation always agree on which models are viable.
-from app.gemini_probe import FALLBACK_MODELS as GEMINI_FALLBACK_MODELS  # noqa: F401
+from app.gemini_probe import PREMIUM_MODELS as GEMINI_PREMIUM_MODELS  # noqa: F401
+from app.gemini_probe import STANDARD_MODELS as GEMINI_STANDARD_MODELS  # noqa: F401
 from app.gemini_probe import resolve_gemini_access  # noqa: F401
 
 

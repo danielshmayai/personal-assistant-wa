@@ -41,14 +41,18 @@ async def put_secret(body: SecretWrite, tenant: Tenant = Depends(require_session
     backend = get_secrets_backend()
 
     if body.key == "GEMINI_API_KEY":
-        # Probe which model this key can actually run (free-tier keys often
-        # can't use the preferred model) and pin the tenant to it.
-        access = await resolve_gemini_access(value)
+        # Probe which model this key can actually run — capped at 2.5-flash
+        # and below unless the tenant already opted into premium models —
+        # and pin the tenant to it. Falls back to Ollama at chat time if no
+        # Gemini model works at all (handled in llm.py, not here).
+        allow_premium = backend.get(tenant.id, "GEMINI_ALLOW_PREMIUM") == "1"
+        access = await resolve_gemini_access(value, allow_premium=allow_premium)
         if not access["ok"]:
             raise HTTPException(status_code=422, detail=access["reason"])
         backend.set(tenant.id, "GEMINI_API_KEY", value)
         backend.set(tenant.id, "GEMINI_MODEL", access["model"])
         backend.set(tenant.id, "GEMINI_TIER", "free" if access["limited"] else "standard")
+        backend.set(tenant.id, "LLM_ENGINE", "gemini")
         runtime.on_secrets_changed(tenant.engine_scope)
         return {
             "ok": True,

@@ -34,6 +34,9 @@ export interface SecretInfo {
 export interface GeminiAccess {
   model: string;
   limited: boolean; // free-tier key: fallback model and/or daily quotas apply
+  engine: "gemini" | "ollama"; // "ollama" = no Gemini model works for this key at all
+  allow_premium: boolean; // opted in to models stronger than 2.5-flash (e.g. pro tier)
+  can_set_premium: boolean; // false for the owner (always platform default)
 }
 
 export interface Me {

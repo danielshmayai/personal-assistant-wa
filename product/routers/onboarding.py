@@ -32,6 +32,7 @@ async def complete_onboarding(body: OnboardingPayload, tenant: Tenant = Depends(
     backend.set(tenant.id, "GEMINI_API_KEY", gemini_key)
     backend.set(tenant.id, "GEMINI_MODEL", access["model"])
     backend.set(tenant.id, "GEMINI_TIER", "free" if access["limited"] else "standard")
+    backend.set(tenant.id, "LLM_ENGINE", "gemini")
     for key, value in body.secrets.items():
         if key in ALLOWED_KEYS and value.strip():
             backend.set(tenant.id, key, value.strip())
