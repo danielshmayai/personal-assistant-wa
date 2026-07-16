@@ -99,7 +99,7 @@ export default function Onboarding() {
             <Input
               className="mt-4"
               type="password"
-              placeholder="AIza..."
+              placeholder="AIza... or AQ...."
               value={geminiKey}
               onChange={(e) => setGeminiKey(e.target.value)}
             />

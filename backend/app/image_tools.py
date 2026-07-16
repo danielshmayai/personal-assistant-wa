@@ -46,7 +46,7 @@ No other text."""
 async def _vision(image_bytes: bytes, mime_type: str, system: str, user_text: str) -> str:
     """One multimodal Gemini call, returns raw text (idiom from fitness.parse_body_scan_image)."""
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
 
     b64 = base64.b64encode(image_bytes).decode("ascii")
     data_uri = f"data:{mime_type or 'image/jpeg'};base64,{b64}"
@@ -58,7 +58,7 @@ async def _vision(image_bytes: bytes, mime_type: str, system: str, user_text: st
             {"type": "image_url", "image_url": {"url": data_uri}},
         ]),
     ])
-    return str(resp.content if hasattr(resp, "content") else resp).strip()
+    return response_text(resp).strip()
 
 
 def get_image_tools(chat_id: str) -> list:

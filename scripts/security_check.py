@@ -20,6 +20,7 @@ import sys
 PATTERNS = [
     # Google / Gemini
     ("Google API key",          re.compile(r"AIzaSy[0-9A-Za-z_\-]{33}")),
+    ("Google Authorization key", re.compile(r"\bAQ\.[0-9A-Za-z_\-]{20,}")),
     ("Google OAuth secret",     re.compile(r"GOCSPX-[0-9A-Za-z_\-]+")),
     # Cloudflare tunnel token (JWT-style base64)
     ("Cloudflare tunnel token", re.compile(r"eyJhIjoi[A-Za-z0-9+/=]{20,}")),

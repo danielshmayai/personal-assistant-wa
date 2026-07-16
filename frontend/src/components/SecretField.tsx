@@ -5,6 +5,7 @@ import { Badge, Button, Input } from "./ui";
 
 const ERROR_TEXT: Record<string, string> = {
   invalid_key: "This key was rejected by the provider — double-check and try again.",
+  permission_denied: "This key doesn't have access — enable the \"Generative Language API\" for its project in Google Cloud Console, then try again.",
   no_supported_model: "This key can't run any supported Gemini model — check that the Generative Language API is enabled for it.",
   empty_value: "Value cannot be empty.",
 };

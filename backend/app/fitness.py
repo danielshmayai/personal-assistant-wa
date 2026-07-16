@@ -687,7 +687,7 @@ When exercises ARE specified, set is_estimated_volume=false and user_feedback=""
 
 async def parse_workout_text(text: str, chat_id: str = "") -> dict:
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.fitness_profile import render_profile_block
 
     metrics = latest_body_metrics(chat_id)
@@ -699,7 +699,7 @@ async def parse_workout_text(text: str, chat_id: str = "") -> dict:
         HumanMessage(content=f"Workout description:\n{text}"),
     ]
     resp = await llm.ainvoke(messages)
-    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    raw = _extract_json(response_text(resp))
     parsed = _normalize_workout(raw)
     return _apply_volume_fallback(parsed, text)
 
@@ -707,7 +707,7 @@ async def parse_workout_text(text: str, chat_id: str = "") -> dict:
 async def parse_workout_image(image_bytes: bytes, mime_type: str = "image/jpeg", chat_id: str = "") -> dict:
     import base64
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.fitness_profile import render_profile_block
 
     metrics = latest_body_metrics(chat_id)
@@ -724,7 +724,7 @@ async def parse_workout_image(image_bytes: bytes, mime_type: str = "image/jpeg",
         ]),
     ]
     resp = await llm.ainvoke(messages)
-    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    raw = _extract_json(response_text(resp))
     return _normalize_workout(raw)  # no text hint for image path
 
 
@@ -766,7 +766,7 @@ async def parse_body_scan_image(image_bytes: bytes, mime_type: str = "image/jpeg
     """Extract all body-composition measurements from a scan/summary-sheet photo."""
     import base64
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
 
     b64 = base64.b64encode(image_bytes).decode("ascii")
     data_uri = f"data:{mime_type or 'image/jpeg'};base64,{b64}"
@@ -779,7 +779,7 @@ async def parse_body_scan_image(image_bytes: bytes, mime_type: str = "image/jpeg
         ]),
     ]
     resp = await llm.ainvoke(messages)
-    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    raw = _extract_json(response_text(resp))
     out = {
         "weight_kg": round(_num(raw.get("weight_kg")), 1) if raw.get("weight_kg") is not None else None,
         "lbm_kg": round(_num(raw.get("lbm_kg")), 1) if raw.get("lbm_kg") is not None else None,
@@ -855,7 +855,7 @@ def _evaluate_body_instructions() -> str:
 async def evaluate_body_metrics(new_metrics: dict, chat_id: str = "") -> dict:
     """AI opinion on a new measurement vs the previous one. Returns {ai_summary, deltas}."""
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.fitness_profile import render_profile_block
 
     history = body_metrics_history(chat_id, days=365)
@@ -882,7 +882,7 @@ async def evaluate_body_metrics(new_metrics: dict, chat_id: str = "") -> dict:
             HumanMessage(content=f"New body measurement (deltas already computed):\n{json.dumps(context, ensure_ascii=False, indent=2, default=str)}"),
         ]
         resp = await llm.ainvoke(messages)
-        raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+        raw = _extract_json(response_text(resp))
         ai_summary = str(raw.get("ai_summary") or "")
     except Exception as exc:
         logger.warning("evaluate_body_metrics narrative failed: %s", exc)
@@ -1094,7 +1094,7 @@ def _evaluate_workout_instructions() -> str:
 
 async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.fitness_profile import render_profile_block
 
     # Deterministic math — never delegated to the LLM.
@@ -1123,7 +1123,7 @@ async def evaluate_workout(workout: dict, chat_id: str = "") -> dict:
             HumanMessage(content=f"Completed workout (targets already computed):\n{json.dumps(context, ensure_ascii=False, indent=2)}"),
         ]
         resp = await llm.ainvoke(messages)
-        raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+        raw = _extract_json(response_text(resp))
         ai_summary = str(raw.get("ai_summary") or "")
         next_summary = str(raw.get("next_summary") or "")
     except Exception as exc:
@@ -1167,7 +1167,7 @@ async def suggest_workout(
     workout_type: str = "strength",
 ) -> dict:
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.fitness_profile import render_profile_block
 
     recent = history(chat_id, days=14)
@@ -1230,7 +1230,7 @@ the same way you would a logged strength session.
         HumanMessage(content=f"Recent history (last 5 days):\n{history_summary}\n\n{last_targets}"),
     ]
     resp = await llm.ainvoke(messages)
-    raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+    raw = _extract_json(response_text(resp))
     exercises = _clean_exercises(raw.get("exercises") or [])
     return {
         "title": str(raw.get("title") or "אימון מוצע"),
@@ -1245,7 +1245,7 @@ the same way you would a logged strength session.
 
 async def generate_morning_brief(chat_id: str) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.fitness_profile import render_profile_block
     from app.config import FITNESS_WEEKLY_SESSION_TARGET
 
@@ -1306,7 +1306,7 @@ Write a concise WhatsApp-friendly brief (max 150 words) that covers, in this ord
             HumanMessage(content=f"Computed facts:\n{json.dumps(facts, ensure_ascii=False, indent=2)}"),
         ]
         resp = await llm.ainvoke(messages)
-        text = str(resp.content if hasattr(resp, "content") else str(resp)).strip()
+        text = response_text(resp).strip()
         if text:
             return text
     except Exception as exc:
@@ -1344,7 +1344,7 @@ async def generate_daily_recommendation(chat_id: str) -> dict:
       last_avg_rpe     : float | null
     """
     from langchain_core.messages import HumanMessage, SystemMessage
-    from app.llm import get_gemini_llm
+    from app.llm import get_gemini_llm, response_text
     from app.fitness_profile import render_profile_block
     from app.config import FITNESS_WEEKLY_SESSION_TARGET
     from zoneinfo import ZoneInfo
@@ -1498,7 +1498,7 @@ Return ONLY a JSON object (no markdown fences):
             HumanMessage(content="Generate today's recommendation."),
         ]
         resp = await llm.ainvoke(messages)
-        raw = _extract_json(resp.content if hasattr(resp, "content") else str(resp))
+        raw = _extract_json(response_text(resp))
         title = str(raw.get("title") or title)
         duration_min = int(_num(raw.get("duration_min"))) if raw.get("duration_min") is not None else duration_min
         rationale = str(raw.get("rationale") or "")
