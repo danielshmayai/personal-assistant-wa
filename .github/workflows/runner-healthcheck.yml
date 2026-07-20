@@ -1,0 +1,58 @@
+name: PA Runner Healthcheck
+
+# Runs on GitHub-hosted infra (not the PA machine) so it can still detect and
+# alert when the self-hosted runner is offline — e.g. after a Windows Update
+# forced reboot, which leaves both the runner and its local watchdog dead
+# until someone physically logs into the machine.
+#
+# If a workflow run on main sits queued too long, the self-hosted runner
+# almost certainly isn't listening. Fail loudly (GitHub emails the repo
+# owner on workflow failure by default) instead of the deploy silently
+# never happening.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check-stuck-runs:
+    name: Check for stuck deploy runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a run has been queued too long
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          runs=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/runs?status=queued&per_page=20")
+          count=$(echo "$runs" | jq '.total_count')
+          echo "Queued runs: $count"
+
+          if [ "$count" -eq 0 ]; then
+            echo "Nothing queued — self-hosted runner is keeping up."
+            exit 0
+          fi
+
+          max_age=0
+          oldest_url=""
+          for created in $(echo "$runs" | jq -r '.workflow_runs[].created_at'); do
+            created_epoch=$(date -d "$created" +%s)
+            now_epoch=$(date +%s)
+            age_min=$(( (now_epoch - created_epoch) / 60 ))
+            if [ "$age_min" -gt "$max_age" ]; then
+              max_age=$age_min
+            fi
+          done
+          oldest_url=$(echo "$runs" | jq -r '.workflow_runs[-1].html_url')
+
+          echo "Oldest queued run age: ${max_age} minutes"
+          if [ "$max_age" -gt 30 ]; then
+            echo "::error::A workflow run has been queued for ${max_age} minutes with no self-hosted runner picking it up. The PA runner (D:\Claude\pa\actions-runner on DESKTOP-10RS01V) is likely offline — check it and log in to the machine if needed. Stuck run: $oldest_url"
+            exit 1
+          fi
