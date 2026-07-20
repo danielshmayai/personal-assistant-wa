@@ -5,6 +5,61 @@ import type {
 import { api, ApiError } from "../lib/api";
 import { Badge, Button, Card, Input, Spinner } from "../components/ui";
 
+// ── Per-exercise / cardio-metric detail (shared by Today + History) ─────────
+// Renders exactly what was logged and stored for a session so the strength
+// breakdown (and watch-imported cardio metrics) is visible everywhere, not
+// just as a daily volume roll-up.
+function exerciseLine(ex: Exercise): string {
+  const parts: string[] = [];
+  if (ex.sets) {
+    if (ex.reps) parts.push(`${ex.sets}×${ex.reps}`);
+    else if (ex.duration_sec) parts.push(`${ex.sets}×${ex.duration_sec}s`);
+    else parts.push(`${ex.sets} sets`);
+  } else if (ex.reps) {
+    parts.push(`${ex.reps} reps`);
+  } else if (ex.duration_sec) {
+    parts.push(`${ex.duration_sec}s`);
+  }
+  if (ex.weight_kg) parts.push(`@ ${ex.weight_kg}kg`);
+  if (ex.rpe) parts.push(`RPE ${ex.rpe}`);
+  return parts.join(" ");
+}
+
+function metricsLine(metrics?: Record<string, unknown>): string {
+  if (!metrics) return "";
+  const num = (k: string) => (typeof metrics[k] === "number" ? (metrics[k] as number) : null);
+  const parts: string[] = [];
+  const dist = num("distance_km");
+  if (dist) parts.push(`${dist.toFixed(1)} km`);
+  const pace = num("pace_min_km");
+  if (pace) parts.push(`${pace.toFixed(1)} min/km`);
+  const hrAvg = num("hr_avg");
+  if (hrAvg) parts.push(`avg HR ${Math.round(hrAvg)}`);
+  const hrMax = num("hr_max");
+  if (hrMax) parts.push(`max HR ${Math.round(hrMax)}`);
+  const cals = num("calories");
+  if (cals) parts.push(`${Math.round(cals)} kcal`);
+  return parts.join(" · ");
+}
+
+function SessionDetail({ exercises, metrics }: { exercises?: Exercise[]; metrics?: Record<string, unknown> }) {
+  const rows = (exercises ?? []).filter((e) => e.name?.trim());
+  if (rows.length > 0) {
+    return (
+      <ul className="mt-1.5 space-y-0.5">
+        {rows.map((ex, i) => (
+          <li key={i} dir="auto" className="flex justify-between gap-3 text-xs text-slate-400">
+            <span className="truncate">• {ex.name}</span>
+            <span className="shrink-0 tabular-nums text-slate-500">{exerciseLine(ex)}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  const cardio = metricsLine(metrics);
+  return cardio ? <div className="mt-1.5 text-xs text-slate-400 tabular-nums">{cardio}</div> : null;
+}
+
 // ── SVG progress ring (mirrors Nutrition.tsx) ───────────────────────────────
 function Ring({ value, max, label, unit, color }: {
   value: number; max: number; label: string; unit: string; color: string;
@@ -66,6 +121,7 @@ export default function Fitness() {
   const [dailyRec, setDailyRec] = useState<DailyRec | null>(null);
   const [history, setHistory] = useState<FitnessDay[] | null>(null);
   const [days, setDays] = useState(14);
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [bodyData, setBodyData] = useState<BodyMetricsResponse | null>(null);
   const [bodyForm, setBodyForm] = useState({ weight_kg: "", lbm_kg: "", smm_kg: "", bf_pct: "" });
   const [progExercise, setProgExercise] = useState("");
@@ -408,6 +464,7 @@ export default function Fitness() {
                       <div className="mt-0.5 text-xs text-slate-400 tabular-nums">
                         {w.duration_min}min · {Math.round(w.total_volume)}kg volume{w.avg_rpe ? ` · RPE ${w.avg_rpe}` : ""}
                       </div>
+                      <SessionDetail exercises={w.exercises} metrics={w.metrics} />
                       {w.ai_summary && <div dir="auto" className="mt-1 text-xs text-slate-500">{w.ai_summary}</div>}
                     </div>
                     <button aria-label="delete" onClick={() => deleteWorkout(w.id)} disabled={busy}
@@ -422,8 +479,8 @@ export default function Fitness() {
 
       {tab === "history" && (
         <>
-          <div className="flex gap-2">
-            {[7, 14, 30, 90].map((d) => (
+          <div className="flex flex-wrap gap-2">
+            {[7, 14, 30, 90, 180].map((d) => (
               <Button key={d} variant={days === d ? "primary" : "secondary"} onClick={() => setDays(d)}>{d}d</Button>
             ))}
           </div>
@@ -433,15 +490,46 @@ export default function Fitness() {
             <Card className="text-center text-sm text-slate-500">No history yet.</Card>
           ) : (
             <div className="space-y-2">
-              {history.map((d) => (
-                <Card key={d.date} className="flex items-center justify-between py-3 text-sm">
-                  <span className="font-medium tabular-nums">{d.date}</span>
-                  <span className="text-slate-400 tabular-nums">
-                    {Math.round(d.total_volume)}kg · {Math.round(d.total_duration)}min · {d.session_count} session{d.session_count === 1 ? "" : "s"}
-                    {d.avg_rpe ? ` · RPE ${d.avg_rpe}` : ""}
-                  </span>
-                </Card>
-              ))}
+              {history.map((d) => {
+                const open = expandedDay === d.date;
+                const sessions = d.sessions ?? [];
+                const canExpand = sessions.length > 0;
+                return (
+                  <Card key={d.date}>
+                    <button
+                      type="button"
+                      onClick={() => canExpand && setExpandedDay(open ? null : d.date)}
+                      className={`flex w-full items-center justify-between gap-3 text-left text-sm ${canExpand ? "" : "cursor-default"}`}
+                    >
+                      <span className="font-medium tabular-nums">
+                        {canExpand && <span className="mr-1 text-slate-500">{open ? "▾" : "▸"}</span>}
+                        {d.date}
+                      </span>
+                      <span className="text-slate-400 tabular-nums">
+                        {Math.round(d.total_volume)}kg · {Math.round(d.total_duration)}min · {d.session_count} session{d.session_count === 1 ? "" : "s"}
+                        {d.avg_rpe ? ` · RPE ${d.avg_rpe}` : ""}
+                      </span>
+                    </button>
+                    {open && canExpand && (
+                      <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">
+                        {sessions.map((s) => (
+                          <div key={s.id}>
+                            <div dir="auto" className="flex items-center justify-between gap-3 text-xs font-medium">
+                              <span className="truncate">
+                                <span className="mr-1">{SOURCE_ICON[s.source] ?? "🏋️"}</span>{s.title || s.workout_type}
+                              </span>
+                              <span className="shrink-0 tabular-nums text-slate-400">
+                                {s.duration_min}min · {Math.round(s.total_volume)}kg{s.avg_rpe ? ` · RPE ${s.avg_rpe}` : ""}
+                              </span>
+                            </div>
+                            <SessionDetail exercises={s.exercises} metrics={s.metrics} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           )}
 

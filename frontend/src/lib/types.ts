@@ -99,6 +99,25 @@ export interface Exercise {
   reps?: number;
   weight_kg?: number;
   rpe?: number;
+  duration_sec?: number;
+  notes?: string;
+}
+
+// One logged session inside a history day. The full per-exercise breakdown
+// (and cardio/watch metrics) is persisted permanently and returned by
+// /api/fitness/history — the History tab renders it so the detail is never
+// lost after the day it was logged.
+export interface WorkoutSession {
+  id: number;
+  title: string;
+  workout_type: string;
+  duration_min: number;
+  avg_rpe: number;
+  total_volume: number;
+  exercises: Exercise[];
+  metrics: Record<string, unknown>;
+  ai_summary?: string;
+  source: string;
 }
 
 export interface Workout {
@@ -130,6 +149,7 @@ export interface FitnessDay {
   avg_rpe: number;
   session_count: number;
   types: string[];
+  sessions?: WorkoutSession[]; // full per-session detail for that day
 }
 
 export interface BodyMetric {
