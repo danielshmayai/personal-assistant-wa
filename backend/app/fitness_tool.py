@@ -6,6 +6,54 @@ from langchain_core.tools import tool
 _DELTA_LABELS = {"weight_kg": "משקל", "lbm_kg": "מסה רזה", "smm_kg": "מסת שריר", "bf_pct": "אחוז שומן"}
 
 
+def _fmt_num(v) -> str:
+    """Drop a trailing .0 so weights read '80 קג' not '80.0 קג'."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    return str(int(f)) if f == int(f) else f"{f:.1f}"
+
+
+def _format_exercise_line(ex: dict) -> str:
+    """One Hebrew line per logged exercise, e.g. 'לג פרס: 3×12 @ 80 קג (RPE 7)'.
+    Empty string for a nameless row so callers can filter it out."""
+    name = str(ex.get("name") or "").strip()
+    if not name:
+        return ""
+    sets = int(_num(ex.get("sets")))
+    reps = int(_num(ex.get("reps")))
+    dur = int(_num(ex.get("duration_sec")))
+    weight = _num(ex.get("weight_kg"))
+    rpe = _num(ex.get("rpe"))
+
+    if sets and reps:
+        seg = f"{sets}×{reps}"
+    elif sets and dur:
+        seg = f"{sets}×{dur}שנ'"
+    elif reps:
+        seg = f"{reps} חזרות"
+    elif dur:
+        seg = f"{dur}שנ'"
+    else:
+        seg = ""
+
+    detail = seg
+    if weight:
+        detail = f"{detail} @ {_fmt_num(weight)} קג" if detail else f"{_fmt_num(weight)} קג"
+    if rpe:
+        detail = f"{detail} (RPE {_fmt_num(rpe)})" if detail else f"RPE {_fmt_num(rpe)}"
+    return f"{name}: {detail}" if detail else name
+
+
+def _num(v) -> float:
+    """Local, forgiving numeric coercion (avoids importing from app.fitness here)."""
+    try:
+        return max(0.0, float(v))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _format_body_deltas(deltas: dict) -> str:
     """Hebrew one-liner of per-metric changes vs the previous measurement,
     with ✅/⚠️ direction markers relative to the goal (muscle up, fat down)."""
@@ -128,6 +176,10 @@ def get_fitness_tools(chat_id: str) -> list:
                 f"• {w['title']} ({w['workout_type']}) — {w['duration_min']:.0f} דקות, "
                 f"RPE {w['avg_rpe']:.1f}, נפח {w['total_volume']:.0f} קג"
             )
+            for ex in (w.get("exercises") or []):
+                ex_line = _format_exercise_line(ex)
+                if ex_line:
+                    lines.append(f"   – {ex_line}")
             if w.get("ai_summary"):
                 lines.append(f"  💡 {w['ai_summary']}")
         lines += [
@@ -179,6 +231,10 @@ def get_fitness_tools(chat_id: str) -> list:
                 detail_parts.append(f"{m['calories']:.0f} קלוריות")
             lines.append(f"\n📅 {s['date']} — *{s.get('title', '')}*{src_tag} ({s.get('workout_type', '')})")
             lines.append("• " + " | ".join(detail_parts))
+            for ex in (s.get("exercises") or []):
+                ex_line = _format_exercise_line(ex)
+                if ex_line:
+                    lines.append(f"   – {ex_line}")
             if s.get("ai_summary"):
                 lines.append(f"💡 {s['ai_summary']}")
         return "\n".join(lines)
