@@ -66,19 +66,30 @@ def _token_key(chat_id: str) -> str:
     return f"tenant:{tid}" if tid else "web_user"
 
 
-def get_auth_url(chat_id: str) -> str:
+def get_auth_url(chat_id: str, login_hint: str = "") -> str:
     nonce = secrets.token_urlsafe(32)
     save_oauth_state(nonce, chat_id)  # persisted in Postgres -- survives restarts
+
+    # Default the account hint to the logged-in user's email (product session).
+    # login_hint only PRE-SELECTS that account; prompt=select_account still shows
+    # the chooser, so the user can pick a different account whenever they want —
+    # this fixes "it connected the wrong email" without locking them to one.
+    if not login_hint:
+        from app.context import current_user_email
+        login_hint = current_user_email.get()
 
     cfg = _client_config()
     flow = Flow.from_client_config(cfg, scopes=SCOPES)
     flow.redirect_uri = _cfg.GOOGLE_REDIRECT_URI
-    auth_url, _ = flow.authorization_url(
+    auth_kwargs = dict(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent",
+        prompt="select_account consent",
         state=nonce,
     )
+    if login_hint:
+        auth_kwargs["login_hint"] = login_hint
+    auth_url, _ = flow.authorization_url(**auth_kwargs)
     if hasattr(flow, "code_verifier") and flow.code_verifier:
         _pending_verifiers[nonce] = flow.code_verifier
 

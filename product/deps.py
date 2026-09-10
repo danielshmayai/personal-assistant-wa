@@ -4,7 +4,7 @@ import time
 
 from fastapi import Depends, HTTPException, Request
 
-from app.context import current_tenant_id
+from app.context import current_tenant_id, current_user_email, current_user_name
 from product.auth.sessions import COOKIE_NAME, verify_token
 from product.config import API_REQUESTS_PER_MINUTE, CHAT_MESSAGES_PER_MINUTE
 from product.tenancy.models import Tenant
@@ -35,8 +35,10 @@ async def require_session(request: Request) -> Tenant:
         raise HTTPException(status_code=401, detail="not_authenticated")
     if request.method in _MUTATING and request.headers.get(CSRF_HEADER) != CSRF_VALUE:
         raise HTTPException(status_code=403, detail="csrf_header_missing")
-    # Engine data scope for everything this request touches.
+    # Engine data scope + human identity for everything this request touches.
     current_tenant_id.set(tenant.engine_scope)
+    current_user_name.set(tenant.display_name or "")
+    current_user_email.set(tenant.email or "")
     _rate_limit(tenant.id, "api", API_REQUESTS_PER_MINUTE)
     return tenant
 

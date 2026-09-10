@@ -11,7 +11,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 
-from app.context import current_tenant_id, request_id_var
+from app.context import current_tenant_id, current_user_email, current_user_name, request_id_var
 from product.auth.sessions import COOKIE_NAME
 from product.deps import check_chat_rate, require_session, resolve_session_tenant
 from product.modules.store import get_enabled_modules
@@ -104,6 +104,11 @@ async def ws_chat(websocket: WebSocket):
             # Set before retrieve() below: media_cache scope-checks against
             # current_tenant_id, so it must be set before we touch the cache.
             current_tenant_id.set(scope)
+            # Human identity so the agent knows who it's talking to (and the
+            # Google connect link pre-selects the right account). Generic per
+            # logged-in user — the WS session's own tenant, never hardcoded.
+            current_user_name.set(tenant.display_name or "")
+            current_user_email.set(tenant.email or "")
             request_id_var.set(str(uuid.uuid4()))
             await websocket.send_json({"type": "ack", "chat_id": chat_id})
 

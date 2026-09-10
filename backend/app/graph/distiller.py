@@ -170,10 +170,26 @@ def _build_system_prompt(memory_context: str, chat_id: str = "", ollama_fallback
 
     addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
     prompt = (_SYSTEM_BASE + addendum).replace("{datetime_block}", datetime_block)
-    from app.context import current_tenant_id
+    from app.context import current_tenant_id, current_user_name, current_user_email
     fragments = _TENANT_FRAGMENTS if current_tenant_id.get() else _OWNER_FRAGMENTS
     for placeholder, value in fragments.items():
         prompt = prompt.replace(placeholder, value)
+    # Who am I talking to? Injected from the authenticated session (product web
+    # app). Without this the agent is identity-blind and mistakes the logged-in
+    # user for a third-party contact (e.g. treats "connect Daniel's account" as
+    # someone else's). Empty on the legacy owner/WhatsApp path → block omitted.
+    user_name = current_user_name.get()
+    user_email = current_user_email.get()
+    if user_name or user_email:
+        who = " ".join(p for p in (user_name, f"({user_email})" if user_email else "") if p)
+        prompt += (
+            f"\n\nWHO YOU ARE TALKING TO: {who}. This is the logged-in owner of "
+            "this account. When they say \"my account\", \"my email\", \"connect my "
+            "Google/Gmail/Calendar/Drive\", \"my calendar\", etc., they mean THIS "
+            "person and THIS email — never treat their own name or email as a "
+            "third-party contact. Only act on someone else's account if they "
+            "explicitly name a different person."
+        )
     if memory_context:
         prompt += f"\n\nAbout the user:\n{memory_context}"
     if ollama_fallback:
