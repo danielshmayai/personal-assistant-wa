@@ -41,7 +41,11 @@ async def google_callback(code: str = "", state: str = "", error: str = ""):
 
     chat_id = peek_oauth_state(state)
     if not chat_id or not chat_id.startswith(_CONNECT_PREFIX):
-        raise HTTPException(status_code=400, detail="unknown_or_expired_state")
+        # Auth links are single-use and expire after 1 hour — a stale link
+        # reused from chat history lands here. Send the user back to Settings
+        # with a distinct flag instead of a raw JSON 400.
+        logger.warning("Google consent link expired or already used (state=%s)", state)
+        return RedirectResponse(f"{PRODUCT_BASE_URL}/settings?google=expired", status_code=302)
 
     engine_scope = chat_id[len(_CONNECT_PREFIX):]
     if engine_scope:

@@ -96,12 +96,21 @@ def get_auth_url(chat_id: str, login_hint: str = "") -> str:
     return auth_url
 
 
+class OAuthStateExpired(ValueError):
+    """The auth link's state row is missing or older than 1 hour.
+
+    Distinct from a genuine token-exchange failure so callers can tell the user
+    to request a NEW link instead of reporting a misleading credentials error —
+    a stale link reused from chat history is the common cause.
+    """
+
+
 def handle_callback(code: str, state: str) -> None:
     # Peek first -- state is only deleted after the token is successfully saved,
     # so a failed token exchange does not burn the nonce and the user can retry.
     chat_id = peek_oauth_state(state)
     if not chat_id:
-        raise ValueError("Unknown or expired OAuth state -- please start the auth flow again")
+        raise OAuthStateExpired("Unknown or expired OAuth state -- please start the auth flow again")
 
     verifier = _pending_verifiers.pop(state, None)
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, state=state)

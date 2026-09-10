@@ -71,6 +71,13 @@ export default function Settings() {
             Google services connected successfully.
           </p>
         )}
+        {googleFlash === "expired" && (
+          <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+            That connection link had expired (links are valid for 1 hour and can only be used
+            once). Click “Connect Google” below for a fresh one — don’t reuse a link from an
+            older chat message.
+          </p>
+        )}
         {(googleFlash === "failed" || googleFlash === "denied") && (
           <p className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
             Google connection {googleFlash}. Try again.

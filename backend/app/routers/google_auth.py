@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
-from app.google.auth import get_auth_url, handle_callback
+from app.google.auth import OAuthStateExpired, get_auth_url, handle_callback
 
 logger = logging.getLogger("pa.google.auth_router")
 
@@ -47,7 +47,22 @@ async def google_auth_callback(code: str = "", state: str = "", error: str = "")
         return HTMLResponse(_ERROR_HTML.format(error="Missing code or state."), status_code=400)
     try:
         handle_callback(code, state)
-    except Exception:
+    except OAuthStateExpired:
+        # Almost always a link reused from chat history: auth links are
+        # single-use and expire after 1 hour. Say so instead of blaming the
+        # token exchange, which sent us chasing credentials for hours.
+        logger.warning("Google OAuth link expired or already used (state=%s)", state)
+        return HTMLResponse(
+            _ERROR_HTML.format(
+                error="This connection link has expired or was already used. "
+                      "Auth links are valid for 1 hour — please ask for a new link and try again."
+            ),
+            status_code=400,
+        )
+    except Exception as exc:
         logger.exception("Failed to handle Google OAuth callback for state=%s", state)
-        return HTMLResponse(_ERROR_HTML.format(error="Token exchange failed."), status_code=500)
+        return HTMLResponse(
+            _ERROR_HTML.format(error=f"Token exchange failed: {type(exc).__name__}: {exc}"),
+            status_code=500,
+        )
     return HTMLResponse(_SUCCESS_HTML)

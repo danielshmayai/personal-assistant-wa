@@ -9,7 +9,14 @@ from app.google.maps_tool import get_maps_tools
 def get_google_tools(chat_id: str) -> list:
     @tool
     def google_connect() -> str:
-        """Connect Google account (Gmail + Calendar + Drive). Call this when the user wants to link, connect, or authorize Google/Gmail/Calendar/Drive."""
+        """Connect Google account (Gmail + Calendar + Drive). Call this when the user wants to link, connect, or authorize Google/Gmail/Calendar/Drive.
+
+        ALWAYS call this tool to obtain the link, every single time one is asked
+        for. Each link is single-use and EXPIRES AFTER 1 HOUR. NEVER repeat or
+        copy a Google auth URL that appears earlier in this conversation — a
+        reused link fails with an expired-state error. Call the tool again to
+        mint a fresh one.
+        """
         from app.google.drive_tools import _DRIVE_SCOPE
         creds = get_credentials(chat_id)
         has_drive = (
@@ -22,12 +29,17 @@ def get_google_tools(chat_id: str) -> list:
             return "Google account is already connected (Gmail, Calendar, and Drive)."
         # Either not connected at all, or connected without Drive scope
         url = get_auth_url(chat_id)
+        expiry_note = (
+            "\n\n(This link is valid for 1 hour and can only be used once. "
+            "If it expires, ask me for a new one.)"
+        )
         if creds and creds.valid:
             return (
                 "Your Google account is connected but Drive access is missing. "
-                "Please open this link to reconnect and grant Drive permission:\n" + url
+                "Please open this link to reconnect and grant Drive permission:\n"
+                + url + expiry_note
             )
-        return f"Open this link to connect your Google account:\n{url}"
+        return f"Open this link to connect your Google account:\n{url}{expiry_note}"
 
     @tool
     def gmail_read(max_results: int = 5) -> str:
