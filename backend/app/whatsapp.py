@@ -43,6 +43,30 @@ async def detect_own_lid() -> None:
     headers: dict[str, str] = {}
     if WAHA_API_KEY:
         headers["X-Api-Key"] = WAHA_API_KEY
+    def _find_lid(node, depth: int = 0):
+        """Any '<id>@lid' string anywhere in the session payload.
+
+        WAHA's shape for `me` varies by engine/version — older builds expose
+        only {'id': '<phone>@c.us', 'pushName': ...} with the lid nested
+        elsewhere (or absent). Scanning recursively means a new field name
+        doesn't silently break self-chat detection again.
+        """
+        if depth > 4:
+            return ""
+        if isinstance(node, str):
+            return node if node.endswith("@lid") else ""
+        if isinstance(node, dict):
+            for v in node.values():
+                found = _find_lid(v, depth + 1)
+                if found:
+                    return found
+        elif isinstance(node, list):
+            for v in node:
+                found = _find_lid(v, depth + 1)
+                if found:
+                    return found
+        return ""
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
@@ -51,16 +75,23 @@ async def detect_own_lid() -> None:
             )
             if r.status_code == 200:
                 data = r.json()
-                me = data.get("me") or {}
-                # WAHA may return lid separately or inside 'id'
-                for key in ("lid", "id", "_serialized"):
-                    val = str(me.get(key, ""))
-                    if val.endswith("@lid"):
-                        _own_lid = val
-                        logger.info("whatsapp: auto-detected own @lid = %s", _own_lid)
-                        return
+                found = _find_lid(data)
+                if found:
+                    _own_lid = found
+                    logger.info("whatsapp: auto-detected own @lid = %s", _own_lid)
+                    return
+                logger.warning(
+                    "whatsapp: no @lid found in WAHA session payload (me=%s). If WhatsApp "
+                    "delivers your self-chat with an @lid 'to', messages will be ignored "
+                    "until MY_WHATSAPP_LID is set in .env.",
+                    data.get("me"),
+                )
+            else:
+                logger.warning(
+                    "whatsapp: own-@lid detection got HTTP %s from WAHA", r.status_code
+                )
     except Exception as exc:
-        logger.debug("whatsapp: could not auto-detect own @lid: %s", exc)
+        logger.warning("whatsapp: could not auto-detect own @lid: %s", exc)
 
 
 async def send_whatsapp_message(chat_id: str, text: str) -> bool:
@@ -325,6 +356,24 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
                 enqueue(message_id, chat_id, stripped)
                 return Response(status_code=202)
             return Response(status_code=200)
+
+    # A message YOU sent that we failed to classify as self-chat is almost
+    # always an identifier-format mismatch — WhatsApp multi-device migrates the
+    # self-chat JID to @lid, which matches neither MY_WHATSAPP_ID (@c.us) nor an
+    # undetected _own_lid. This used to vanish silently with a 200 (no reply, no
+    # error), so log it loudly with the real values and the exact fix.
+    if payload.get("fromMe", False) and not _is_group(body):
+        logger.warning(
+            "Self-message NOT recognised as self-chat — ignored. "
+            "to=%s from=%s MY_WHATSAPP_ID=%s own_lid=%s. "
+            "If 'to' ends with @lid, set MY_WHATSAPP_LID=<that value> in .env and restart the backend.",
+            payload.get("to", ""),
+            payload.get("from", ""),
+            MY_WHATSAPP_ID or "<unset>",
+            _own_lid or "<not detected>",
+            extra={"event": "self_chat_unrecognised", "to": payload.get("to", ""),
+                   "from": payload.get("from", "")},
+        )
 
     # No trigger and not self-chat — ignore.
     return Response(status_code=200)
