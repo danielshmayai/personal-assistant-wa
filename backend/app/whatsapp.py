@@ -135,31 +135,52 @@ def _chat_id_from_id(payload: dict) -> str:
     return ""
 
 
+def _own_jids() -> set[str]:
+    """Every JID that identifies US — phone (@c.us) and, once known, @lid."""
+    return {j for j in (MY_WHATSAPP_ID, _own_lid) if j}
+
+
 def _own_identity(ident: str) -> bool:
     """True if ident is one of our own JIDs — either @c.us or @lid."""
-    return bool(ident) and (ident == MY_WHATSAPP_ID or (bool(_own_lid) and ident == _own_lid))
+    return bool(ident) and ident in _own_jids()
+
+
+def _resolve_chat(payload: dict) -> str:
+    """The conversation a payload belongs to, across WAHA engines.
+
+    WEBJS fills 'to'; NOWEB leaves it null and encodes the chat in the message
+    id. 'from' is the last resort — on NOWEB it carries Baileys' remoteJid,
+    which is the conversation rather than the sender.
+    """
+    return (payload.get("to") or "") or _chat_id_from_id(payload) or (payload.get("from") or "")
 
 
 def _is_self_chat(body: dict) -> bool:
     """Detect self-chat (Saved Messages / Notes to self).
 
-    A message is self-chat when it is fromMe and its chat is one of our own
-    JIDs. WEBJS reports the chat in 'to'; NOWEB leaves 'to' null and encodes
-    the chat in the message id (recovered via _chat_id_from_id), often as @lid.
-    Set MY_WHATSAPP_LID in .env if self-chat uses @lid and auto-detection from
-    WAHA does not populate _own_lid.
+    Self-chat means: WE sent it AND the conversation is one of OUR OWN JIDs.
+
+    FAILS CLOSED. The chat must positively match a known own-JID; if we don't
+    know who we are (no MY_WHATSAPP_ID and no detected @lid) nothing is ever
+    treated as self-chat. Deliberately does NOT infer self-chat from
+    'from == to': on the NOWEB engine both can carry the conversation's JID for
+    an ordinary contact, which made every conversation look like self-chat and
+    had danidin replying to real people. A false negative means danidin stays
+    quiet; a false positive means it messages your contacts — never trade that
+    way round.
     """
     payload = body.get("payload", {})
     if not payload.get("fromMe", False):
         return False
-    to = payload.get("to") or ""
-    frm = payload.get("from") or ""
-    chat = to or _chat_id_from_id(payload)
-    if _own_identity(to) or _own_identity(chat):
-        return True
-    if frm and to and frm == to:
-        return True
-    return False
+    own = _own_jids()
+    if not own:
+        logger.warning(
+            "whatsapp: own identity unknown (MY_WHATSAPP_ID and MY_WHATSAPP_LID both unset) "
+            "— refusing to treat any chat as self-chat"
+        )
+        return False
+    chat = _resolve_chat(payload)
+    return bool(chat) and chat in own
 
 
 def _is_group(body: dict) -> bool:
@@ -357,6 +378,10 @@ async def waha_webhook(request: Request, secret: str = Query(default="")):
 
     # --- SELF-CHAT: enqueue for async processing ---
     if _is_self_chat(body):
+        # Belt-and-braces: a self-chat reply always goes to OUR OWN chat. Even
+        # if chat-id resolution were ever wrong again, the reply can only land
+        # in our own thread — never in a contact's conversation.
+        chat_id = MY_WHATSAPP_ID or chat_id
         stripped = text.strip()
         if stripped.lower() == "!restart":
             asyncio.create_task(_restart_backend(chat_id))
