@@ -120,24 +120,42 @@ async def send_whatsapp_message(chat_id: str, text: str) -> bool:
             return False
 
 
+def _chat_id_from_id(payload: dict) -> str:
+    """Recover the chat id from the WAHA message id.
+
+    WAHA message ids are formatted '{fromMe}_{chatId}_{serial}' (JIDs never
+    contain '_'). The NOWEB engine leaves the top-level 'to' field null, so
+    this is the only reliable source of the chat id for outgoing/self messages
+    on that engine. WEBJS populates 'to' directly and this is a fallback.
+    """
+    mid = payload.get("id") or ""
+    parts = mid.split("_")
+    if len(parts) >= 3 and parts[1]:
+        return parts[1]
+    return ""
+
+
+def _own_identity(ident: str) -> bool:
+    """True if ident is one of our own JIDs — either @c.us or @lid."""
+    return bool(ident) and (ident == MY_WHATSAPP_ID or (bool(_own_lid) and ident == _own_lid))
+
+
 def _is_self_chat(body: dict) -> bool:
     """Detect self-chat (Saved Messages / Notes to self).
 
-    Priority:
-      1. to == MY_WHATSAPP_ID  — exact @c.us match (most reliable).
-      2. to == _own_lid         — exact @lid match after auto-detection.
-      3. from == to             — same JID, handles any format.
-      If none match, returns False. Set MY_WHATSAPP_LID in .env if self-chat
-      uses @lid format and auto-detection from WAHA does not populate _own_lid.
+    A message is self-chat when it is fromMe and its chat is one of our own
+    JIDs. WEBJS reports the chat in 'to'; NOWEB leaves 'to' null and encodes
+    the chat in the message id (recovered via _chat_id_from_id), often as @lid.
+    Set MY_WHATSAPP_LID in .env if self-chat uses @lid and auto-detection from
+    WAHA does not populate _own_lid.
     """
     payload = body.get("payload", {})
     if not payload.get("fromMe", False):
         return False
-    to = payload.get("to", "")
-    frm = payload.get("from", "")
-    if MY_WHATSAPP_ID and to == MY_WHATSAPP_ID:
-        return True
-    if _own_lid and to == _own_lid:
+    to = payload.get("to") or ""
+    frm = payload.get("from") or ""
+    chat = to or _chat_id_from_id(payload)
+    if _own_identity(to) or _own_identity(chat):
         return True
     if frm and to and frm == to:
         return True
@@ -147,14 +165,17 @@ def _is_self_chat(body: dict) -> bool:
 def _is_group(body: dict) -> bool:
     """Group chat: destination ends with @g.us."""
     payload = body.get("payload", {})
-    to = payload.get("to", "")
-    return to.endswith("@g.us")
+    to = payload.get("to") or ""
+    return to.endswith("@g.us") or _chat_id_from_id(payload).endswith("@g.us")
 
 
 def _extract_text(body: dict) -> str:
-    """Extract the plain text content from a WAHA webhook payload."""
+    """Extract the plain text content from a WAHA webhook payload.
+
+    NOWEB sends body=null for system/media messages, so coalesce before strip.
+    """
     payload = body.get("payload", {})
-    return payload.get("body", "").strip()
+    return (payload.get("body") or "").strip()
 
 
 # MIME type → default filename extension (when WAHA reports no filename)
@@ -215,17 +236,28 @@ def _extract_media_context(body: dict) -> str | None:
 def _extract_chat_id(body: dict) -> str:
     """Extract the chat ID to reply to.
 
-    Groups: always the @g.us ID (in 'to').
-    Outgoing (fromMe): destination is the chat — use 'to'.
-    Incoming DM: the sender IS the chat — use 'from'.
+    Groups: always the @g.us ID.
+    Outgoing (fromMe): destination is the chat.
+    Incoming DM: the sender IS the chat.
+
+    WEBJS fills 'to'; NOWEB leaves it null and encodes the chat in the message
+    id, so fall back to _chat_id_from_id. Self-chat is normalised to our
+    canonical @c.us JID because WhatsApp's server rejects an @lid send target.
     """
     payload = body.get("payload", {})
-    to = payload.get("to", "")
+    to = payload.get("to") or ""
+    frm = payload.get("from") or ""
+    id_chat = _chat_id_from_id(payload)
     if to.endswith("@g.us"):
         return to
+    if id_chat.endswith("@g.us"):
+        return id_chat
     if payload.get("fromMe", False):
-        return to
-    return payload.get("from", "") or to
+        dest = to or id_chat or frm
+        if _own_identity(dest):
+            return MY_WHATSAPP_ID or dest
+        return dest
+    return frm or id_chat or to
 
 
 async def _restart_backend(chat_id: str) -> None:

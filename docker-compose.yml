@@ -119,7 +119,7 @@ services:
     restart: always
     profiles: ["prod"]
     environment:
-      WHATSAPP_DEFAULT_ENGINE: "WEBJS"
+      WHATSAPP_DEFAULT_ENGINE: "NOWEB"
       WAHA_PRINT_QR: "true"
       WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
       WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-}
