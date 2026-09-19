@@ -1,0 +1,41 @@
+[project]
+name = "phantom-tap"
+version = "0.1.0"
+description = "Precision automation for phone apps with no public API"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx[http2]>=0.27",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+# Only needed on the machine that does protocol capture / UI fallback.
+device = ["mitmproxy>=10", "uiautomator2>=3"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "respx>=0.21", "ruff>=0.5", "mypy>=1.10"]
+
+[project.scripts]
+pt = "phantom_tap.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/phantom_tap"]

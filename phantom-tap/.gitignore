@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Never commit: real protocol, real credentials, real captures.
+captures/
+config/endpoints.json
+config/booking.toml
+*.key
+*.sqlite3
+*.db
+.env
+screenshots/
