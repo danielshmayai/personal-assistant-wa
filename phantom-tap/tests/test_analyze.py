@@ -134,7 +134,7 @@ def test_separates_register_from_seat_confirm(tmp_path, make_backend):
     """The register path contains a standalone '2' (from /v2/) - not a seat claim."""
     det = detect(tmp_path, make_backend())
 
-    assert det.endpoints["register"]["path"] == f"/api/v2/classes/{{class_id}}/register"
+    assert det.endpoints["register"]["path"] == "/api/v2/classes/{class_id}/register"
     assert det.endpoints["confirm_seat"]["path"] == "/api/v2/classes/{class_id}/spots/{seat}"
     assert det.endpoints["seat_map"]["path"] == "/api/v2/classes/{class_id}/spots"
 

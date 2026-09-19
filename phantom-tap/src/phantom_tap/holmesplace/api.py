@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import httpx
@@ -33,7 +33,7 @@ from phantom_tap.holmesplace.models import (
 logger = logging.getLogger("phantom_tap.api")
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     """What an attempt meant. The race branches on exactly these."""
 
     OK = "ok"
@@ -245,10 +245,8 @@ class HolmesPlaceClient:
         ep = self.ep.my_bookings
         if ep is not None:
             key = ep.fields.get("class_id", "class_id")
-            for booking in await self.my_bookings():
-                if str(pathspec.resolve(booking, key)) == str(class_id):
-                    return True
-            return False
+            bookings = await self.my_bookings()
+            return any(str(pathspec.resolve(b, key)) == str(class_id) for b in bookings)
 
         today = datetime.now(tz=_tz()).date()
         for slot in await self.schedule(today):

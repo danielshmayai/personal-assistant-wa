@@ -1,0 +1,28 @@
+# systemd unit for the always-on watcher. Install:
+#   sudo cp scripts/phantom-tap.service /etc/systemd/system/
+#   sudo systemctl enable --now phantom-tap
+# Adjust User and WorkingDirectory to wherever the repo lives on your Mini-PC.
+[Unit]
+Description=phantom-tap - book Holmes Place classes when registration opens
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/phantom-tap
+ExecStart=/home/pi/phantom-tap/.venv/bin/pt -v daemon
+Restart=always
+RestartSec=30
+# The daemon must survive reboots and flaky Wi-Fi; it re-syncs the clock and
+# re-logs-in before every window anyway, so a restart mid-week loses nothing.
+
+# Least privilege: it needs its own directory and the network, nothing else.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pi/phantom-tap/data /home/pi/phantom-tap/screenshots
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

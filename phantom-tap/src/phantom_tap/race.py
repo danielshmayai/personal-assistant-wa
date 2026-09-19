@@ -81,7 +81,7 @@ class RacePlan:
     t0_precision: float = 1.0
 
     @classmethod
-    def from_slot(cls, slot, **kw) -> "RacePlan":
+    def from_slot(cls, slot, **kw) -> RacePlan:
         """Build a plan from a schedule entry, deriving the burst from its precision."""
         precision = (
             COARSE_T0_PRECISION
@@ -135,7 +135,7 @@ async def race(client: HolmesPlaceClient, plan: RacePlan, clock: Clock) -> RaceR
         try:
             seats = await client.seat_map(plan.class_id)
             logger.info("seat map cached: %d seats, %d free right now", len(seats), sum(s.available for s in seats))
-        except Exception as exc:  # noqa: BLE001 - a missing seat map must not abort the race
+        except Exception as exc:
             logger.warning("seat map unavailable before T0 (%s); will read it after registering", exc)
 
     logger.info(
@@ -203,7 +203,7 @@ async def race(client: HolmesPlaceClient, plan: RacePlan, clock: Clock) -> RaceR
     # ---------------------------------------------------------- verify ------
     try:
         result.verified = await client.verify_booked(plan.class_id)
-    except Exception as exc:  # noqa: BLE001 - a failed check is not a failed booking
+    except Exception as exc:
         result.reason = f"registered, but the confirmation read failed: {exc}"
         return result
 
@@ -217,7 +217,7 @@ async def _claim_seat(
     if not seats:
         try:
             seats = await client.seat_map(plan.class_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("no seat map after registering (%s) - keeping the registration", exc)
             return None
 
