@@ -1,0 +1,14 @@
+# Applies to builds whose context is the repo root (Dockerfile.product,
+# Dockerfile.gateway). The WhatsApp engine builds from ./backend and is
+# unaffected.
+#
+# Keeps secrets (.env) out of the build context entirely, and stops a host
+# node_modules / dist from being copied over the ones built in the image.
+.git
+.env
+.env.*
+**/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+backend/.venv

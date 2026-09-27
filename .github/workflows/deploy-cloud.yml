@@ -1,0 +1,117 @@
+name: Deploy new assistant to cloud
+
+# Deploys ONLY the new (multi-tenant web) assistant to the external server.
+# Runs entirely on GitHub-hosted runners — no dependency on the local PC or
+# its self-hosted runner. The server never needs repository credentials: the
+# checked-out code is pushed to it over SSH, then built there.
+#
+# Disabled until the repository variable CLOUD_DEPLOY_ENABLED is "true".
+# Setup: deploy/cloud/README.md
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "product/**"
+      - "frontend/**"
+      - "backend/app/**"
+      - "backend/requirements.txt"
+      - "Dockerfile.product"
+      - "Dockerfile.gateway"
+      - "docker-compose.cloud.yml"
+      - "deploy/cloud/**"
+      - "deploy/nginx.product.conf"
+      - ".github/workflows/deploy-cloud.yml"
+  workflow_dispatch:
+
+# Never run two deploys against the server at once; let the running one finish.
+concurrency:
+  group: deploy-cloud
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sanity:
+    name: Sanity Tests
+    if: vars.CLOUD_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Run sanity tests
+        working-directory: backend
+        run: python -m pytest tests/test_sanity.py -q
+
+  deploy:
+    name: Build & Restart on Server
+    needs: sanity
+    runs-on: ubuntu-latest
+    env:
+      CLOUD_ADDR: ${{ secrets.CLOUD_HOST }}
+      CLOUD_LOGIN: ${{ secrets.CLOUD_USER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.CLOUD_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.CLOUD_SSH_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$CLOUD_ADDR" ] || [ -z "$CLOUD_LOGIN" ] || [ -z "$SSH_KEY" ] || [ -z "$KNOWN_HOSTS" ]; then
+            echo "Missing CLOUD_HOST / CLOUD_USER / CLOUD_SSH_KEY / CLOUD_SSH_KNOWN_HOSTS secrets."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          # Pinned host key — a fresh runner must not trust-on-first-use.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host cloud\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking yes\n' \
+            "$CLOUD_ADDR" "$CLOUD_LOGIN" > ~/.ssh/config
+
+      - name: Push code to server
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' --exclude 'node_modules/' --exclude 'frontend/dist/' \
+            --exclude '__pycache__/' --exclude '.env' \
+            ./ cloud:/opt/pa/
+
+      - name: Build and restart stack
+        run: |
+          ssh cloud 'set -e
+            cd /opt/pa
+            test -f .env || { echo "/opt/pa/.env missing — run deploy/cloud/bootstrap.sh first"; exit 1; }
+            docker compose -f docker-compose.cloud.yml -p pa-cloud up -d --build --remove-orphans
+            docker image prune -f >/dev/null'
+
+      - name: Verify API is healthy
+        run: |
+          ssh cloud 'for i in $(seq 1 30); do
+              s=$(docker inspect -f "{{.State.Health.Status}}" pa-cloud-api 2>/dev/null || echo missing)
+              echo "attempt $i: $s"
+              [ "$s" = healthy ] && exit 0
+              sleep 5
+            done
+            echo "API did not become healthy:"; docker logs pa-cloud-api --tail 80; exit 1'
+
+      - name: Verify public URL end-to-end
+        if: vars.CLOUD_PUBLIC_URL != ''
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS --max-time 10 "${{ vars.CLOUD_PUBLIC_URL }}/health"; then echo; exit 0; fi
+            sleep 5
+          done
+          echo "Public URL not reachable — check the tailscale container: docker logs pa-cloud-ts"
+          exit 1

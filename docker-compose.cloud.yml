@@ -1,0 +1,110 @@
+# Standalone cloud stack for the NEW assistant (multi-tenant web app) only.
+#
+# Unlike docker-compose.product.yml, this does not depend on the local
+# WhatsApp engine at all: it runs its own Postgres (pgvector), has no WAHA and
+# no Ollama, and the owner is scoped like any other tenant
+# (OWNER_LEGACY_SCOPE=0). Public HTTPS comes from Tailscale Funnel running as a
+# sidecar, so the server needs no open inbound ports and no domain name.
+#
+# Setup + day-2 operations: deploy/cloud/README.md
+#
+#   docker compose -f docker-compose.cloud.yml -p pa-cloud up -d --build
+
+services:
+  postgres:
+    container_name: pa-cloud-db
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pa}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pa} -d ${POSTGRES_DB:-pa}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  product-api:
+    container_name: pa-cloud-api
+    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile.product
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pa}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      SECRETS_MASTER_KEY: ${SECRETS_MASTER_KEY:?Set SECRETS_MASTER_KEY}
+      # Encrypts users' Google OAuth tokens at rest. The engine FAILS OPEN to
+      # plaintext without it, so it is mandatory on an internet-facing host.
+      DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?Set DB_ENCRYPTION_KEY}
+      # Persistent Web Push identity. Without these the app mints ephemeral
+      # keys on every start and every deploy breaks all push subscriptions.
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_SUBJECT: mailto:${OWNER_EMAIL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET}
+      PRODUCT_BASE_URL: ${PRODUCT_BASE_URL:?Set PRODUCT_BASE_URL}
+      GOOGLE_REDIRECT_URI: ${PRODUCT_BASE_URL}/auth/google/callback
+      OWNER_EMAIL: ${OWNER_EMAIL:?Set OWNER_EMAIL}
+      # Standalone: the owner gets their own tenant scope (own encrypted keys,
+      # own vault, own scheduled jobs) — there is no WhatsApp engine here to
+      # own the legacy '' scope. See product/config.py.
+      OWNER_LEGACY_SCOPE: "0"
+      VAULT_BASE_DIR: /data/vaults
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      USER_TIMEZONE: ${USER_TIMEZONE:-Asia/Jerusalem}
+      # No WhatsApp in the cloud: leaving MY_WHATSAPP_ID unset makes the
+      # sign-up notification a no-op. Approve new users in the Admin tab.
+      MY_WHATSAPP_ID: ""
+      WAHA_BASE_URL: ""
+    volumes:
+      - vaults:/data/vaults
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # Tailscale sidecar: joins your tailnet and publishes the gateway on the
+  # public internet with a stable HTTPS address via Funnel:
+  #   https://${TS_HOSTNAME}.<your-tailnet>.ts.net
+  tailscale:
+    container_name: pa-cloud-ts
+    image: ghcr.io/tailscale/tailscale:stable
+    restart: always
+    hostname: ${TS_HOSTNAME:-pa-cloud}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-pa-cloud}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - ts-state:/var/lib/tailscale
+      - ./deploy/cloud/serve.json:/config/serve.json:ro
+
+  # Serves the built SPA and proxies /api, /auth, /health and /ws to the API.
+  # Shares the tailscale container's network namespace, so Funnel reaches it
+  # on 127.0.0.1:80 and nothing is published on the host.
+  gateway:
+    container_name: pa-cloud-gateway
+    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+      - product-api
+
+volumes:
+  pg-data:
+  vaults:
+  ts-state:

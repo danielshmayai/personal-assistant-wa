@@ -31,6 +31,16 @@ PRODUCT_BASE_URL = os.getenv("PRODUCT_BASE_URL", "http://localhost:8080")
 # email is seeded as the owner tenant (is_owner=true, engine scope '').
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")
 
+# Does the owner share the old WhatsApp assistant's legacy data scope ('')?
+#   1 (default) — co-located with the WhatsApp engine: the owner sees the same
+#       memory/vault/env keys through WhatsApp and the web UI, and the owner's
+#       scheduled jobs run in the engine's own process.
+#   0 — standalone deployment (no WhatsApp engine beside it, e.g. the cloud
+#       stack): the owner is scoped like any other tenant — own encrypted keys,
+#       own vault, and scheduled jobs run by this process. Admin rights still
+#       come from is_owner; only the DATA scope changes.
+OWNER_LEGACY_SCOPE = os.getenv("OWNER_LEGACY_SCOPE", "1").strip().lower() not in ("0", "false", "no")
+
 # Where per-tenant Obsidian vaults live (local backend). S3 later.
 VAULT_BASE_DIR = os.getenv("VAULT_BASE_DIR", "/data/vaults")
 VAULT_BACKEND = os.getenv("VAULT_BACKEND", "local")       # local | s3 (stub)

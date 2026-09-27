@@ -183,6 +183,10 @@ jobs:
     name: Pull & Rebuild Product Stack (new assistant)
     runs-on: [self-hosted, pa]
     needs: deploy
+    # Set the repository variable LOCAL_PRODUCT_DEPLOY=false once the new
+    # assistant runs in the cloud (deploy-cloud.yml) to stop redeploying the
+    # local copy on this PC. Unset/anything else keeps today's behaviour.
+    if: vars.LOCAL_PRODUCT_DEPLOY != 'false'
     # Require the DEPLOY_GATE secret to match a known value — same gate as
     # the old-assistant deploy job above.
     env:

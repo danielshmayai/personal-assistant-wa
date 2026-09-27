@@ -27,8 +27,8 @@ async def me(tenant: Tenant = Depends(require_session)):
     # (pinned at key-save/self-heal time). Not sensitive — always shown in
     # the UI, not just when free-tier-limited or on the Ollama fallback.
     from app.config import GEMINI_MODEL
-    if tenant.is_owner:
-        # Owner scope never probes/pins/falls back (backend/app/llm.py's
+    if not tenant.engine_scope:
+        # Legacy owner scope ('') never probes/pins/falls back (backend/app/llm.py's
         # _resolve_engine_and_model short-circuits to the env default) — so
         # report that same truth here instead of reading tenant_secrets,
         # which the engine never writes to for the owner.
@@ -73,7 +73,7 @@ async def me(tenant: Tenant = Depends(require_session)):
             "limited": gemini_limited,
             "engine": llm_engine,
             "allow_premium": allow_premium,
-            "can_set_premium": not tenant.is_owner,
+            "can_set_premium": bool(tenant.engine_scope),
         },
     }
 
@@ -89,7 +89,7 @@ async def set_model_preference(body: ModelPreference, tenant: Tenant = Depends(r
     Flash and below. Clears the tenant's existing model pin so the very next
     message re-probes against the new tier ceiling instead of keeping
     whatever was pinned before this changed."""
-    if tenant.is_owner:
+    if not tenant.engine_scope:
         return {"ok": False, "error": "owner_uses_platform_default"}
     backend = get_secrets_backend()
     backend.set(tenant.id, "GEMINI_ALLOW_PREMIUM", "1" if body.allow_premium else "0")

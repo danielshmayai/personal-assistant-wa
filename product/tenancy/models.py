@@ -16,8 +16,11 @@ class Tenant:
     def engine_scope(self) -> str:
         """Tenant id as seen by the engine's data layer.
 
-        The owner maps to '' — the legacy single-user scope — so the owner
+        Co-located with the WhatsApp engine (OWNER_LEGACY_SCOPE=1, default),
+        the owner maps to '' — the legacy single-user scope — so the owner
         sees the same memory/vault through WhatsApp and the product web UI.
-        Every other tenant gets their own keyspace.
+        Standalone (OWNER_LEGACY_SCOPE=0) there is no engine process to own
+        that scope, so the owner gets their own keyspace like everyone else.
         """
-        return "" if self.is_owner else self.id
+        from product.config import OWNER_LEGACY_SCOPE
+        return "" if (self.is_owner and OWNER_LEGACY_SCOPE) else self.id
