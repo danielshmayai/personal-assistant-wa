@@ -6,9 +6,9 @@
 # (OWNER_LEGACY_SCOPE=0). Public HTTPS comes from Tailscale Funnel running as a
 # sidecar, so the server needs no open inbound ports and no domain name.
 #
-# Setup + day-2 operations: deploy/cloud/README.md
-#
-#   docker compose -f docker-compose.cloud.yml -p pa-cloud up -d --build
+# Setup: one command on a fresh Ubuntu server — see deploy/cloud/README.md.
+# The server then keeps itself on the latest published images
+# (deploy/cloud/update.sh via cron).
 
 services:
   postgres:
@@ -30,6 +30,9 @@ services:
   product-api:
     container_name: pa-cloud-api
     restart: always
+    # Prebuilt by .github/workflows/build-cloud-images.yml. Pin PA_IMAGE_TAG
+    # to a commit sha in .env to roll back. `build:` remains as a fallback.
+    image: ${PA_IMAGE_REPO:-ghcr.io/danielshmayai}/pa-cloud-api:${PA_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.product
@@ -96,6 +99,7 @@ services:
   gateway:
     container_name: pa-cloud-gateway
     restart: always
+    image: ${PA_IMAGE_REPO:-ghcr.io/danielshmayai}/pa-cloud-gateway:${PA_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.gateway

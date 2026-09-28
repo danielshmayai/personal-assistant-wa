@@ -1,153 +1,104 @@
 # Running the new assistant on a cloud server (free)
 
-This deploys **only the new assistant** (the multi-tenant web app) to an
+This puts **only the new assistant** (the multi-tenant web app) on an
 external server, fully independent of the local PC. The old WhatsApp assistant
-is untouched and keeps running where it is.
+is untouched.
 
 | Piece | What it is |
 |---|---|
 | Server | Oracle Cloud **Always Free** ARM VM (Ubuntu) |
-| Public HTTPS | **Tailscale Funnel** — stable `https://pa-cloud.<tailnet>.ts.net`, no domain, no open ports |
-| Stack | `docker-compose.cloud.yml`: own Postgres (pgvector) + API + nginx gateway + Tailscale sidecar |
-| Deploys | `.github/workflows/deploy-cloud.yml` on GitHub-hosted runners, over SSH |
+| Public HTTPS | **Tailscale Funnel**: stable `https://pa-cloud.<tailnet>.ts.net`, no domain, no open ports |
+| Images | Built by GitHub (`build-cloud-images.yml`) → `ghcr.io/danielshmayai/pa-cloud-*` |
+| Updates | The server pulls new images by itself every 5 minutes (`update.sh`) |
 
 It starts **clean**: new database, new vaults. Nothing is copied from the PC.
 
 ---
 
-## 1. Create the server (Oracle Cloud)
+## Setup: 4 steps, about 15 minutes
 
+### 1. Tailscale auth key
+[Tailscale admin](https://login.tailscale.com/admin) → **Settings → Keys →
+Generate auth key**. Leave *ephemeral* **off**. Copy the key (`tskey-auth-…`).
+
+Also check the **DNS** tab: *MagicDNS* and *HTTPS Certificates* must be on.
+
+### 2. Create the server (Oracle Cloud)
 1. Sign up at <https://www.oracle.com/cloud/free/>. A card is requested for
    identity verification; Always Free resources are not charged.
-   **Choose your home region carefully**: Always Free ARM capacity exists
-   only there, and it can't be changed later.
+   **Pick your home region carefully**: free ARM capacity exists only there.
 2. *Compute → Instances → Create instance*:
-   - Image: **Canonical Ubuntu 24.04** (the aarch64 build)
-   - Shape: **Ampere → VM.Standard.A1.Flex**, 2 OCPU / 12 GB RAM is plenty
-     (up to 4 / 24 GB is free)
-   - SSH keys: *Generate a key pair* and **download the private key**
-3. If you get *"Out of capacity"*, retry later or pick another
-   availability domain. This is common and temporary.
+   - Image: **Canonical Ubuntu 24.04**
+   - Shape: **Ampere → VM.Standard.A1.Flex**, 2 OCPU / 12 GB
+   - SSH keys: *Generate a key pair* → **download the private key**
+3. *"Out of capacity"* is common and temporary. Retry later or pick another
+   availability domain.
 
-> You don't need your PC to log in: the **Cloud Shell** button (top-right
-> of the Oracle console) opens a browser terminal. Upload the private key
-> there and run `ssh -i <key> ubuntu@<public-ip>`.
-
-## 2. Prepare the server (one command)
-
-On the server, create the bootstrap script. Open `deploy/cloud/bootstrap.sh`
-on GitHub, copy it, then:
-
+### 3. Run one command on the server
+Open **Cloud Shell** (top-right in the Oracle console, runs in the browser),
+upload the private key, and connect:
 ```bash
-nano bootstrap.sh      # paste, Ctrl+O, Enter, Ctrl+X
-bash bootstrap.sh
+chmod 600 <key-file>
+ssh -i <key-file> ubuntu@<server-public-ip>
 ```
-
-It installs Docker, creates `/opt/pa/.env` with all secrets already
-generated, creates a deploy key for GitHub, and prints the exact values
-needed in step 5. **Log out and back in once afterwards**, so your user can
-run `docker`.
-
-## 3. Tailscale (public HTTPS address)
-
-In the [Tailscale admin console](https://login.tailscale.com/admin):
-
-1. **DNS** tab → make sure *MagicDNS* and *HTTPS Certificates* are enabled.
-   Note your tailnet name (e.g. `tail557da6.ts.net`).
-2. **Access controls** → make sure Funnel is allowed. The policy must contain
-   (newer tailnets have it by default):
-   ```json
-   "nodeAttrs": [{ "target": ["autogroup:member"], "attr": ["funnel"] }]
-   ```
-3. **Settings → Keys → Generate auth key**, *not* ephemeral. Copy it.
-4. After the first deploy, open **Machines → pa-cloud → ⋯ → Disable key
-   expiry**. Otherwise the node key expires after ~180 days and the site
-   goes offline.
-
-Your public URL will be `https://pa-cloud.<tailnet>.ts.net`.
-
-## 4. Google OAuth
-
-In [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials),
-open the OAuth client and add **Authorized redirect URIs**:
-
-```
-https://pa-cloud.<tailnet>.ts.net/auth/callback
-https://pa-cloud.<tailnet>.ts.net/auth/google/callback
-```
-
-## 5. Fill in the server's `.env`
-
+Then:
 ```bash
-nano /opt/pa/.env
+curl -fsSL https://raw.githubusercontent.com/danielshmayai/personal-assistant-wa/main/deploy/cloud/bootstrap.sh | bash
 ```
+It asks for your Google email, the Google OAuth client ID + secret (the same
+client you already use), and the Tailscale key. Everything else is automatic.
+At the end it prints your URL and two redirect URIs.
 
-| Key | Value |
-|---|---|
-| `OWNER_EMAIL` | your Google account; its first login becomes the admin |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | from step 4 |
-| `TS_AUTHKEY` | from step 3 |
-| `PRODUCT_BASE_URL` | `https://pa-cloud.<tailnet>.ts.net` (no trailing slash) |
+### 4. Two clicks in the browser
+- **Google Cloud Console** → Credentials → your OAuth client →
+  *Authorized redirect URIs* → add the two URIs the script printed.
+- **Tailscale admin** → Machines → `pa-cloud` → ⋯ → **Disable key expiry**
+  (otherwise the site goes offline in about 180 days).
 
-**Back up this file** (a password manager is ideal). `SECRETS_MASTER_KEY`
-and `DB_ENCRYPTION_KEY` decrypt every user's saved keys and Google tokens.
+Open the URL and sign in with your email. New users who sign up wait as
+**pending** until you approve them in the **Admin** tab.
 
-## 6. Connect GitHub → server
-
-Repository **Settings → Secrets and variables → Actions**:
-
-- **Secrets:** `CLOUD_HOST`, `CLOUD_USER`, `CLOUD_SSH_KNOWN_HOSTS` (all
-  printed by bootstrap) and `CLOUD_SSH_KEY` (output of `cat ~/.ssh/gh_deploy`
-  on the server).
-- **Variables:** `CLOUD_DEPLOY_ENABLED` = `true`, and optionally
-  `CLOUD_PUBLIC_URL` = your URL (enables an end-to-end check after each
-  deploy).
-
-## 7. First deploy
-
-**Actions → "Deploy new assistant to cloud" → Run workflow.** The first
-build takes a few minutes. After that, every push to `main` that touches the
-new assistant redeploys automatically.
-
-Open your URL, sign in with `OWNER_EMAIL`, and complete onboarding (Gemini
-key etc.). New users who sign up wait as **pending** until you approve them
-in the **Admin** tab. There is no WhatsApp notification in the cloud.
-
-## 8. Retire the local copy
-
-Once the cloud version works:
-
-1. Repository variable `LOCAL_PRODUCT_DEPLOY` = `false` (stops the PC from
-   redeploying it).
-2. On the PC: `docker compose -f docker-compose.product.yml -p pa-product down`
-
-The old WhatsApp assistant (`docker compose` project `pa`) is not affected.
+**Back up `/opt/pa/.env`** (a password manager is ideal). It holds the keys
+that decrypt every user's saved API keys and Google tokens.
 
 ---
 
+## Retire the local copy
+Once the cloud version works:
+1. Repository variable `LOCAL_PRODUCT_DEPLOY` = `false` (the PC stops
+   redeploying it).
+2. On the PC: `docker compose -f docker-compose.product.yml -p pa-product down`
+
 ## Differences from the local version
+- **You're a regular user who is also admin** (`OWNER_LEGACY_SCOPE=0`): your
+  own keys, vault and reminders. Memory is **not** shared with WhatsApp
+  danidin.
+- **Generic assistant prompt.** Owner-only personal instructions don't apply;
+  tell the assistant what matters to you and it keeps it in memory.
+- **No Ollama fallback** and **no WhatsApp** (approve users in the Admin tab).
 
-- **The owner is a regular scope** (`OWNER_LEGACY_SCOPE=0`): you enter your
-  own keys in onboarding/Settings, and you get your own vault and reminders.
-  Memory is **not** shared with WhatsApp danidin.
-- **Generic assistant prompt**: the owner-only personal instructions
-  (health/training constraints) belong to the legacy scope and don't apply.
-  Tell the assistant what matters to you; it keeps it in memory.
-- **No Ollama fallback**: if a user's Gemini key stops working entirely,
-  they get an error instead of a local model.
-- **No WhatsApp**: approvals happen in the Admin tab.
-
-## Day-2 operations (on the server)
-
+## Operations (on the server)
 ```bash
 cd /opt/pa
-docker compose -f docker-compose.cloud.yml -p pa-cloud ps          # status
-docker logs pa-cloud-api --tail 100                                # API logs
-docker logs pa-cloud-ts --tail 50                                  # Tailscale / Funnel
+C="docker compose -f docker-compose.cloud.yml -p pa-cloud"
+$C ps                                   # status
+docker logs pa-cloud-api --tail 100     # app logs
+journalctl -t pa-cloud-update           # what the auto-updater did
+./deploy/cloud/update.sh                # update now instead of waiting
 
-# Database backup (run regularly; copy the file off the server)
+# Roll back: pin a commit's images, then update
+echo "PA_IMAGE_TAG=<commit-sha>" >> .env && ./deploy/cloud/update.sh
+
+# Database backup (copy the file off the server)
 docker exec pa-cloud-db pg_dump -U pa pa | gzip > ~/pa-$(date +%F).sql.gz
 ```
 
-Oracle may reclaim Always Free VMs that stay almost entirely idle. Normal use
-avoids this, and so do regular backups.
+If GitHub reports the images as private (a warning in the build workflow),
+make each one public once: GitHub → your profile → **Packages** →
+`pa-cloud-api` / `pa-cloud-gateway` → Package settings → Change visibility →
+Public. The source code is already public, so the images reveal nothing new.
+Until then, bootstrap still works (it builds from source), but automatic
+updates can't install (`journalctl -t pa-cloud-update` shows the pull error).
+
+Oracle may reclaim Always Free VMs that stay almost completely idle; normal use
+avoids that.
