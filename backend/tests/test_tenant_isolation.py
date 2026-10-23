@@ -771,51 +771,71 @@ class TestSchedulingModuleGate:
 
 
 # ---------------------------------------------------------------------------
-# 12. self_review — skips owner-only vault-embedding rebuild for tenants (P6.7)
+# 12. self_review / memory index — tenant-aware (was owner-only, P6.7)
 #
-# capabilities.sync_capabilities() and embeddings.rebuild_vault_embeddings/
-# rebuild_rule_embeddings were never designed to be tenant-aware (their own
-# separate VAULT_ROOT constant + a hardcoded `WHERE tenant_id = ''` query) —
-# calling them under a tenant's scope would read the OWNER's vault, burn the
-# TENANT's Gemini quota, and overwrite the OWNER's embedding cache.
+# The embedding rebuilds now resolve the vault through runtime.get_vault_root()
+# and scope every row by current_tenant_id, so a tenant's self-review indexes
+# THEIR vault under THEIR tenant_id. Capabilities.md stays owner-only.
 # ---------------------------------------------------------------------------
 
 class TestSelfReviewTenantIsolation:
-    def test_tenant_scope_skips_owner_only_rebuild_calls(self):
+    def test_tenant_scope_indexes_own_vault_but_skips_capabilities(self, tmp_path):
+        from app import runtime
         import app.memory.self_review as sr
         import app.memory.capabilities as caps
         import app.memory.embeddings as emb
+        from app.context import current_tenant_id
+
+        owner_vault, tenant_vault = tmp_path / "owner", tmp_path / "tenant-a"
+        for v in (owner_vault, tenant_vault):
+            (v / "People").mkdir(parents=True)
+        (tenant_vault / "People" / "Dana.md").write_text("# Dana\n\nTenant note", encoding="utf-8")
+        (owner_vault / "People" / "Boss.md").write_text("# Boss\n\nOwner note", encoding="utf-8")
+
+        runtime.set_vault_root_resolver(
+            lambda: tenant_vault if current_tenant_id.get() == "tenant-a" else owner_vault
+        )
+        upserts = []
+
+        def fake_upsert(rel, text):
+            upserts.append((current_tenant_id.get(), rel))
+            return True
+
+        async def no_backfill():
+            return 0
 
         with (
             patch.object(sr, "get_recent_conversations", return_value=[]),
             patch.object(caps, "sync_capabilities") as fake_sync,
-            patch.object(emb, "rebuild_vault_embeddings") as fake_rebuild_vault,
-            patch.object(emb, "rebuild_rule_embeddings") as fake_rebuild_rules,
+            patch.object(emb, "ensure_embedding_model_current", return_value=False),
+            patch.object(emb, "_api_key", return_value="k"),
+            patch.object(emb, "_get_conn", side_effect=RuntimeError("no db")),
+            patch.object(emb, "upsert_embedding", side_effect=fake_upsert),
+            patch.object(emb, "backfill_episode_embeddings", side_effect=no_backfill),
         ):
             reset = _set_scope("tenant-a")
             try:
                 result = _run(sr.run_self_review(hours=24))
             finally:
                 reset()
+                runtime.set_vault_root_resolver(runtime._default_vault_root)
 
         fake_sync.assert_not_called()
-        fake_rebuild_vault.assert_not_called()
-        fake_rebuild_rules.assert_not_called()
+        assert upserts == [("tenant-a", "People/Dana.md")]  # never the owner's vault
         assert result == "No conversations to review."
 
-    def test_owner_scope_still_calls_rebuild(self):
+    def test_owner_scope_still_syncs_capabilities(self):
         import app.memory.self_review as sr
         import app.memory.capabilities as caps
-        import app.memory.embeddings as emb
+        import app.memory.maintenance as mt
 
-        async def fake_rebuild():
-            return 0
+        async def fake_index():
+            return {}
 
         with (
             patch.object(sr, "get_recent_conversations", return_value=[]),
             patch.object(caps, "sync_capabilities") as fake_sync,
-            patch.object(emb, "rebuild_vault_embeddings", side_effect=fake_rebuild),
-            patch.object(emb, "rebuild_rule_embeddings", side_effect=fake_rebuild),
+            patch.object(mt, "index_pass", side_effect=fake_index),
         ):
             _run(sr.run_self_review(hours=24))  # owner scope — no _set_scope
 

@@ -1,17 +1,32 @@
 import { useEffect, useState } from "react";
 import type {
-  MemoryCategory, MemoryEntityDetail, MemoryEntitySummary, MemoryRule,
+  MemoryCategory, MemoryEntityDetail, MemoryEntitySummary, MemoryEvent, MemoryRule,
 } from "../lib/types";
 import { api, ApiError } from "../lib/api";
 import { Button, Card, Input, Spinner } from "../components/ui";
 
 const CATEGORY_ICON: Record<string, string> = {
   People: "👤", Entities: "🏢", Investments: "💰", Projects: "📁",
-  Preferences: "⭐", Photos: "📷", Misc: "🗂️",
+  Preferences: "⭐", Photos: "📷", Misc: "🗂️", Profile: "🪪", Maps: "🗺️",
 };
 
+const KIND_LABEL: Record<string, string> = {
+  person: "👤 person", project: "📁 project", decision: "✅ decision", preference: "⭐ preference",
+  fact: "📌 fact", commitment: "⏰ commitment", rule: "📏 rule",
+};
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "";
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 60) return `${Math.max(mins, 1)}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 export default function Memory() {
-  const [tab, setTab] = useState<"browse" | "rules" | "search">("browse");
+  const [tab, setTab] = useState<"learned" | "browse" | "rules" | "search">("learned");
+  const [events, setEvents] = useState<MemoryEvent[] | null>(null);
   const [categories, setCategories] = useState<MemoryCategory[] | null>(null);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [entities, setEntities] = useState<MemoryEntitySummary[] | null>(null);
@@ -31,6 +46,13 @@ export default function Memory() {
   };
 
   useEffect(() => { loadCategories(); }, []);
+  useEffect(() => {
+    if (tab === "learned") {
+      api.get<{ events: MemoryEvent[] }>("/api/memory/recent?hours=720")
+        .then((r) => setEvents(r.events))
+        .catch((e) => setError(e instanceof ApiError ? e.detail : "Failed to load recent memory"));
+    }
+  }, [tab]);
   useEffect(() => {
     if (tab === "rules") {
       api.get<{ rules: MemoryRule[] }>("/api/memory/rules")
@@ -78,6 +100,16 @@ export default function Memory() {
     } finally { setBusy(false); }
   };
 
+  const forget = async (ev: MemoryEvent) => {
+    setBusy(true); setError("");
+    try {
+      await api.delete(`/api/memory/recent/${ev.id}`);
+      setEvents((prev) => prev?.filter((x) => x.id !== ev.id) ?? null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Failed to forget");
+    } finally { setBusy(false); }
+  };
+
   const runSearch = () => {
     const q = query.trim();
     if (!q) return;
@@ -114,7 +146,7 @@ export default function Memory() {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">🧠 Memory</h2>
         <div className="flex rounded-lg border border-slate-800 p-0.5 text-sm">
-          {(["browse", "rules", "search"] as const).map((t) => (
+          {(["learned", "browse", "rules", "search"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`rounded-md px-3 py-1 capitalize ${tab === t ? "bg-slate-800 text-white" : "text-slate-400"}`}>
               {t}
@@ -125,6 +157,38 @@ export default function Memory() {
 
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>
+      )}
+
+      {tab === "learned" && (
+        <>
+          <p className="text-xs text-slate-500">
+            What I picked up from our conversations on my own. Tap ✕ on anything wrong and I&apos;ll forget it.
+          </p>
+          {!events ? (
+            <div className="flex justify-center py-8"><Spinner className="h-6 w-6" /></div>
+          ) : events.length === 0 ? (
+            <Card className="text-center text-sm text-slate-500">
+              Nothing learned in the last 30 days yet — just talk to me about your people, projects and plans.
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {events.map((ev) => (
+                <Card key={ev.id} className="flex items-start justify-between gap-3 py-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300">{KIND_LABEL[ev.kind] ?? ev.kind}</span>
+                      {ev.entity && ev.entity !== "Me" && <span className="font-medium text-slate-300">{ev.entity}</span>}
+                      <span>{timeAgo(ev.created_at)}</span>
+                    </div>
+                    <div dir="auto" className="text-sm">{ev.content}</div>
+                  </div>
+                  <button aria-label="forget" title="Wrong — forget it" onClick={() => forget(ev)} disabled={busy}
+                    className="shrink-0 rounded-md px-2 py-1 text-slate-500 hover:bg-slate-800 hover:text-red-400">✕</button>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {tab === "browse" && (

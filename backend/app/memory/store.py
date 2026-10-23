@@ -179,6 +179,26 @@ def init_memory_tables():
                 )
             """)
             _ensure_tenant_scoping(cur)
+            # What the assistant learned, when, and where it was filed. Feeds
+            # the "learned yesterday" brief line, the Recently-learned feed and
+            # the memory health numbers. Content stays in the vault; this keeps
+            # a short copy so the feed works without scanning files.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS memory_events (
+                    id SERIAL PRIMARY KEY,
+                    tenant_id TEXT NOT NULL DEFAULT '',
+                    kind TEXT NOT NULL,
+                    entity TEXT NOT NULL DEFAULT '',
+                    path TEXT NOT NULL DEFAULT '',
+                    content TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'extractor',
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS memory_events_tenant_time_idx "
+                "ON memory_events(tenant_id, created_at DESC)"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -369,44 +389,77 @@ def delete_rule(rule_id: int) -> bool:
         conn.close()
 
 
-async def load_memory_context(query: str = "") -> str:
-    """Build a text block of rules + query-relevant facts from the Obsidian vault.
+# Injection budgets (characters). Profile and rules are small and always
+# relevant; notes and past conversations are query-dependent.
+_PROFILE_BUDGET = 1500
+_RULES_BUDGET = 1500
+_FACTS_BUDGET = 2500
+_EPISODES_BUDGET = 1000
 
-    Tries semantic (pgvector) search first; falls back to keyword matching.
+# Last retrieval outcome per process — counts only, for the health panel.
+LAST_RETRIEVAL: dict = {}
+
+
+async def load_memory_context(query: str = "", recent: str = "") -> str:
+    """Build the long-term-memory block injected into the system prompt.
+
+    Order: user profile → active rules → relevant notes → past conversations.
+    `recent` is the previous turn(s) so short follow-ups ("and her?") still
+    retrieve the right notes. One query embedding serves notes and episodes;
+    hits below MEMORY_MIN_SIMILARITY are dropped instead of padding the prompt
+    with the 8 nearest-but-unrelated notes. Falls back to keyword search when
+    semantic search finds nothing (or embeddings are unavailable).
     """
+    from app.config import MEMORY_MIN_SIMILARITY
     from app.memory import obsidian
-    from app.memory.embeddings import semantic_search
+    from app.memory.embeddings import embed_query, semantic_search, vec_str
     from app.runtime import in_thread
-    rules = await in_thread(obsidian.read_rules)
+
+    profile = await in_thread(obsidian.read_profile, _PROFILE_BUDGET)
+    rules = await in_thread(obsidian.read_rules, _RULES_BUDGET)
+    profile_rel = f"{obsidian.PROFILE_CATEGORY}/{obsidian.PROFILE_ENTITY}.md"
 
     facts = ""
     episodes: list[str] = []
-    if query:
-        try:
-            filepaths = await in_thread(semantic_search, query)
-            non_system = [f for f in filepaths if not f.startswith("System/")]
-            if non_system:
-                facts = await in_thread(obsidian.read_facts_by_paths, non_system)
-        except Exception:
-            pass
-        try:
-            from app.memory.episodes import get_relevant_episodes
-            episodes = await get_relevant_episodes(query)
-        except Exception:
-            pass
-    if not facts:
-        facts = await in_thread(obsidian.read_relevant_facts, query)
+    semantic_hits = 0
+    search_text = f"{recent}\n{query}".strip() if recent else (query or "").strip()
+    if search_text:
+        vec = await in_thread(embed_query, search_text)
+        if vec:
+            hits = await in_thread(
+                lambda: semantic_search(limit=6, vec=vec, min_similarity=MEMORY_MIN_SIMILARITY)
+            )
+            paths = [p for p, _ in hits if not p.startswith("System/") and p != profile_rel]
+            semantic_hits = len(paths)
+            if paths:
+                facts = await in_thread(obsidian.read_facts_by_paths, paths, _FACTS_BUDGET)
+            try:
+                episodes = await in_thread(
+                    search_episodes, vec_str(vec), 3, MEMORY_MIN_SIMILARITY
+                )
+            except Exception:
+                logger.warning("episode search failed", exc_info=True)
+        if not facts and query:
+            facts = await in_thread(
+                lambda: obsidian.read_relevant_facts(query, _FACTS_BUDGET, exclude={profile_rel})
+            )
 
     parts: list[str] = []
+    if profile:
+        parts.append("### About the user\n" + profile)
     if rules:
-        parts.append("## Rules\n" + rules)
+        parts.append("### Rules the user gave you (always follow)\n" + rules)
     if facts:
-        parts.append("## Relevant Facts\n" + facts)
+        parts.append("### Relevant notes\n" + facts)
     if episodes:
-        parts.append("## Past relevant conversations\n" + "\n".join(f"- {e}" for e in episodes))
-    if not parts:
-        return ""
-    return "\n\n".join(parts)[:obsidian.MAX_INJECTED_BYTES]
+        ep_text = "\n".join(f"- {e}" for e in episodes)[:_EPISODES_BUDGET]
+        parts.append("### Related past conversations\n" + ep_text)
+
+    LAST_RETRIEVAL.update({
+        "profile": bool(profile), "rules": len(rules.splitlines()) if rules else 0,
+        "semantic_hits": semantic_hits, "facts": bool(facts), "episodes": len(episodes),
+    })
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -538,21 +591,24 @@ def save_episode(chat_id: str, summary: str, vec_str: str | None = None) -> None
         conn.close()
 
 
-def search_episodes(vec_str: str, limit: int = 3) -> list[str]:
-    """Return episode summaries ranked by cosine similarity to vec_str."""
+def search_episodes(vec_str: str, limit: int = 3, min_similarity: float = 0.0) -> list[str]:
+    """Episode summaries ranked by cosine similarity, at or above `min_similarity`."""
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT summary FROM episodes
+                SELECT summary, 1 - (embedding <=> %s::vector) AS sim, created_at FROM episodes
                 WHERE tenant_id = %s AND embedding IS NOT NULL
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
-                (_tid(), vec_str, limit),
+                (vec_str, _tid(), vec_str, limit),
             )
-            return [r[0] for r in cur.fetchall()]
+            return [
+                f"({r[2]:%Y-%m-%d}) {r[0]}" if r[2] else r[0]
+                for r in cur.fetchall() if float(r[1]) >= min_similarity
+            ]
     finally:
         conn.close()
 
@@ -653,5 +709,85 @@ def set_app_setting(key: str, value) -> None:
                     SET value = EXCLUDED.value, updated_at = NOW()
             """, (_tid(), key, _json.dumps(value)))
         conn.commit()
+    finally:
+        conn.close()
+
+# ── memory_events ────────────────────────────────────────────────────────────
+
+def record_memory_event(kind: str, entity: str = "", path: str = "", content: str = "",
+                        source: str = "extractor") -> None:
+    """Note that something was learned. Never raises — memory must not break chat."""
+    try:
+        conn = _get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO memory_events (tenant_id, kind, entity, path, content, source) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (_tid(), kind, entity[:200], path[:300], content[:500], source),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("record_memory_event failed", exc_info=True)
+
+
+def recent_memory_events(hours: int = 24, kinds: tuple[str, ...] | None = None,
+                         limit: int = 50) -> list[dict]:
+    """What was learned in the last `hours`, newest first."""
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    sql = ("SELECT id, kind, entity, path, content, source, created_at FROM memory_events "
+           "WHERE tenant_id = %s AND created_at > %s")
+    args: list = [_tid(), cutoff]
+    if kinds:
+        sql += " AND kind = ANY(%s)"
+        args.append(list(kinds))
+    sql += " ORDER BY created_at DESC LIMIT %s"
+    args.append(limit)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, args)
+            return [
+                {"id": r[0], "kind": r[1], "entity": r[2], "path": r[3], "content": r[4],
+                 "source": r[5], "created_at": r[6].isoformat() if r[6] else None}
+                for r in cur.fetchall()
+            ]
+    finally:
+        conn.close()
+
+
+def delete_memory_event(event_id: int) -> dict | None:
+    """Remove one feed entry (scoped); returns the deleted row for follow-up cleanup."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM memory_events WHERE tenant_id = %s AND id = %s "
+                "RETURNING kind, entity, path, content",
+                (_tid(), event_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return {"kind": row[0], "entity": row[1], "path": row[2], "content": row[3]} if row else None
+    finally:
+        conn.close()
+
+
+def memory_event_counts(days: int = 7) -> dict:
+    """{kind: count} over the last `days` — for the health panel."""
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT kind, count(*) FROM memory_events WHERE tenant_id = %s AND created_at > %s "
+                "GROUP BY kind",
+                (_tid(), cutoff),
+            )
+            return {r[0]: int(r[1]) for r in cur.fetchall()}
     finally:
         conn.close()

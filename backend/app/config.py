@@ -28,6 +28,15 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
 
+# Long-term memory embeddings. text-embedding-004 was retired by Google, which
+# silently disabled all semantic recall; gemini-embedding-001 truncated to 768
+# dims fits the existing vector(768) columns. Changing the model triggers a
+# re-embed of every tenant's index (memory.embeddings.ensure_embedding_model_current).
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+EMBEDDING_DIMS = 768
+# Minimum cosine similarity for a note / past conversation to be injected.
+MEMORY_MIN_SIMILARITY = float(os.getenv("MEMORY_MIN_SIMILARITY", "0.55"))
+
 # Google Cloud Text-to-Speech (Neural2). Leave empty to skip and use edge-tts only.
 GOOGLE_TTS_API_KEY = os.getenv("GOOGLE_TTS_API_KEY", "")
 

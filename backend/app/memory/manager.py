@@ -38,7 +38,11 @@ def save_fact(category: str, entity: str, content: str) -> str:
         content="Grosses $2,400/mo. #real-estate Linked: [[Daniel]]"
       )
     """
-    return obsidian.save_fact(category, entity, content)
+    result = obsidian.save_fact(category, entity, content)
+    if result.startswith("Saved to "):
+        from app.memory.store import record_memory_event
+        record_memory_event("fact", entity, result.removeprefix("Saved to ").strip(), content, source="tool")
+    return result
 
 
 @tool
@@ -61,6 +65,9 @@ def update_rule(instruction: str) -> str:
         logger.info("Replaced similar rule with refined version: %r", instruction)
     result = obsidian.update_rule(instruction)
     store_rule_embedding(instruction)
+    if result.startswith("Saved"):
+        from app.memory.store import record_memory_event
+        record_memory_event("rule", "", "System/Rules.md", instruction, source="tool")
     return result
 
 

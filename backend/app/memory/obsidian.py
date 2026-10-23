@@ -37,13 +37,20 @@ def __getattr__(name):  # PEP 562 — legacy importers (capabilities, self_revie
 ALLOWED_CATEGORIES: set[str] = {
     c.strip() for c in os.getenv(
         "OBSIDIAN_CATEGORIES",
-        "System,People,Entities,Investments,Projects,Preferences,Photos,Misc",
+        "System,Profile,People,Entities,Investments,Projects,Preferences,Photos,Maps,Misc",
     ).split(",") if c.strip()
-}
+} | {"Profile"}  # always allowed: the always-injected user profile lives there
+
+# The always-injected "who is the user" note (maintained by the extractor).
+PROFILE_CATEGORY = "Profile"
+PROFILE_ENTITY = "Me"
 
 MAX_INJECTED_BYTES = 4096
 MAX_RETRIEVE_RESULTS = 8
 MAX_SNIPPET_CHARS = 400
+# Retrieval snippet per note: the living Summary (or, before the first
+# consolidation, the most recent log entries — never the oldest ones).
+MAX_NOTE_SNIPPET_CHARS = 700
 _MAX_CATEGORY_LEN = 64
 _MAX_ENTITY_LEN = 80
 
@@ -107,7 +114,182 @@ def _frontmatter_block(category: str, entity: str) -> str:
         f"tags: [{category}]\n"
         "---\n\n"
         f"# {entity}\n\n"
+        "## Summary\n\n"
+        "## Log\n\n"
     )
+
+
+# ── Note structure: "## Summary" (current truth) + "## Log" (dated entries) ──
+#
+# Older notes are a flat list of "## <timestamp>" sections. They are converted
+# on their next write (structure only, no content change): sections move under
+# "## Log" as "### <timestamp>" and an empty Summary is added, which the
+# nightly consolidation fills in.
+
+_TS_HEADING = re.compile(r"^#{2,3} (\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*$", re.MULTILINE)
+
+
+_SUMMARY_H = re.compile(r"^## Summary[ \t]*$", re.MULTILINE)
+_LOG_H = re.compile(r"^## Log[ \t]*$", re.MULTILINE)
+
+
+def _split_sections(body: str) -> tuple[str, str, str]:
+    """Return (preamble incl. '# title', summary_text, log_text) of a note body."""
+    lm = _LOG_H.search(body)
+    if not lm:
+        return body, "", ""
+    sm = _SUMMARY_H.search(body, 0, lm.start())
+    if not sm:
+        return body[: lm.start()], "", body[lm.end():]
+    return body[: sm.start()], body[sm.end(): lm.start()].strip(), body[lm.end():]
+
+
+def _log_entries(log_text: str) -> list[tuple[str, str]]:
+    """[(timestamp, content)] oldest first."""
+    entries: list[tuple[str, str]] = []
+    matches = list(_TS_HEADING.finditer(log_text))
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(log_text)
+        content = log_text[m.end():end].strip()
+        if content:
+            entries.append((m.group(1), content))
+    return entries
+
+
+def _upgrade_to_log_format(text: str) -> str:
+    """Convert a legacy flat note into the Summary/Log shape (idempotent)."""
+    meta_part = ""
+    body = text
+    if text.startswith("---\n"):
+        end = text.find("\n---\n", 4)
+        if end >= 0:
+            meta_part, body = text[: end + 5], text[end + 5:]
+    if _LOG_H.search(body):
+        return text
+    m = _TS_HEADING.search(body)
+    head = body[: m.start()] if m else body
+    rest = body[m.start():] if m else ""
+    rest = re.sub(r"^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2})", r"### \1", rest, flags=re.MULTILINE)
+    head = head.rstrip() + "\n\n" if head.strip() else ""
+    return f"{meta_part}{head}## Summary\n\n## Log\n\n{rest.lstrip()}"
+
+
+def note_parts(path: Path) -> dict:
+    """Parsed view of a note: meta, title, summary, log entries."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    meta, body = _parse_frontmatter(text)
+    pre, summary, log = _split_sections(body)
+    if not log and not summary:
+        # Legacy flat note — every timestamped section is a log entry.
+        entries = _log_entries(body)
+    else:
+        entries = _log_entries(log)
+    title = meta.get("entity") or path.stem
+    tm = re.search(r"^# (.+)$", pre, re.MULTILINE)
+    if tm:
+        title = tm.group(1).strip()
+    return {"meta": meta, "title": title, "summary": summary, "entries": entries}
+
+
+def _normalize(s: str) -> str:
+    return re.sub(r"[\W_]+", " ", (s or "").lower()).strip()
+
+
+_INDEX_POOL = None
+
+
+def _schedule_index(path: Path) -> None:
+    """Re-embed a note right after it changes (background thread, tenant ctx kept).
+
+    Before this, only the external nightly job indexed the vault, so anything
+    learned during the day was invisible to semantic recall.
+    """
+    global _INDEX_POOL
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor
+    if _INDEX_POOL is None:
+        _INDEX_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="vault-index")
+    ctx = contextvars.copy_context()
+    _INDEX_POOL.submit(ctx.run, _index_now, path)
+
+
+def _index_now(path: Path) -> None:
+    from app.memory import embeddings
+    try:
+        rel = path.relative_to(vault_root()).as_posix()
+        if _is_hidden(path):
+            embeddings.delete_embedding(rel)
+            return
+        text = index_text(path)
+        if text:
+            embeddings.upsert_embedding(rel, text)
+    except Exception:
+        logger.warning("index on write failed for %s", path, exc_info=True)
+
+
+def index_text(path: Path) -> str:
+    """Text that represents a note in the vector index (what retrieval matches)."""
+    try:
+        p = note_parts(path)
+    except OSError:
+        return ""
+    recent = "\n".join(c for _, c in p["entries"][-6:])
+    aliases = p["meta"].get("aliases", "")
+    parts = [p["title"]]
+    if aliases:
+        parts.append(f"Also known as: {aliases}")
+    if p["summary"]:
+        parts.append(p["summary"])
+    if recent:
+        parts.append(recent)
+    return "\n".join(parts)[:6000]
+
+
+def note_snippet(path: Path, budget: int = MAX_NOTE_SNIPPET_CHARS) -> str:
+    """What gets injected for a note: its Summary, else its NEWEST log entries."""
+    p = note_parts(path)
+    if p["summary"]:
+        return p["summary"][:budget]
+    out: list[str] = []
+    used = 0
+    for ts, content in reversed(p["entries"]):
+        line = f"- ({ts[:10]}) {content}"
+        if used + len(line) > budget:
+            break
+        out.append(line)
+        used += len(line) + 1
+    return "\n".join(reversed(out))
+
+
+def unsummarized_entries(path: Path) -> int:
+    """How many log entries were added since the Summary was last rewritten.
+
+    Tracked as the entry count at summary time (`summarized_entries`), not a
+    timestamp: entry headings have minute resolution, so an entry added in the
+    same minute as the summary would otherwise never be consolidated.
+    """
+    p = note_parts(path)
+    try:
+        seen = int(p["meta"].get("summarized_entries", "") or 0)
+    except ValueError:
+        seen = 0
+    return max(len(p["entries"]) - seen, 0)
+
+
+def write_summary(path: Path, summary: str) -> None:
+    """Replace a note's Summary section (and stamp `summarized`)."""
+    with _lock_for(path):
+        text = _upgrade_to_log_format(path.read_text(encoding="utf-8"))
+        meta, body = _parse_frontmatter(text)
+        pre, _, log = _split_sections(body)
+        new_body = f"{pre.strip()}\n\n## Summary\n\n{summary.strip()}\n\n## Log{log}"
+        meta["summarized"] = _now_iso()
+        meta["summarized_entries"] = str(len(_log_entries(log)))
+        new = "---\n" + "\n".join(f"{k}: {v}" for k, v in meta.items()) + "\n---\n\n" + new_body.lstrip("\n")
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(new, encoding="utf-8", newline="\n")
+        os.replace(tmp, path)
+    _schedule_index(path)
 
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -180,9 +362,11 @@ def _auto_link_content(content: str, skip_entity: str) -> str:
 
 
 def save_fact(category: str, entity: str, content: str) -> str:
-    """Append a timestamped fact section to `{category}/{entity}.md`.
+    """Append a dated entry to the Log of `{category}/{entity}.md`.
 
-    Creates the file with YAML frontmatter on first write.
+    Creates the note (frontmatter + Summary + Log) on first write, upgrades
+    legacy flat notes to that shape, skips content the note already holds,
+    and re-indexes the note immediately so it is recallable right away.
     Refuses category='System' (reserved for rules).
     """
     try:
@@ -191,20 +375,49 @@ def save_fact(category: str, entity: str, content: str) -> str:
         return f"Could not save: {e}"
 
     linked_content = _auto_link_content(content.strip(), skip_entity=path.stem)
-    section = f"## {_now_iso()}\n{linked_content}\n\n"
+    if not linked_content:
+        return "Could not save: empty content"
+    entry = f"### {_now_iso()}\n{linked_content}\n\n"
 
     with _lock_for(path):
         _ensure_parent(path)
         if not path.exists():
             with path.open("w", encoding="utf-8", newline="\n") as f:
                 f.write(_frontmatter_block(category, entity))
-                f.write(section)
+                f.write(entry)
             logger.info("Created vault file: %s", path.relative_to(vault_root()))
         else:
+            text = path.read_text(encoding="utf-8")
+            norm = _normalize(content)
+            if len(norm) >= 12 and norm in _normalize(text):
+                return f"Already known — {path.relative_to(vault_root()).as_posix()} unchanged."
+            upgraded = _upgrade_to_log_format(text)
+            if upgraded != text:
+                tmp = path.with_suffix(path.suffix + ".tmp")
+                tmp.write_text(upgraded, encoding="utf-8", newline="\n")
+                os.replace(tmp, path)
             with path.open("a", encoding="utf-8", newline="\n") as f:
-                f.write(section)
+                if not upgraded.endswith("\n\n"):
+                    f.write("\n" if upgraded.endswith("\n") else "\n\n")
+                f.write(entry)
             logger.info("Appended to vault file: %s", path.relative_to(vault_root()))
+    _schedule_index(path)
     return f"Saved to {path.relative_to(vault_root()).as_posix()}"
+
+
+def profile_path() -> Path:
+    return vault_root() / PROFILE_CATEGORY / f"{PROFILE_ENTITY}.md"
+
+
+def read_profile(budget: int = 1500) -> str:
+    """The always-injected user profile (Summary, else newest entries)."""
+    path = profile_path()
+    if not path.exists() or _is_hidden(path):
+        return ""
+    try:
+        return note_snippet(path, budget)
+    except OSError:
+        return ""
 
 
 def update_rule(instruction: str) -> str:
@@ -249,6 +462,11 @@ def hide_fact(category: str, entity: str) -> str:
         return f"No fact found at {category}/{entity}."
     with _lock_for(path):
         _set_frontmatter_field(path, "hidden", "true")
+    try:
+        from app.memory.embeddings import delete_embedding
+        delete_embedding(path.relative_to(vault_root()).as_posix())
+    except Exception:
+        logger.warning("could not drop embedding for hidden note %s", path, exc_info=True)
     logger.info("Hid vault file: %s", path.relative_to(vault_root()))
     return f"Hidden: {path.relative_to(vault_root()).as_posix()}"
 
@@ -261,6 +479,7 @@ def hide_rule(instruction: str) -> str:
     with _lock_for(rules_file()):
         lines = rules_file().read_text(encoding="utf-8").splitlines()
         changed = False
+        removed = ""
         for i, ln in enumerate(lines):
             if ln.lstrip().startswith("~~"):
                 continue
@@ -268,25 +487,53 @@ def hide_rule(instruction: str) -> str:
             if body and (body == target or target in body):
                 lines[i] = "~~" + ln + "~~"
                 changed = True
+                removed = body
                 break
         if not changed:
             return f"No matching rule for: {target!r}"
         tmp = rules_file().with_suffix(".md.tmp")
         tmp.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
         os.replace(tmp, rules_file())
+    try:
+        from app.memory.embeddings import delete_rule_embedding
+        delete_rule_embedding(removed)
+    except Exception:
+        logger.warning("could not drop embedding for hidden rule", exc_info=True)
     logger.info("Hid rule: %.80s", target)
     return f"Hidden rule: {target}"
 
 
-def read_rules() -> str:
-    """Return the contents of `Rules.md`, stripped of strikethrough lines."""
+def active_rules() -> list[str]:
+    """Bodies of all rules that are not struck through, oldest first."""
     if not rules_file().exists():
-        return ""
-    text = rules_file().read_text(encoding="utf-8")
-    visible = [ln for ln in text.splitlines() if not ln.lstrip().startswith("~~")]
-    out = "\n".join(visible)
-    cap = MAX_INJECTED_BYTES // 2
-    return out[:cap]
+        return []
+    out = []
+    for ln in rules_file().read_text(encoding="utf-8").splitlines():
+        s = ln.strip()
+        if s.startswith("- ") and not s.startswith("~~"):
+            body = _strip_rule_meta(s)
+            if body:
+                out.append(body)
+    return out
+
+
+def read_rules(budget: int = MAX_INJECTED_BYTES // 2) -> str:
+    """Active rules as a bullet list that fits `budget` characters.
+
+    When over budget the NEWEST rules win (they reflect the latest
+    corrections). This used to take the first N characters of the file,
+    which silently dropped every rule added after the file passed ~2KB.
+    """
+    rules = active_rules()
+    picked: list[str] = []
+    used = 0
+    for rule in reversed(rules):
+        line = f"- {rule}"
+        if used + len(line) + 1 > budget:
+            break
+        picked.append(line)
+        used += len(line) + 1
+    return "\n".join(reversed(picked))
 
 
 def _tokenize(query: str) -> list[str]:
@@ -364,14 +611,22 @@ def retrieve_context(query: str, limit: int = MAX_RETRIEVE_RESULTS) -> str:
     return "\n".join(parts)
 
 
-def read_relevant_facts(query: str, byte_budget: int = MAX_INJECTED_BYTES) -> str:
-    """Same engine as retrieve_context but excludes System/ and uses a smaller budget."""
+def read_relevant_facts(query: str, byte_budget: int = MAX_INJECTED_BYTES,
+                        exclude: set[str] | None = None) -> str:
+    """Keyword fallback for injection: excludes System/ (and `exclude` paths).
+
+    Injects each hit's Summary when it has one; otherwise the densest window.
+    """
     tokens = _tokenize(query)
     if not tokens:
         return ""
 
+    exclude = exclude or set()
     scored: list[tuple[int, Path, str]] = []
     for path in _vault_files(exclude_system=True):
+        rel = path.relative_to(vault_root()).as_posix()
+        if rel in exclude:
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -388,7 +643,11 @@ def read_relevant_facts(query: str, byte_budget: int = MAX_INJECTED_BYTES) -> st
     used = 0
     for _, path, text in scored[:MAX_RETRIEVE_RESULTS]:
         rel = path.relative_to(vault_root()).as_posix()
-        snippet = _best_snippet(text, tokens)
+        try:
+            p = note_parts(path)
+            snippet = p["summary"][:MAX_NOTE_SNIPPET_CHARS] if p["summary"] else _best_snippet(text, tokens)
+        except OSError:
+            continue
         block = f"### {rel}\n{snippet}\n"
         if used + len(block) > byte_budget:
             break
@@ -398,6 +657,14 @@ def read_relevant_facts(query: str, byte_budget: int = MAX_INJECTED_BYTES) -> st
 
 
 def append_to_note(filepath: str, content: str, header: str = "") -> str:
+    """Append to an existing note, then re-index it (see _append_to_note)."""
+    result = _append_to_note(filepath, content, header)
+    if result.startswith(("Appended", "Created")):
+        _schedule_index((vault_root() / filepath.lstrip("/").replace("\\", "/")).resolve())
+    return result
+
+
+def _append_to_note(filepath: str, content: str, header: str = "") -> str:
     """Append content to any existing Markdown note by relative file path.
 
     `filepath` is relative to vault_root(), e.g. "Daily/2024-01-15.md" or
@@ -525,25 +792,34 @@ def read_note(filepath: str, max_chars: int = 32_000) -> str:
 
 
 def read_facts_by_paths(filepaths: list[str], byte_budget: int = MAX_INJECTED_BYTES) -> str:
-    """Read snippets from the given vault-relative filepaths (result of semantic search)."""
+    """Injectable text for semantic-search hits: each note's Summary, or its
+    NEWEST entries when it hasn't been summarized yet (was: the first 400
+    chars of the file, i.e. its oldest content)."""
     parts: list[str] = []
     used = 0
+    root = vault_root().resolve()
     for rel in filepaths:
         path = (vault_root() / rel).resolve()
-        if not path.exists() or _is_hidden(path):
+        if root not in path.parents or not path.exists() or _is_hidden(path):
             continue
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            snippet = note_snippet(path)
+            title = note_parts(path)["title"]
         except OSError:
             continue
-        _, body = _parse_frontmatter(text)
-        snippet = body.strip()[:MAX_SNIPPET_CHARS]
-        block = f"### {rel}\n{snippet}\n"
+        if not snippet:
+            continue
+        block = f"### {title} ({rel})\n{snippet}\n"
         if used + len(block) > byte_budget:
             break
         parts.append(block)
         used += len(block)
     return "\n".join(parts)
+
+
+def indexable_notes() -> list[Path]:
+    """Visible notes that belong in the vector index (System/ excluded)."""
+    return _vault_files(exclude_system=True)
 
 
 def list_visible(category: str = "") -> str:
@@ -573,3 +849,47 @@ def list_visible(category: str = "") -> str:
             parts.append(f"*{cat}:* {', '.join(entries)}")
 
     return "\n".join(parts)
+
+
+def remove_log_entry(rel_path: str, content: str) -> bool:
+    """Delete the log entry whose text matches `content` ("that's wrong — forget it").
+
+    The Summary is cleared too (and `summarized` reset) because it may already
+    repeat the wrong fact; the note then shows its remaining entries until the
+    next consolidation rewrites the Summary without it.
+    """
+    clean = rel_path.lstrip("/").replace("\\", "/")
+    path = (vault_root() / clean).resolve()
+    root = vault_root().resolve()
+    if root not in path.parents or not path.exists():
+        return False
+    target = _normalize(content)
+    if not target:
+        return False
+    with _lock_for(path):
+        text = _upgrade_to_log_format(path.read_text(encoding="utf-8"))
+        meta, body = _parse_frontmatter(text)
+        pre, summary, log = _split_sections(body)
+        matches = list(_TS_HEADING.finditer(log))
+        kept: list[str] = []
+        removed = False
+        for i, m in enumerate(matches):
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(log)
+            chunk = log[m.start():end]
+            entry = log[m.end():end].strip()
+            if not removed and (_normalize(entry) == target or target in _normalize(entry)):
+                removed = True
+                continue
+            kept.append(chunk.rstrip() + "\n\n")
+        if not removed:
+            return False
+        meta["summarized"] = ""
+        meta["summarized_entries"] = "0"
+        new_body = f"{pre.strip()}\n\n## Summary\n\n## Log\n\n{''.join(kept)}"
+        new = "---\n" + "\n".join(f"{k}: {v}" for k, v in meta.items()) + "\n---\n\n" + new_body.lstrip("\n")
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(new, encoding="utf-8", newline="\n")
+        os.replace(tmp, path)
+    _schedule_index(path)
+    logger.info("Removed log entry from %s", clean)
+    return True

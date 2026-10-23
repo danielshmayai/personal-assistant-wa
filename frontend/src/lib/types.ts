@@ -246,6 +246,16 @@ export interface TuyaDevice {
   online: boolean;
 }
 
+export interface MemoryEvent {
+  id: number;
+  kind: string; // person | project | decision | preference | fact | commitment | rule
+  entity: string;
+  path: string;
+  content: string;
+  source: string; // extractor | tool | self_review
+  created_at: string | null;
+}
+
 export interface MemoryCategory {
   name: string;
   count: number;

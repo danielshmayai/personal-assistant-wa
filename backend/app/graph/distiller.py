@@ -79,7 +79,11 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 - fitness_morning_brief(): daily Hebrew fitness brief — weekly compliance, recovery, today's recommendation, hydration reminder. Use for "תדרוך בוקר לכושר", "מה האימון המומלץ היום?", "כמה אימנתי השבוע?".
 - CRITICAL: When the user says they finished a workout → call log_workout immediately. When they ask for a workout plan → call suggest_workout. When they ask about ANY workout that isn't today (a past session, "how was X", trends) → call fitness_history, do NOT say you have no information. Never describe what you will do without calling the tool.
 
-*Memory tools — backed by an Obsidian vault. Use proactively:*
+*Memory — captured AUTOMATICALLY.* After every reply, durable information (people, projects, decisions, preferences, commitments, and instructions about how you should behave) is extracted and filed in the user's Obsidian vault, and the relevant parts are shown to you under "Long-term memory". So:
+- Use that memory naturally; never ask the user for something it already says.
+- Do NOT call save_fact for things merely mentioned in passing — that is already handled.
+- When the user says they will/must do something at a time ("I'll call the lawyer Thursday"), offer in ONE short line to set a reminder.
+Memory tools, for explicit requests:
 - save_fact(category, entity, content): persist durable info (people, properties, projects, preferences, dates). Pick category from: People, Entities, Investments, Projects, Preferences, Misc. ALWAYS embed Obsidian wikilinks ([[EntityName]]) in `content` whenever you mention a person, place, property, or project that has (or should have) its own note — e.g. "met with [[Daniel]] regarding [[Milwaukee_Property]]". Also embed tags (#real-estate, #family). Repeat calls APPEND timestamped sections — write only what is new.
 - update_rule(instruction): record a behavioral directive ("always", "never", "from now on", "prefer", "stop doing X"). One imperative sentence.
 - retrieve_context(query): keyword-search the vault for relevant snippets when the user asks "what do you know about X" or "remind me of Y".
@@ -89,7 +93,7 @@ You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long
 - hide_fact(category, entity): soft-delete a fact (information remains in the vault, just stops surfacing).
 - hide_rule(instruction): strike through a rule line by matching its text.
 
-When the user says *"remember that…"* or *"note that…"* — save it immediately as a fact or rule (whichever fits best) and confirm with the file path.
+When the user explicitly says *"remember that…"* or *"note that…"* — save it now as a fact or rule (whichever fits) and confirm in a few words (no file paths).
 
 **CRITICAL — "תזכור / remember" disambiguation:**
 - "תזכור שאני צריך X **מחר / בשעה / עוד שעה / ביום ה…**" — has a time component → call **schedule_reminder** (NOT save_fact). The user wants to be notified at that time.
@@ -191,7 +195,16 @@ def _build_system_prompt(memory_context: str, chat_id: str = "", ollama_fallback
             "explicitly name a different person."
         )
     if memory_context:
-        prompt += f"\n\nAbout the user:\n{memory_context}"
+        # Near the top, not after ~85 lines of tool rules: what the assistant
+        # knows about the user should shape every reply, not trail the prompt.
+        memory_block = (
+            "## Long-term memory (what you already know — use it naturally, "
+            "don't recite it, and don't ask for things listed here)\n"
+            f"{memory_context}\n\n"
+        )
+        marker = "You have tools for"
+        idx = prompt.find(marker)
+        prompt = (prompt[:idx] + memory_block + prompt[idx:]) if idx >= 0 else prompt + "\n\n" + memory_block
     if ollama_fallback:
         prompt += _OLLAMA_FALLBACK_NOTE
     return prompt

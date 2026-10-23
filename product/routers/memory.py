@@ -165,17 +165,37 @@ async def hide_rule(body: HideRule, _: Tenant = Depends(_gate)):
     return {"result": obsidian.hide_rule(body.instruction)}
 
 
+# ── Recently learned (feed) ─────────────────────────────────────────────────
+#
+# What the assistant filed on its own, newest first, with a one-tap "wrong —
+# forget it". Trust in an automatic memory comes from seeing what it keeps.
+
+@router.get("/recent")
+async def memory_recent(hours: int = Query(168, ge=1, le=24 * 90), _: Tenant = Depends(_gate)):
+    from app.memory.store import recent_memory_events
+    from app.runtime import in_thread
+    return {"events": await in_thread(recent_memory_events, hours, None, 100)}
+
+
+@router.delete("/recent/{event_id}")
+async def memory_forget(event_id: int, _: Tenant = Depends(_gate)):
+    from app.memory.store import delete_memory_event
+    from app.runtime import in_thread
+    ev = await in_thread(delete_memory_event, event_id)
+    if not ev:
+        raise HTTPException(status_code=404, detail="event_not_found")
+    if ev["kind"] == "rule":
+        await in_thread(obsidian.hide_rule, ev["content"])
+    elif ev["path"]:
+        await in_thread(obsidian.remove_log_entry, ev["path"], ev["content"])
+    return {"ok": True}
+
+
 # ── Self-review ──────────────────────────────────────────────────────────────
 #
-# The owner's engine has no automatic nightly trigger either (despite the
-# assistant's own prompt text claiming "at 3 AM" — that's aspirational
-# copy, not real code) — it's manually invoked via POST /admin/self-review
-# (TEST_TOKEN-gated). This is the same thing, tenant-scoped: analyses the
-# calling tenant's own conversation_log (already tenant-scoped, P0) with
-# their own Gemini key, writes rules/insights into their own vault.
-# get_recent_conversations/obsidian.update_rule/vault_root() are all
-# already ContextVar-safe — only capabilities.py's frozen VAULT_ROOT import
-# needed guarding (done in self_review.py itself).
+# Also runs automatically once a day (app/memory/maintenance.py, started in
+# product/main.py for every active tenant). This endpoint is the on-demand
+# version: index refresh + analysis of the calling tenant's conversations.
 
 @router.post("/self-review")
 async def trigger_self_review(hours: int = 24, tenant: Tenant = Depends(_gate)):

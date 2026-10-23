@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from langchain_core.messages import HumanMessage
-from app.llm import get_smart_llm
+from app.llm import get_smart_llm, response_text
 from app.memory.store import save_episode, search_episodes
 
 logger = logging.getLogger("pa.episodes")
@@ -45,7 +45,7 @@ async def create_episode(chat_id: str, transcript: str) -> None:
         from app.memory.embeddings import embed_text, vec_str
         llm = get_smart_llm()
         response = await llm.ainvoke([HumanMessage(content=_SUMMARY_PROMPT.format(transcript=transcript))])
-        summary = (response.content or "").strip()
+        summary = response_text(response).strip()
         if not summary:
             return
 
@@ -53,21 +53,21 @@ async def create_episode(chat_id: str, transcript: str) -> None:
         v = await in_thread(embed_text, summary)
         vs = vec_str(v) if v else None
         await in_thread(save_episode, chat_id, summary, vs)
-        logger.debug("Episode saved for chat_id=%s", chat_id)
+        logger.debug("Episode saved for chat_id=%s (embedded=%s)", chat_id, bool(vs))
     except Exception:
-        logger.debug("create_episode failed for %s", chat_id, exc_info=True)
+        logger.warning("create_episode failed for %s", chat_id, exc_info=True)
 
 
 async def get_relevant_episodes(query: str, limit: int = 3) -> list[str]:
     """Return summaries of past conversations most semantically similar to `query`."""
     try:
-        from app.memory.embeddings import embed_text, vec_str
+        from app.config import MEMORY_MIN_SIMILARITY
+        from app.memory.embeddings import embed_query, vec_str
         from app.runtime import in_thread
-        v = await in_thread(embed_text, query[:2000])
+        v = await in_thread(embed_query, query)
         if not v:
             return []
-        vs = vec_str(v)
-        return await in_thread(search_episodes, vs, limit)
+        return await in_thread(search_episodes, vec_str(v), limit, MEMORY_MIN_SIMILARITY)
     except Exception:
-        logger.debug("get_relevant_episodes failed", exc_info=True)
+        logger.warning("get_relevant_episodes failed", exc_info=True)
         return []

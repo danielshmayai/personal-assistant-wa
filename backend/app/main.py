@@ -258,7 +258,12 @@ async def lifespan(app: FastAPI):
     wa_chat_ids = [MY_WHATSAPP_ID] if MY_WHATSAPP_ID else []
     await start_flows(wa_chat_ids)
     asyncio.create_task(_notify_restart_done(), name="restart_notify")
+    # Memory index + nightly consolidation for the owner's data scope ('').
+    # Product tenants are maintained by the product process (disjoint scopes).
+    from app.memory import maintenance as memory_maintenance
+    memory_maintenance.start(lambda: [""])
     yield
+    await memory_maintenance.stop()
     await stop_flows()
     nightly_task.cancel()
     await stop_scheduler()
@@ -383,5 +388,15 @@ async def health(request: Request):
     except Exception:
         checks["postgres"] = "error"
     checks["worker"] = worker_status()
+    # Long-term memory: embeddings errors used to be invisible (DEBUG logs);
+    # surface counts/last error here. Informational — doesn't flip status.
+    from app.memory.embeddings import status as embedding_status
+    from app.memory.store import LAST_RETRIEVAL
+    emb = embedding_status()
+    checks["memory"] = {
+        "embeddings": emb["state"], "embedding_model": emb["model"],
+        "embed_ok": emb["ok"], "embed_errors": emb["errors"], "last_error": emb["last_error"],
+        "last_retrieval": LAST_RETRIEVAL,
+    }
     all_ok = checks["ollama"] == "ok" and checks["postgres"] == "ok"
     return {"status": "ok" if all_ok else "degraded", "checks": checks}

@@ -11,6 +11,7 @@ from app.graph.tool_node import tool_executor_node, should_continue
 from app.memory.store import load_memory_context, log_conversation
 from app.memory.reflection import reflection_node, format_conversation_transcript
 from app.memory.episodes import create_episode
+from app.background import spawn
 from app.graph.checkpointer import get_checkpointer
 from app.config import LANGSMITH_API_KEY, LANGSMITH_PROJECT
 
@@ -59,13 +60,41 @@ def build_graph():
     return builder.compile(checkpointer=get_checkpointer(), debug=False)
 
 
+def _recent_context(messages: list, max_chars: int = 600) -> str:
+    """The previous user turns + last assistant reply (excluding the current
+    message), so retrieval for a follow-up like "and what about her?" can
+    resolve who "her" is."""
+    prior = messages[:-1] if messages else []
+    users: list[str] = []
+    last_ai = ""
+    for m in reversed(prior):
+        if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None) and not last_ai:
+            last_ai = extract_text(m.content)[:300]
+        elif isinstance(m, HumanMessage) and len(users) < 2:
+            users.append(extract_text(m.content)[:300])
+        if len(users) >= 2 and last_ai:
+            break
+    parts = list(reversed(users)) + ([last_ai] if last_ai else [])
+    return "\n".join(p for p in parts if p.strip())[:max_chars]
+
+
 async def inject_memory_node(state: PAState) -> dict:
+    if not _memory_enabled(state):
+        return {"memory_context": ""}
     try:
-        context = await load_memory_context(state.get("user_input", ""))
+        context = await load_memory_context(
+            state.get("user_input", ""), _recent_context(state.get("messages", []))
+        )
     except Exception:
         logger.exception("inject_memory_node failed — continuing without memory context")
         context = ""
     return {"memory_context": context}
+
+
+def _memory_enabled(state: PAState) -> bool:
+    """None = legacy/owner path with every module; otherwise the tenant's list."""
+    modules = state.get("enabled_modules")
+    return modules is None or "memory" in modules
 
 
 # Compiled graph singleton
@@ -222,8 +251,8 @@ async def stream_graph(user_text: str, chat_id: str, enabled_modules: list[str] 
 
     if full_reply:
         transcript = f"User: {user_text}\nAssistant: {full_reply}"
-        asyncio.ensure_future(_log(chat_id, transcript))
-        asyncio.ensure_future(create_episode(chat_id, transcript))
+        spawn(_log(chat_id, transcript), name="log-conversation")
+        spawn(create_episode(chat_id, transcript), name="episode")
     yield {"type": "done", "full_reply": full_reply}
 
 
@@ -278,6 +307,6 @@ async def run_graph(text: str, chat_id: str) -> str:
 
     transcript = format_conversation_transcript(result.get("messages", []))
     if transcript:
-        asyncio.ensure_future(_log(chat_id, transcript))
-        asyncio.ensure_future(create_episode(chat_id, transcript))
+        spawn(_log(chat_id, transcript), name="log-conversation")
+        spawn(create_episode(chat_id, transcript), name="episode")
     return reply + " ⚡"

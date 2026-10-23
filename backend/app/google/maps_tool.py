@@ -169,11 +169,14 @@ _MAPS_CAT = "Maps"
 
 
 def _save_meta(title: str, meta: dict) -> None:
+    # Call the vault function directly: the manager's save_fact is a LangChain
+    # @tool object, and calling it with positional args raised a TypeError that
+    # the old bare `except: pass` swallowed — map metadata was never saved.
     try:
-        from app.memory.manager import save_fact
-        save_fact(_MAPS_CAT, title, json.dumps(meta, ensure_ascii=False))
+        from app.memory import obsidian
+        obsidian.save_fact(_MAPS_CAT, title, json.dumps(meta, ensure_ascii=False))
     except Exception:
-        pass
+        logger.warning("could not save map metadata for %r", title, exc_info=True)
 
 
 def _load_meta(title: str) -> dict | None:

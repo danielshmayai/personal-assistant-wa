@@ -97,8 +97,24 @@ async def lifespan(app: FastAPI):
     from app.scheduled_jobs import start as start_scheduler, stop as stop_scheduler
     await start_scheduler(tenant_scope=True)
 
+    # Memory index + nightly consolidation for every active tenant's scope.
+    # The '' (legacy owner) scope belongs to the WhatsApp engine process.
+    from app.memory import maintenance as memory_maintenance
+
+    def _tenant_scopes() -> list[str]:
+        from product.tenancy.store import list_tenants
+        try:
+            return [t.engine_scope for t in list_tenants()
+                    if t.status == "active" and t.engine_scope]
+        except Exception:
+            logger.warning("memory maintenance: could not list tenants", exc_info=True)
+            return []
+
+    memory_maintenance.start(_tenant_scopes)
+
     logger.info("Product backend ready (env=%s)", ENVIRONMENT)
     yield
+    await memory_maintenance.stop()
     await stop_scheduler()
 
 

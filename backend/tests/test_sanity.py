@@ -384,42 +384,41 @@ def test_agent_node_includes_memory_tools():
         assert tool_names.issubset(bound_names | tool_names)  # tools registered at definition time
 
 
-def test_reflection_node_skips_non_corrections():
-    """reflection_node must skip messages with no correction signals."""
+def test_reflection_node_returns_immediately_and_runs_in_background():
+    """reflection_node must not block the reply: it schedules extraction and returns {}."""
     import asyncio
+    from unittest.mock import patch
     from app.memory.reflection import reflection_node
 
-    state = {
-        "user_input": "what is the weather today?",
-        "messages": [MagicMock(content="It is sunny", tool_calls=[])],
-    }
-    # Should return empty dict without calling the LLM
-    result = asyncio.get_event_loop().run_until_complete(reflection_node(state))
+    state = {"user_input": "what is the weather today?", "messages": [], "enabled_modules": None}
+    with patch("app.background.spawn") as spawn:
+        result = asyncio.new_event_loop().run_until_complete(reflection_node(state))
     assert result == {}
+    spawn.assert_called_once()
+    spawn.call_args.args[0].close()
 
 
-def test_reflection_node_triggers_on_correction_signal():
-    """reflection_node must invoke the LLM when a correction keyword is present."""
+def test_reflection_extracts_from_a_correction():
+    """A correction of the assistant's behaviour is filed as a rule."""
     import asyncio
+    import json
     from unittest.mock import AsyncMock, MagicMock, patch
-    from langchain_core.messages import AIMessage
+    from langchain_core.messages import AIMessage, HumanMessage
+    from app.memory import reflection
 
     llm_mock = _make_llm_mock()
-    llm_mock.ainvoke = AsyncMock(return_value=MagicMock(content="NOTHING_TO_LEARN"))
-
-    # Must use a real AIMessage so isinstance() check inside reflection_node passes
-    state = {
-        "user_input": "no, that's wrong — I meant Tel Aviv",
-        "messages": [AIMessage(content="I said Jerusalem")],
-    }
-
-    with patch("app.memory.reflection.get_smart_llm", return_value=llm_mock):
-        result = asyncio.get_event_loop().run_until_complete(
-            __import__("app.memory.reflection", fromlist=["reflection_node"]).reflection_node(state)
-        )
+    llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps(
+        [{"kind": "rule", "entity": "", "content": "Use Tel Aviv as the default city.", "confidence": 0.9}]
+    )))
+    msgs = [HumanMessage(content="what's the weather?"), AIMessage(content="In Jerusalem it's sunny"),
+            HumanMessage(content="no, that's wrong — I meant Tel Aviv"), AIMessage(content="Tel Aviv: 24°C")]
+    with patch.object(reflection, "get_smart_llm", return_value=llm_mock), \
+         patch.object(reflection, "_save_rule", AsyncMock(return_value="Use Tel Aviv as the default city.")), \
+         patch("app.memory.store.record_memory_event"):
+        stored = asyncio.new_event_loop().run_until_complete(reflection.extract_and_store(msgs))
 
     llm_mock.ainvoke.assert_called_once()
-    assert result == {}
+    assert stored and stored[0]["kind"] == "rule"
 
 
 # ---------------------------------------------------------------------------

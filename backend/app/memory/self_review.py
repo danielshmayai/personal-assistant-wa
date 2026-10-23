@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from langchain_core.messages import HumanMessage
-from app.llm import get_smart_llm
+from app.llm import get_smart_llm, response_text
 from app.memory import obsidian
 from app.memory.store import get_recent_conversations
 
@@ -38,44 +38,29 @@ NOTHING_TO_REVIEW
 
 
 async def run_self_review(hours: int = 24) -> str:
-    """Analyze conversations from the last `hours` hours and rebuild vault embeddings."""
+    """Bring the memory index up to date, then analyse recent conversations.
+
+    Works for any data scope: the embedding rebuilds now go through the
+    tenant-aware vault resolver (they used to be owner-only because they read
+    a path frozen at import time).
+    """
     from app.context import current_tenant_id
+    from app.memory.maintenance import index_pass
     if not current_tenant_id.get():
-        # Both of these are deliberately owner-only, not just forgetful of
-        # tenants: capabilities.py freezes obsidian.VAULT_ROOT at module load
-        # (see PLANNING.md P6.2), and embeddings.rebuild_vault_embeddings/
-        # rebuild_rule_embeddings use their OWN separate VAULT_ROOT constant
-        # (Path(OBSIDIAN_VAULT_PATH), commented "used only by the startup
-        # rebuild jobs (owner path)") plus a hardcoded `WHERE tenant_id = ''`
-        # query. Running either under a tenant's scope would read the OWNER's
-        # vault/rules, burn the TENANT's Gemini quota re-embedding it, and
-        # overwrite the OWNER's embedding cache — skip both for tenants
-        # rather than call functions that were never designed to be
-        # tenant-aware. Tenant self-review still gets its full value
-        # (conversation analysis + rule-saving, both already tenant-scoped);
-        # semantic vault search still works for them via the keyword
-        # fallback in retrieve_context.
+        # Capabilities.md is generated from the owner deployment's features.
         from app.memory.capabilities import sync_capabilities
         sync_capabilities()
-
-        from app.memory.embeddings import rebuild_vault_embeddings, rebuild_rule_embeddings
-        embedded, rules_embedded = await asyncio.gather(
-            rebuild_vault_embeddings(),
-            rebuild_rule_embeddings(),
-            return_exceptions=True,
-        )
-    else:
-        embedded = rules_embedded = 0
-    if isinstance(embedded, int) and embedded:
-        logger.info("Rebuilt %d vault embeddings", embedded)
-    if isinstance(rules_embedded, int) and rules_embedded:
-        logger.info("Rebuilt %d rule embeddings", rules_embedded)
-    return await _analyse_conversations(hours)
+    try:
+        logger.info("Self-review index pass: %s", await index_pass())
+    except Exception:
+        logger.warning("Self-review index pass failed", exc_info=True)
+    return await analyse_conversations(hours)
 
 
-async def _analyse_conversations(hours: int) -> str:
+async def analyse_conversations(hours: int) -> str:
     """Analyze conversations from the last `hours` hours and write insights to the vault."""
-    convs = get_recent_conversations(hours=hours)
+    from app.runtime import in_thread
+    convs = await in_thread(get_recent_conversations, hours)
     if not convs:
         logger.info("Self-review: no conversations in last %dh", hours)
         return "No conversations to review."
@@ -91,7 +76,7 @@ async def _analyse_conversations(hours: int) -> str:
 
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        content = (response.content or "").strip()
+        content = response_text(response).strip()
 
         if "NOTHING_TO_REVIEW" in content:
             logger.info("Self-review: nothing to note for last %dh", hours)
@@ -105,12 +90,17 @@ async def _analyse_conversations(hours: int) -> str:
             action = act_match.group(1).strip() if act_match else "NONE"
 
             if category == "rule" and action and action.upper() != "NONE":
-                obsidian.update_rule(action)
-                rules_saved.append(action)
-                logger.info("Self-review saved rule: %s", action)
+                # Same semantic dedup as live extraction, so the nightly review
+                # can't pile near-identical rules into Rules.md.
+                from app.memory.reflection import _save_rule
+                from app.memory.store import record_memory_event
+                if await _save_rule(action):
+                    record_memory_event("rule", "", "System/Rules.md", action, source="self_review")
+                    rules_saved.append(action)
+                    logger.info("Self-review saved rule: %s", action)
 
         # Append full analysis to System/DailyInsights.md
-        insights_path: Path = obsidian.VAULT_ROOT / "System" / "DailyInsights.md"
+        insights_path: Path = obsidian.vault_root() / "System" / "DailyInsights.md"
         insights_path.parent.mkdir(parents=True, exist_ok=True)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         header = f"## Review {now} ({len(convs)} conversations)\n\n"

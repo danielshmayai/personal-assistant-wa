@@ -88,7 +88,7 @@ services:
       TUYA_API_ENDPOINT: ${TUYA_API_ENDPOINT:-https://openapi.tuyaeu.com}
       TUYA_PREFER_LOCAL: ${TUYA_PREFER_LOCAL:-false}
       OBSIDIAN_VAULT_PATH: /app/obsidian_vault
-      OBSIDIAN_CATEGORIES: ${OBSIDIAN_CATEGORIES:-System,People,Entities,Investments,Projects,Preferences,Misc}
+      OBSIDIAN_CATEGORIES: ${OBSIDIAN_CATEGORIES:-System,Profile,People,Entities,Investments,Projects,Preferences,Photos,Maps,Misc}
     ports:
       - "8000:8000"
     volumes:

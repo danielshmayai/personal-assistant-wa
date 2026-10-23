@@ -185,6 +185,29 @@ async def _garmin() -> str:
         return ""
 
 
+def _memory() -> str:
+    """What the assistant learned in the last day + commitments from the last week.
+
+    Makes the memory visible: the user sees what got filed (and can correct it)
+    instead of wondering whether anything is being remembered at all.
+    """
+    try:
+        from app.memory.store import recent_memory_events
+        learned = [e for e in recent_memory_events(hours=24) if e["kind"] != "commitment"]
+        commitments = recent_memory_events(hours=24 * 7, kinds=("commitment",), limit=5)
+    except Exception as exc:
+        logger.warning("morning_brief memory failed: %s", exc)
+        return ""
+    lines: list[str] = []
+    if learned:
+        lines.append(f"🧠 למדתי {len(learned)} דברים חדשים אתמול:")
+        lines += [f"• {e['content'][:110]}" for e in learned[:3]]
+    if commitments:
+        lines.append("📌 התחייבויות פתוחות:")
+        lines += [f"• {e['content'][:110]}" for e in commitments]
+    return "\n".join(lines)
+
+
 async def generate(chat_id: str) -> str:
     """Build the full morning brief. All sections fetched in parallel; missing ones are silently skipped."""
     tz = ZoneInfo(USER_TIMEZONE)
@@ -196,11 +219,12 @@ async def generate(chat_id: str) -> str:
     # a fresh sleep/Body Battery snapshot instead of racing the sync.
     garmin_r = await _garmin()
 
-    weather_r, cal_r, gmail_r, fitness_r = await asyncio.gather(
+    weather_r, cal_r, gmail_r, fitness_r, memory_r = await asyncio.gather(
         _weather(),
         _calendar(chat_id),
         _gmail(chat_id),
         _fitness(chat_id),
+        asyncio.to_thread(_memory),
         return_exceptions=True,
     )
 
@@ -218,5 +242,7 @@ async def generate(chat_id: str) -> str:
         sections.append(f"\n⌚ *Garmin*\n{gr}")
     if f := _safe(fitness_r):
         sections.append(f"\n💪 *כושר*\n{f}")
+    if m := _safe(memory_r):
+        sections.append(f"\n{m}")
 
     return "\n".join(sections)

@@ -216,7 +216,8 @@ async def extract_and_save(chat_id: str) -> None:
         llm = get_smart_llm()
         response = await llm.ainvoke([HumanMessage(content=_EXTRACT_PROMPT.format(conversation=conversation))])
 
-        raw = response.content.strip()
+        from app.llm import response_text
+        raw = response_text(response).strip()
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
         data = json.loads(raw)
@@ -274,7 +275,23 @@ async def _update_obsidian(lead: dict, data: dict) -> None:
 
 # ── Public entry point called by the webhook ──────────────────────────────────
 
+# Trailing debounce: a chat with a lead is a burst of short messages. Running
+# an LLM extraction and appending a full note section on EVERY message made
+# the lead notes repetitive dumps; wait for the burst to settle instead.
+_EXTRACT_DELAY_S = 600
+_pending: dict[str, asyncio.Task] = {}
+
+
+async def _extract_after_quiet(chat_id: str) -> None:
+    await asyncio.sleep(_EXTRACT_DELAY_S)
+    _pending.pop(chat_id, None)
+    await extract_and_save(chat_id)
+
+
 async def log_and_extract(chat_id: str, direction: str, text: str) -> None:
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, log_message, chat_id, direction, text)
-    asyncio.create_task(extract_and_save(chat_id))
+    from app.runtime import in_thread
+    await in_thread(log_message, chat_id, direction, text)
+    previous = _pending.pop(chat_id, None)
+    if previous and not previous.done():
+        previous.cancel()
+    _pending[chat_id] = asyncio.create_task(_extract_after_quiet(chat_id), name=f"lead-extract:{chat_id}")

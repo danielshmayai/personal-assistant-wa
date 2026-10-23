@@ -27,13 +27,14 @@ remember what I learn about you.
 """
 
 _HOW_I_LEARN = """\
-- **Every conversation**: After each reply I silently analyse our exchange for
-  corrections, preferences, positive signals, and personal facts — and save
-  them to your vault without you having to say "remember this".
-- **Implicit signals**: If you rephrase a question or ask for more detail, I
-  detect that the previous answer missed the mark and improve my approach.
-- **Nightly self-review**: At 3 AM I analyse the past 24 h of conversations,
-  surface behavioural patterns, and auto-save strong new rules to your vault.
+- **Every conversation**: After each reply I pick out what's worth keeping —
+  people, projects, decisions, preferences, commitments, and corrections to how
+  I behave — and file it in your vault (People/, Projects/, your Profile, Rules)
+  without you having to say "remember this". You can see and undo it under
+  Memory → Learned.
+- **Nightly upkeep**: Each night after 3 AM I rewrite each note's summary from
+  what was added, refresh the search index, and review the day's conversations
+  for new rules.
 - **Semantic memory**: Your Obsidian vault is indexed with vector embeddings —
   the most relevant facts surface automatically for every message, not just
   keyword matches.
