@@ -12,6 +12,7 @@ import Nutrition from "./pages/Nutrition";
 import Fitness from "./pages/Fitness";
 import SmartHome from "./pages/SmartHome";
 import Memory from "./pages/Memory";
+import Activity from "./pages/Activity";
 
 function Guarded({ children }: { children: React.ReactNode }) {
   const { me, loading } = useSession();
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/fitness" element={<Fitness />} />
             <Route path="/smart-home" element={<SmartHome />} />
             <Route path="/memory" element={<Memory />} />
+            <Route path="/activity" element={<Activity />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admin" element={<Admin />} />
           </Route>

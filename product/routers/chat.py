@@ -1,10 +1,12 @@
-"""Product chat WebSocket + upload: cookie-authenticated, tenant-scoped streaming.
+"""Product chat WebSocket + upload + conversation history: cookie-authenticated,
+tenant-scoped streaming.
 
 Event protocol to the client mirrors the engine's stream_graph events
 (thinking_token / token / tool_start / tool_end / done) plus structured
 error events: {"type": "error", "code": "invalid_key" | "quota_exceeded" |
 "rate_limited" | "internal"} — never raw stack traces.
 """
+import asyncio
 import logging
 import mimetypes
 import uuid
@@ -47,6 +49,39 @@ async def upload_file(file: UploadFile, _: Tenant = Depends(require_session)):
     media_id = f"web_{uuid.uuid4().hex}"
     store_web_upload(media_id, data, mime_type, file.filename or media_id)
     return {"media_id": media_id, "filename": file.filename, "mime_type": mime_type, "size": len(data)}
+
+
+# ── Conversation history ──────────────────────────────────────────────────────
+# web_conversations rows are tenant-scoped by current_tenant_id (set by
+# require_session); thread ids are additionally checked against the tenant's
+# own "web_<scope>_" prefix before their checkpoints are read or deleted.
+
+def _own_thread(tenant: Tenant, chat_id: str) -> str:
+    if not chat_id.startswith(f"web_{tenant.engine_scope}_"):
+        raise HTTPException(status_code=404, detail="not_found")
+    return chat_id
+
+
+@router.get("/api/conversations")
+async def list_conversations(_: Tenant = Depends(require_session)):
+    from app.memory.store import list_web_conversations
+    return {"conversations": await asyncio.to_thread(list_web_conversations)}
+
+
+@router.get("/api/conversations/{chat_id}/messages")
+async def conversation_messages(chat_id: str, tenant: Tenant = Depends(require_session)):
+    from app.graph.streaming import get_history
+    return {"chat_id": chat_id, "messages": await get_history(_own_thread(tenant, chat_id))}
+
+
+@router.delete("/api/conversations/{chat_id}")
+async def delete_conversation(chat_id: str, tenant: Tenant = Depends(require_session)):
+    from app.graph.checkpointer import delete_thread_checkpoints
+    from app.memory.store import delete_web_conversation
+    _own_thread(tenant, chat_id)
+    await asyncio.to_thread(delete_web_conversation, chat_id)
+    await delete_thread_checkpoints(chat_id)
+    return {"ok": True}
 
 
 def _classify_error(exc: Exception) -> str:
@@ -96,6 +131,8 @@ async def ws_chat(websocket: WebSocket):
                 continue
             if isinstance(payload.get("chat_id"), str) and payload["chat_id"].startswith(f"web_{scope}_"):
                 chat_id = payload["chat_id"]  # continue an existing thread — own prefix only
+            elif payload.get("new_thread"):
+                chat_id = f"web_{scope}_{uuid.uuid4().hex[:12]}"  # "New chat" in the UI
 
             if not check_chat_rate(tenant.id):
                 await websocket.send_json({"type": "error", "code": "rate_limited"})
@@ -111,6 +148,12 @@ async def ws_chat(websocket: WebSocket):
             current_user_email.set(tenant.email or "")
             request_id_var.set(str(uuid.uuid4()))
             await websocket.send_json({"type": "ack", "chat_id": chat_id})
+            try:
+                from app.memory.store import upsert_web_conversation
+                # Title is only set while the row still has the default one.
+                await asyncio.to_thread(upsert_web_conversation, chat_id, (text or "Attachment")[:60])
+            except Exception:
+                logger.warning("could not record conversation %s", chat_id, exc_info=True)
 
             full_text = text
             if media_id:

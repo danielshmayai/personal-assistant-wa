@@ -20,6 +20,7 @@ export default function Dashboard() {
     ...Object.entries(MODULE_TABS)
       .filter(([id]) => enabledIds.has(id))
       .map(([, tab]) => tab),
+    { path: "/activity", label: "Activity", icon: "📜" },
     ...(me.tenant.is_owner ? [{ path: "/admin", label: "Admin", icon: "🛡️" }] : []),
     { path: "/settings", label: "Settings", icon: "⚙️" },
   ];

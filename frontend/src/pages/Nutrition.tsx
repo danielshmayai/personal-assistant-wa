@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { NutritionToday, NutritionDay } from "../lib/types";
 import { api, ApiError } from "../lib/api";
 import { Button, Card, Input, Spinner } from "../components/ui";
+import { MealSuggestions } from "../components/MealSuggestions";
 
 // ── SVG progress ring ────────────────────────────────────────────────────────
 function Ring({ value, max, label, unit, color }: {
@@ -80,6 +81,9 @@ export default function Nutrition() {
     void withBusy(() => api.upload("/api/nutrition/log-image", file), "Analyzing photo… (up to 30s)");
   };
 
+  const logSuggested = (text: string) =>
+    void withBusy(() => api.post("/api/nutrition/log-text", { text }), "Logging meal…");
+
   const logWater = (ml: number) =>
     void withBusy(() => api.post("/api/nutrition/log-water", { amount_ml: ml }), "Logging water…");
 
@@ -143,6 +147,8 @@ export default function Nutrition() {
             </div>
             {note && <div className="flex items-center gap-2 text-sm text-slate-400"><Spinner className="h-4 w-4" /> {note}</div>}
           </Card>
+
+          <MealSuggestions onLog={logSuggested} />
 
           <Card className="space-y-2">
             <div className="flex items-center justify-between text-sm">

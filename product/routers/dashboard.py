@@ -168,7 +168,15 @@ async def get_activity_log(
     event_type: str | None = Query(None),
 ):
     from app.scheduled_jobs import get_activity
-    return {"entries": get_activity(_dashboard_chat_id(tenant), limit=limit, event_type=event_type)}
+    entries = get_activity(_dashboard_chat_id(tenant), limit=limit, event_type=event_type)
+    if tenant.is_owner and not tenant.engine_scope:
+        # The local owner also talks to the engine over WhatsApp; its tool
+        # activity is logged under the WhatsApp chat id.
+        from app.config import MY_WHATSAPP_ID
+        if MY_WHATSAPP_ID:
+            entries += get_activity(MY_WHATSAPP_ID, limit=limit, event_type=event_type)
+            entries = sorted(entries, key=lambda e: e["created_at"], reverse=True)[:limit]
+    return {"entries": entries}
 
 
 @router.post("/api/activity")

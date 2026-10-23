@@ -140,8 +140,8 @@ async def health():
 
 
 from product.routers import (  # noqa: E402
-    admin, auth, brief, chat, dashboard, drive_proxy, fitness, garmin, google_connect, me, memory,
-    modules, nutrition, onboarding, push, secrets, smart_home, voice,
+    admin, auth, brief, chat, dashboard, drive_proxy, fitness, garmin, google_connect, leads, me,
+    memory, modules, nutrition, onboarding, push, secrets, smart_home, voice,
 )
 
 app.include_router(auth.router)
@@ -162,6 +162,7 @@ app.include_router(drive_proxy.router)
 app.include_router(voice.router)
 app.include_router(push.router)
 app.include_router(brief.router)
+app.include_router(leads.router)
 
 # Optional single-container mode: serve the built SPA if present
 _SPA_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

@@ -4,6 +4,7 @@ import type { ChatEvent } from "../lib/types";
 import { api, ApiError } from "../lib/api";
 import { useSession } from "../lib/session";
 import { Button, Spinner, cn } from "../components/ui";
+import { ConversationHistory, type HistoryMessage } from "../components/ConversationHistory";
 
 interface Message {
   role: "user" | "assistant";
@@ -81,6 +82,7 @@ export default function Chat() {
   const [voiceReplies, setVoiceReplies] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const chatIdRef = useRef<string>("");
+  const newThreadRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -125,6 +127,7 @@ export default function Chat() {
       switch (event.type) {
         case "ack":
           chatIdRef.current = event.chat_id;
+          setActiveChatId(event.chat_id);
           break;
         case "token":
           setMessages((prev) => {
@@ -249,8 +252,10 @@ export default function Chat() {
         text,
         media_id: attachment?.mediaId,
         chat_id: chatIdRef.current || undefined,
+        new_thread: newThreadRef.current || undefined,
       }),
     );
+    newThreadRef.current = false;
     setInput("");
     clearAttachment();
   };
@@ -314,6 +319,22 @@ export default function Chat() {
     }
   };
 
+  const [activeChatId, setActiveChatId] = useState("");
+
+  const openConversation = (chatId: string, history: HistoryMessage[]) => {
+    chatIdRef.current = chatId;
+    setActiveChatId(chatId);
+    setMessages(history.filter((m) => m.content).map((m) => ({ role: m.role, text: m.content })));
+  };
+
+  const newChat = () => {
+    // The server starts a fresh thread when the next message carries no chat_id.
+    chatIdRef.current = "";
+    newThreadRef.current = true;
+    setActiveChatId("");
+    setMessages([]);
+  };
+
   const gemini = me?.gemini;
   const isFallback = gemini?.engine === "ollama";
   const showTierWarning = (gemini?.limited || isFallback) && !tierBannerDismissed;
@@ -329,6 +350,7 @@ export default function Chat() {
             Model: <b className="text-slate-400">{gemini.model}</b>
             {isFallback && " (local fallback — no tools)"}
           </span>
+          <ConversationHistory activeId={activeChatId} onOpen={openConversation} onNew={newChat} />
           {ttsEnabled && (
             <button
               onClick={() => setVoiceReplies((v) => !v)}

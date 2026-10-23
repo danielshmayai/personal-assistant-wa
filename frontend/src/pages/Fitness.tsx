@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { WorkoutSuggestion } from "../components/WorkoutSuggestion";
 import type {
   BodyMetricsResponse, DailyRec, Exercise, FitnessDay, FitnessToday, GarminStatus, ProgressionPoint,
 } from "../lib/types";
@@ -304,6 +305,8 @@ export default function Fitness() {
 
       {tab === "today" && (
         <>
+          <WorkoutSuggestion garminConnected={!!garmin?.connected} onLogged={() => void loadToday()} />
+
           <Card className="flex justify-around">
             <Ring value={today.total_volume} max={5000} label="Volume" unit="kg lifted" color="#34d399" />
             <Ring value={today.total_duration_min} max={90} label="Duration" unit="min" color="#818cf8" />

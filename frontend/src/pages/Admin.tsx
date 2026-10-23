@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AdminTenant } from "../lib/types";
 import { api } from "../lib/api";
 import { Badge, Button, Card, FullPageSpinner } from "../components/ui";
+import { LeadsList } from "../components/LeadsList";
 
 export default function Admin() {
   const [tenants, setTenants] = useState<AdminTenant[] | null>(null);
@@ -76,6 +77,7 @@ export default function Admin() {
           )}
         </Card>
       ))}
+      <LeadsList />
     </div>
   );
 }
