@@ -841,10 +841,9 @@ def _stub_missing_modules() -> dict:
 
 
 class TestGarminRouterMounted:
-    def test_garmin_router_registered_on_app(self):
+    def test_garmin_router_registered_on_product_app(self):
         with patch.dict(sys.modules, {**_stub_missing_modules(), **_garmin_stub_modules()}):
-            with patch("app.memory.store._get_conn", side_effect=RuntimeError("no db")):
-                from app.main import app
+            from product.main import app
 
         routes = [r.path for r in app.routes if hasattr(r, "path")]
         for expected in [

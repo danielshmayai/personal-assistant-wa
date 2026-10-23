@@ -3,6 +3,7 @@ import type { AdminTenant } from "../lib/types";
 import { api } from "../lib/api";
 import { Badge, Button, Card, FullPageSpinner } from "../components/ui";
 import { LeadsList } from "../components/LeadsList";
+import { AssistantHealth } from "../components/AssistantHealth";
 
 export default function Admin() {
   const [tenants, setTenants] = useState<AdminTenant[] | null>(null);
@@ -27,6 +28,7 @@ export default function Admin() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
+      <AssistantHealth />
       <h2 className="text-lg font-semibold">Members</h2>
       <p className="text-sm text-slate-400">
         Anyone signing in with Google lands in <span className="text-amber-400">pending</span> and stays

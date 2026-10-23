@@ -349,6 +349,25 @@ def log_activity(chat_id: str, event_type: str, summary: str, detail: dict | Non
         conn.close()
 
 
+def activity_counts(chat_ids: list[str], days: int = 7) -> dict:
+    """{event_type: count} of tool activity over the last `days` (health panel)."""
+    if not DATABASE_URL or not chat_ids:
+        return {}
+    ids = [_scoped_chat_id(c) for c in chat_ids]
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT event_type, count(*) FROM activity_log "
+                "WHERE chat_id = ANY(%s) AND created_at > NOW() - make_interval(days => %s) "
+                "GROUP BY event_type ORDER BY 2 DESC",
+                (ids, days),
+            )
+            return {r[0]: int(r[1]) for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def get_activity(chat_id: str, limit: int = 50, event_type: str | None = None) -> list[dict]:
     if not DATABASE_URL:
         return []

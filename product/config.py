@@ -43,8 +43,8 @@ OWNER_LEGACY_SCOPE = os.getenv("OWNER_LEGACY_SCOPE", "1").strip().lower() not in
 
 # Where per-tenant Obsidian vaults live (local backend). S3 later.
 VAULT_BASE_DIR = os.getenv("VAULT_BASE_DIR", "/data/vaults")
-VAULT_BACKEND = os.getenv("VAULT_BACKEND", "local")       # local | s3 (stub)
-SECRETS_BACKEND = os.getenv("SECRETS_BACKEND", "local_pg")  # local_pg | aws (stub)
+VAULT_BACKEND = os.getenv("VAULT_BACKEND", "local")       # local (only backend)
+SECRETS_BACKEND = os.getenv("SECRETS_BACKEND", "local_pg")  # local_pg (only backend)
 
 SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "30"))
 

@@ -235,6 +235,8 @@ async def stream_graph(user_text: str, chat_id: str, enabled_modules: list[str] 
             yield {"type": "token", "content": recovered}
 
     duration_ms = round((time.monotonic() - t0) * 1000)
+    from app import metrics
+    metrics.record_reply(duration_ms)
     logger.info(
         "graph: stream end chat_id=%s request_id=%s duration_ms=%d",
         chat_id,
@@ -288,6 +290,8 @@ async def run_graph(text: str, chat_id: str) -> str:
         return f"⚠️ *שגיאה פנימית*\n`{type(exc).__name__}: {exc}`\n\n```\n{_trace[-2000:]}\n```"
 
     duration_ms = round((time.monotonic() - t0) * 1000)
+    from app import metrics
+    metrics.record_reply(duration_ms)
     raw = _last_ai_reply(result.get("messages", []))
     reply = _to_whatsapp(raw) or "[No response generated]"
 

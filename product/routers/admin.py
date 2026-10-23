@@ -1,4 +1,6 @@
-"""Owner-only tenant administration."""
+"""Owner-only tenant administration and the Assistant-health numbers."""
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from product.deps import require_owner
@@ -63,3 +65,38 @@ async def delete(tenant_id: str, _: Tenant = Depends(require_owner)):
     target = _target(tenant_id)
     await delete_tenant_data(target.id, target.engine_scope)
     return {"ok": True}
+
+
+@router.get("/health")
+async def assistant_health(owner: Tenant = Depends(require_owner)):
+    """Is the assistant actually helping? Memory writes and tool use come from
+    the database (last 7 days); latency and retrieval hit-rate are counted by
+    this web server since its last restart (WhatsApp runs in its own process)."""
+    from app import metrics
+    from app.memory import embeddings
+    from app.memory.store import memory_event_counts
+    from app.scheduled_jobs import activity_counts
+
+    chat_ids = [f"web_{owner.engine_scope}" if owner.engine_scope else "web"]
+    if not owner.engine_scope:
+        from app.config import MY_WHATSAPP_ID
+        if MY_WHATSAPP_ID:
+            chat_ids.append(MY_WHATSAPP_ID)
+
+    def _safe(fn, *args):
+        try:
+            return fn(*args)
+        except Exception:
+            return {}
+
+    memory, tools = await asyncio.gather(
+        asyncio.to_thread(_safe, memory_event_counts, 7),
+        asyncio.to_thread(_safe, activity_counts, chat_ids, 7),
+    )
+    emb = embeddings.status()
+    return {
+        "memory_writes_7d": memory,
+        "tool_calls_7d": tools,
+        "embeddings": {k: emb.get(k) for k in ("state", "model", "last_error", "last_error_at", "errors")},
+        "web": metrics.snapshot(),
+    }

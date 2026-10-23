@@ -37,7 +37,7 @@ def _ensure_tenant_scoping(cur) -> None:
     untouched; product tenants get their own keyspace.
     """
     for table in (
-        "vault_embeddings", "memory_facts", "memory_rules", "rule_embeddings",
+        "vault_embeddings", "rule_embeddings",
         "episodes", "conversation_log", "web_conversations",
     ):
         cur.execute(
@@ -51,14 +51,6 @@ def _ensure_tenant_scoping(cur) -> None:
         cur.execute("ALTER TABLE rule_embeddings DROP CONSTRAINT IF EXISTS rule_embeddings_pkey")
         cur.execute("ALTER TABLE rule_embeddings ADD PRIMARY KEY (tenant_id, rule_text)")
 
-    cur.execute("ALTER TABLE memory_facts DROP CONSTRAINT IF EXISTS memory_facts_key_key")
-    cur.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS memory_facts_tenant_key_uq ON memory_facts(tenant_id, key)"
-    )
-    cur.execute("ALTER TABLE memory_rules DROP CONSTRAINT IF EXISTS memory_rules_rule_key")
-    cur.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS memory_rules_tenant_rule_uq ON memory_rules(tenant_id, rule)"
-    )
     cur.execute("CREATE INDEX IF NOT EXISTS episodes_tenant_idx ON episodes(tenant_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS conversation_log_tenant_idx ON conversation_log(tenant_id)")
 
@@ -81,25 +73,6 @@ def init_memory_tables():
                     filepath TEXT PRIMARY KEY,
                     embedding vector(768) NOT NULL,
                     updated_at TIMESTAMPTZ DEFAULT NOW()
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS memory_facts (
-                    id SERIAL PRIMARY KEY,
-                    key TEXT UNIQUE NOT NULL,
-                    value TEXT NOT NULL,
-                    source TEXT DEFAULT 'user',
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW()
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS memory_rules (
-                    id SERIAL PRIMARY KEY,
-                    rule TEXT UNIQUE NOT NULL,
-                    reason TEXT DEFAULT '',
-                    source TEXT DEFAULT 'reflection',
-                    created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
             cur.execute("""
@@ -284,109 +257,9 @@ def load_google_token(chat_id: str) -> dict | None:
         conn.close()
 
 
-def upsert_fact(key: str, value: str, source: str = "user"):
-    """Insert or update a fact."""
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO memory_facts (tenant_id, key, value, source, updated_at)
-                VALUES (%s, %s, %s, %s, NOW())
-                ON CONFLICT (tenant_id, key) DO UPDATE
-                SET value = EXCLUDED.value,
-                    source = EXCLUDED.source,
-                    updated_at = NOW()
-            """, (_tid(), key, value, source))
-        conn.commit()
-        logger.info("Upserted fact: %s", key)
-    finally:
-        conn.close()
-
-
-def insert_rule(rule: str, reason: str = "", source: str = "reflection"):
-    """Insert a new rule/preference. Ignores duplicates."""
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO memory_rules (tenant_id, rule, reason, source)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (tenant_id, rule) DO NOTHING
-            """, (_tid(), rule, reason, source))
-        conn.commit()
-        logger.info("Inserted rule: %.80s", rule)
-    finally:
-        conn.close()
-
-
-def get_all_facts() -> list[dict]:
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT key, value FROM memory_facts WHERE tenant_id = %s ORDER BY updated_at DESC", (_tid(),))
-            return [{"key": r[0], "value": r[1]} for r in cur.fetchall()]
-    finally:
-        conn.close()
-
-
-def get_all_facts_with_ids() -> list[dict]:
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, key, value FROM memory_facts WHERE tenant_id = %s ORDER BY updated_at DESC", (_tid(),))
-            return [{"id": r[0], "key": r[1], "value": r[2]} for r in cur.fetchall()]
-    finally:
-        conn.close()
-
-
-def get_all_rules() -> list[dict]:
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT rule, reason FROM memory_rules WHERE tenant_id = %s ORDER BY created_at DESC", (_tid(),))
-            return [{"rule": r[0], "reason": r[1]} for r in cur.fetchall()]
-    finally:
-        conn.close()
-
-
-def get_all_rules_with_ids() -> list[dict]:
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, rule, reason FROM memory_rules WHERE tenant_id = %s ORDER BY created_at DESC", (_tid(),))
-            return [{"id": r[0], "rule": r[1], "reason": r[2]} for r in cur.fetchall()]
-    finally:
-        conn.close()
-
-
-def delete_fact(key: str) -> bool:
-    """Delete a fact by key. Returns True if a row was deleted."""
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM memory_facts WHERE tenant_id = %s AND key = %s", (_tid(), key))
-            deleted = cur.rowcount > 0
-        conn.commit()
-        if deleted:
-            logger.info("Deleted fact: %s", key)
-        return deleted
-    finally:
-        conn.close()
-
-
-def delete_rule(rule_id: int) -> bool:
-    """Delete a rule by its numeric ID. Returns True if a row was deleted."""
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM memory_rules WHERE tenant_id = %s AND id = %s", (_tid(), rule_id))
-            deleted = cur.rowcount > 0
-        conn.commit()
-        if deleted:
-            logger.info("Deleted rule id=%s", rule_id)
-        return deleted
-    finally:
-        conn.close()
+# memory_facts / memory_rules (the pre-vault memory) are no longer created or
+# used: facts and rules live in the Obsidian vault. Existing installs keep the
+# old tables untouched; scripts/migrate_memory_to_vault.py reads them.
 
 
 # Injection budgets (characters). Profile and rules are small and always
@@ -455,6 +328,8 @@ async def load_memory_context(query: str = "", recent: str = "") -> str:
         ep_text = "\n".join(f"- {e}" for e in episodes)[:_EPISODES_BUDGET]
         parts.append("### Related past conversations\n" + ep_text)
 
+    from app import metrics
+    metrics.record_retrieval(injected=bool(parts), notes=bool(facts))
     LAST_RETRIEVAL.update({
         "profile": bool(profile), "rules": len(rules.splitlines()) if rules else 0,
         "semantic_hits": semantic_hits, "facts": bool(facts), "episodes": len(episodes),

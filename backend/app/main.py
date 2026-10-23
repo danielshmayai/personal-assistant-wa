@@ -4,8 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import httpx
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -15,21 +14,11 @@ from app.config import (
     OLLAMA_BASE_URL, WAHA_BASE_URL, WAHA_API_KEY, WAHA_SESSION,
     WEBHOOK_SECRET, TEST_TOKEN, ALLOWED_ORIGIN,
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
-    GEMINI_API_KEY, DATABASE_URL, MY_WHATSAPP_ID,
+    GEMINI_API_KEY, DATABASE_URL, MY_WHATSAPP_ID, PRODUCT_URL,
 )
 from app.whatsapp import router as waha_router
 from app.memory.store import init_memory_tables, _get_conn
 from app.routers.google_auth import router as google_auth_router
-from app.routers.web_chat import router as web_chat_router
-from app.routers.leads import router as leads_router
-from app.routers.smart_home import router as smart_home_router
-from app.routers.dashboard import router as dashboard_router
-from app.routers.memory_api import router as memory_api_router
-from app.routers.nutrition import router as nutrition_router
-from app.routers.drive_proxy import router as drive_proxy_router
-from app.routers.push import router as push_router
-from app.routers.fitness import router as fitness_router
-from app.routers.garmin import router as garmin_router
 from app.graph.checkpointer import setup_checkpointer
 
 from app.logging_config import setup_logging
@@ -291,42 +280,15 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(waha_router)
 app.include_router(google_auth_router)
-app.include_router(web_chat_router)
-app.include_router(leads_router)
-app.include_router(smart_home_router)
-app.include_router(dashboard_router)
-app.include_router(memory_api_router)
-app.include_router(nutrition_router)
-app.include_router(drive_proxy_router)
-app.include_router(push_router)
-app.include_router(fitness_router)
-app.include_router(garmin_router)
 
-# Serve the web UI static files
-_static_dir = os.path.join(os.path.dirname(__file__), "static")
-if os.path.isdir(_static_dir):
-    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
-
-    @app.get("/")
-    async def serve_index():
-        return FileResponse(
-            os.path.join(_static_dir, "index.html"),
-            headers={"Cache-Control": "no-cache, must-revalidate", "Pragma": "no-cache"},
-        )
-
-    @app.get("/manifest.json")
-    async def serve_manifest():
-        return FileResponse(os.path.join(_static_dir, "manifest.json"), media_type="application/manifest+json")
-
-    @app.get("/sw.js")
-    async def serve_sw():
-        # Service workers must be served with no-cache so the browser always
-        # checks for a byte-change, which is how update detection works.
-        return FileResponse(
-            os.path.join(_static_dir, "sw.js"),
-            media_type="application/javascript",
-            headers={"Cache-Control": "no-cache, must-revalidate", "Pragma": "no-cache"},
-        )
+# The old single-page web UI (static/index.html) was retired: the web app is
+# the product (docker-compose.product.yml, :8080). Old bookmarks to this
+# backend's root land there instead of on a 404.
+@app.get("/", include_in_schema=False)
+async def root(request: Request):
+    from urllib.parse import urlsplit
+    target = PRODUCT_URL or f"{request.url.scheme}://{urlsplit(str(request.base_url)).hostname}:8080/"
+    return RedirectResponse(target, status_code=307)
 
 
 class TestRequest(BaseModel):

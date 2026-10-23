@@ -48,6 +48,10 @@ LOG_MESSAGE_CONTENT = os.getenv("LOG_MESSAGE_CONTENT", "false").lower() == "true
 
 # ── Security ────────────────────────────────────────────────────────────────
 
+# Where the web app (the product, docker-compose.product.yml) is reached. This
+# backend's "/" redirects there; empty = same host, port 8080.
+PRODUCT_URL = os.getenv("PRODUCT_URL", "")
+
 # Allowed origin for CORS. Set to your Cloudflare tunnel domain in production.
 # Example: ALLOWED_ORIGIN=https://pa.yourdomain.com
 # Falls back to localhost origins for local dev when unset.

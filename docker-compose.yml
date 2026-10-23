@@ -93,7 +93,6 @@ services:
       - "8000:8000"
     volumes:
       - ${HOST_OBSIDIAN_VAULT:-./obsidian_vault}:/app/obsidian_vault
-      - ./backend/app/static:/app/app/static:ro
       - ./restart-triggers:/app/restart
     networks:
       - pa-net

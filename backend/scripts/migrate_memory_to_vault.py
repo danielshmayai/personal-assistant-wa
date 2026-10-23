@@ -10,8 +10,32 @@ from __future__ import annotations
 
 import logging
 
-from app.memory.store import get_all_facts, get_all_rules
 from app.memory import obsidian
+from app.memory.store import _get_conn, _tid
+
+
+def _rows(sql: str) -> list[tuple]:
+    """Read the legacy table, or nothing if it was never created."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass(%s)", (sql.split(" FROM ")[1].split()[0],))
+            if cur.fetchone()[0] is None:
+                return []
+            cur.execute(sql, (_tid(),))
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def get_all_rules() -> list[dict]:
+    return [{"rule": r[0], "reason": r[1]} for r in
+            _rows("SELECT rule, reason FROM memory_rules WHERE tenant_id = %s ORDER BY created_at DESC")]
+
+
+def get_all_facts() -> list[dict]:
+    return [{"key": r[0], "value": r[1]} for r in
+            _rows("SELECT key, value FROM memory_facts WHERE tenant_id = %s ORDER BY updated_at DESC")]
 
 
 def main() -> None:
