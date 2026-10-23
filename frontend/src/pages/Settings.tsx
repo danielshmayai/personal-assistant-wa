@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useSession } from "../lib/session";
 import { api } from "../lib/api";
 import { ModuleToggleGrid } from "../components/ModuleToggleGrid";
+import { NotificationSettings } from "../components/NotificationSettings";
 import { SecretField } from "../components/SecretField";
 import { Badge, Button, Card, Switch } from "../components/ui";
 
@@ -139,6 +140,11 @@ export default function Settings() {
             <SecretField key={s.key} secret={s} onSaved={refresh} />
           ))}
         </Card>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold">Notifications</h2>
+        <NotificationSettings />
       </section>
 
       <section>

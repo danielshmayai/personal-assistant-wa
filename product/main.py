@@ -112,8 +112,13 @@ async def lifespan(app: FastAPI):
 
     memory_maintenance.start(_tenant_scopes)
 
+    # Morning brief for tenants who turned it on in Settings.
+    from product import brief as morning_brief
+    morning_brief.start(_tenant_scopes)
+
     logger.info("Product backend ready (env=%s)", ENVIRONMENT)
     yield
+    await morning_brief.stop()
     await memory_maintenance.stop()
     await stop_scheduler()
 
@@ -135,7 +140,7 @@ async def health():
 
 
 from product.routers import (  # noqa: E402
-    admin, auth, chat, dashboard, drive_proxy, fitness, garmin, google_connect, me, memory,
+    admin, auth, brief, chat, dashboard, drive_proxy, fitness, garmin, google_connect, me, memory,
     modules, nutrition, onboarding, push, secrets, smart_home, voice,
 )
 
@@ -156,6 +161,7 @@ app.include_router(memory.router)
 app.include_router(drive_proxy.router)
 app.include_router(voice.router)
 app.include_router(push.router)
+app.include_router(brief.router)
 
 # Optional single-container mode: serve the built SPA if present
 _SPA_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

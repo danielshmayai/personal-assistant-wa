@@ -1,10 +1,12 @@
-"""Voice — STT (Whisper) and TTS (Google Neural2 + edge-tts fallback).
+"""Voice — STT (Gemini, Whisper fallback) and TTS (Google Neural2 + edge-tts fallback).
 
 Shared between the owner's web_chat.py router and the product's tenant-scoped
 voice router — extracted so both stay in sync and a fix (e.g. the
 GOOGLE_TTS_API_KEY credential resolution below) only needs to happen once.
 
-STT uses a local Whisper model — no credentials, safe to share across scopes.
+STT sends the audio to Gemini with the scope's own key (whisper `tiny` was
+weak on Hebrew); the local Whisper model is the fallback when there's no key
+or the call fails.
 TTS resolves GOOGLE_TTS_API_KEY via runtime.get_secret() per call (never a
 module-level env import), so a tenant's own BYO key is used when present and
 the call fails closed (falls back to the free edge-tts engine) otherwise —
@@ -39,14 +41,59 @@ def _get_whisper():
     return _whisper
 
 
+_GEMINI_MAX_INLINE_BYTES = 15 * 1024 * 1024  # inline request limit is ~20 MB incl. base64
+_TRANSCRIBE_PROMPT = (
+    "Transcribe this voice message verbatim, in the language it is spoken in "
+    "(usually Hebrew or English). Output only the transcript — no labels, notes "
+    "or translation. If nothing intelligible is said, output nothing."
+)
+
+
+async def transcribe_audio_gemini(data: bytes, content_type: str) -> str:
+    """Transcribe with Gemini using the current scope's key. Raises on failure."""
+    import base64
+
+    import httpx
+
+    from app import runtime
+    from app.config import GEMINI_MODEL
+
+    key = runtime.get_secret("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("no_gemini_key")
+    model = runtime.get_secret("GEMINI_MODEL") or GEMINI_MODEL
+    mime = (content_type or "audio/ogg").split(";")[0].strip() or "audio/ogg"
+    body = {"contents": [{"parts": [
+        {"text": _TRANSCRIBE_PROMPT},
+        {"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}},
+    ]}]}
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            headers={"x-goog-api-key": key},
+            json=body,
+        )
+    r.raise_for_status()
+    parts = (r.json().get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+    return "".join(p.get("text", "") for p in parts).strip()
+
+
 async def transcribe_audio(data: bytes, content_type: str) -> str:
-    """Transcribe audio bytes to text via a local Whisper model."""
+    """Transcribe audio bytes to text: Gemini first, local Whisper as fallback."""
     import asyncio
 
     if not data:
         raise ValueError("empty_audio")
     if len(data) > _MAX_AUDIO_BYTES:
         raise ValueError("audio_too_large")
+
+    if len(data) <= _GEMINI_MAX_INLINE_BYTES:
+        try:
+            text = await transcribe_audio_gemini(data, content_type)
+            logger.info("STT (gemini) transcribed %d bytes -> %d chars", len(data), len(text))
+            return text
+        except Exception as exc:
+            logger.warning("Gemini STT failed (%s) — falling back to Whisper", exc)
 
     ct = content_type or ""
     if "mp4" in ct or "m4a" in ct:

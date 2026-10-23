@@ -112,7 +112,7 @@ backend/app/
 | Category | Tools | Source |
 |----------|-------|--------|
 | **Web** (5) | web_search, wikipedia_search, fetch_url, get_weather, build_whatsapp_link | `web/tools.py` |
-| **Google** (8) | google_connect, gmail_read, gmail_send, calendar_list, calendar_create, drive_save_document, drive_list_files, drive_show_image | `google/tools.py` + `drive_tools.py` |
+| **Google** (11) | google_connect, gmail_read (search with query), gmail_read_message, gmail_send, calendar_list, calendar_create, calendar_update, calendar_delete, drive_save_document, drive_list_files, drive_show_image | `google/tools.py` + `drive_tools.py` |
 | **Maps** (2) | create_google_map, add_places_to_map | `google/maps_tool.py` |
 | **Tuya** (3) | list_tuya_devices, get_device_status, control_device | `tuya/tools.py` |
 | **Memory** (7) | save_fact, update_rule, search_memory, forget, list_memory, read_note, append_to_note | `memory/manager.py` |

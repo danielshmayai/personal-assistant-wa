@@ -1,4 +1,5 @@
 import asyncio
+import re
 import logging
 from fastapi import APIRouter, Query, Request, Response
 import httpx
@@ -441,11 +442,43 @@ def _is_rtl(text: str) -> bool:
     return any("\u0590" <= c <= "\u05FF" or "\u0600" <= c <= "\u06FF" for c in text)
 
 
+_VOICE_TAG = re.compile(r"^\[MEDIA id=(\S+) type=(\S*) filename=\S* mime=([^\]]*)\]\n?")
+
+
+async def _transcribe_voice_note(text: str) -> str:
+    """Replace a leading voice-note MEDIA tag with its transcript.
+
+    Runs in the worker (not the webhook) so WAHA gets its 200 right away. On
+    failure the tag is kept and the agent is told it couldn't be transcribed.
+    """
+    m = _VOICE_TAG.match(text)
+    if not m or not (m.group(2) in ("ptt", "audio", "voice") or m.group(3).startswith("audio/")):
+        return text
+    rest = text[m.end():]
+    if rest.startswith("(no caption"):
+        rest = ""
+    message_id, mime = m.group(1), m.group(3)
+    try:
+        from app import voice
+        from app.google.drive_tools import _download_from_waha
+        data, dl_mime = await _download_from_waha(message_id)
+        transcript = await voice.transcribe_audio(data, mime or dl_mime)
+    except Exception as exc:
+        logger.warning("voice note transcription failed for %s: %s", message_id[-12:], exc)
+        transcript = ""
+    if not transcript:
+        return (f"{m.group(0).strip()}\n(voice note — it could not be transcribed; "
+                "tell the user briefly and ask them to type it)")
+    logger.info("voice note transcribed: %d chars", len(transcript))
+    return f"🎤 {transcript}" + (f"\n{rest}" if rest.strip() else "")
+
+
 async def _process_message(text: str, chat_id: str) -> str:
     """Run text through the LangGraph pipeline. Returns the reply string."""
     from app.context import request_id_var
     from app.graph.graph import run_graph
     request_id = request_id_var.get()
+    text = await _transcribe_voice_note(text)
     try:
         reply = await run_graph(text, chat_id)
     except Exception as _exc:

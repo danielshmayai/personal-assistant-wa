@@ -15,6 +15,8 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState("");
   const [busyCard, setBusyCard] = useState<number | null>(null);
+  const [brief, setBrief] = useState<string | null>(null);
+  const [briefOpen, setBriefOpen] = useState(false);
 
   const schedulingEnabled = !!me?.modules.find((m) => m.id === "scheduling")?.enabled;
 
@@ -26,6 +28,11 @@ export default function Home() {
     api.get<TodayInfo>("/api/today").then(setToday).catch(() => setError("Failed to load today's summary"));
     api.get<CalendarToday>("/api/calendar-today").then(setCalendar).catch(() => {});
     void loadCards().catch(() => {});
+    // Only for users who turned the brief on — generating it calls several services.
+    api.get<{ enabled: boolean }>("/api/brief/settings")
+      .then((s) => (s.enabled ? api.get<{ text: string }>("/api/brief/today") : null))
+      .then((r) => r && setBrief(r.text))
+      .catch(() => {});
   }, [loadCards]);
 
   useEffect(() => {
@@ -65,6 +72,20 @@ export default function Home() {
 
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>
+      )}
+
+      {brief && (
+        <Card>
+          <button className="flex w-full items-center justify-between text-left" onClick={() => setBriefOpen(!briefOpen)}>
+            <span className="font-medium">🌅 Morning brief</span>
+            <span className="text-sm text-slate-400">{briefOpen ? "Hide" : "Show"}</span>
+          </button>
+          {briefOpen && (
+            <p dir="auto" className="mt-3 whitespace-pre-wrap text-sm text-slate-300">
+              {brief.replace(/\*/g, "")}
+            </p>
+          )}
+        </Card>
       )}
 
       <Card className="flex items-center justify-between">

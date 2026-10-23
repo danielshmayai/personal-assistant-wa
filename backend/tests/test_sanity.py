@@ -120,9 +120,12 @@ def test_build_graph_returns_compiled_graph():
 EXPECTED_GOOGLE_TOOL_NAMES = {
     "google_connect",
     "gmail_read",
+    "gmail_read_message",
     "gmail_send",
     "calendar_list",
     "calendar_create",
+    "calendar_update",
+    "calendar_delete",
     "drive_save_document",
     "drive_list_files",
     "drive_show_image",
@@ -131,8 +134,8 @@ EXPECTED_GOOGLE_TOOL_NAMES = {
 }
 
 
-def test_get_google_tools_returns_ten_tools():
-    """get_google_tools must return exactly 10 tool objects (5 core + 3 Drive + 2 Maps)."""
+def test_get_google_tools_returns_thirteen_tools():
+    """get_google_tools must return exactly 13 tool objects (8 core + 3 Drive + 2 Maps)."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
@@ -144,11 +147,11 @@ def test_get_google_tools_returns_ten_tools():
         from app.google.tools import get_google_tools
         tools = get_google_tools("test-chat-id")
 
-    assert len(tools) == 10, f"Expected 10 tools, got {len(tools)}: {[t.name for t in tools]}"
+    assert len(tools) == 13, f"Expected 13 tools, got {len(tools)}: {[t.name for t in tools]}"
 
 
 def test_get_google_tools_has_correct_names():
-    """Each of the 10 tools must carry the exact expected name."""
+    """Each of the 13 tools must carry the exact expected name."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),

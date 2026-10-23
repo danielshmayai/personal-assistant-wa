@@ -37,6 +37,7 @@ _SECTIONS = {
 
     "google": """\
 *Google:* if Gmail/Calendar/Drive isn't connected, call google_connect and share the link.
+- To open, change or delete a specific email or event, find its id first (gmail_read with a query / calendar_list).
 - A [MEDIA type=document …] tag → drive_save_document right away with the best category from the caption or file type, then say where it was saved.
 - Maps: "הצג במפה" / "show on map" without listing places → use the place just discussed; don't ask. Always return the map link.""",
 

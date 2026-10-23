@@ -40,9 +40,8 @@ self.addEventListener('message', event => {
 });
 
 // ── Push ──────────────────────────────────────────────────────────────────────
-// Reserved for when push delivery lands (currently only the owner's scheduler
-// can send one — see PLANNING.md P6.5). Harmless to keep ready: shows nothing
-// unless a push event actually arrives.
+// Reminders and the morning brief, sent by the server's scheduler. Skipped
+// when a window is focused (the in-app notification already shows it).
 self.addEventListener('push', event => {
   if (!event.data) return;
 

@@ -7,11 +7,9 @@ as scheduled_jobs.py, see product/routers/dashboard.py's _dashboard_chat_id)
 so we build a per-tenant key at the call site rather than passing a shared
 literal.
 
-Note: nothing in the product process currently *sends* a push — delivery
-only fires from scheduled_jobs.py's job loop, which only runs in the
-owner's engine entrypoint (see PLANNING.md P6.5/P6.6). Subscribing here is
-still safe and forward-compatible: it correctly records the tenant's own
-endpoint so delivery works immediately once that scheduler gap closes.
+Delivery: the product runs a tenant-scoped scheduler (product/main.py), whose
+_notify() pushes every reminder for "web_<scope>" to these subscriptions, and
+the per-tenant morning brief is delivered the same way.
 """
 from __future__ import annotations
 
@@ -45,3 +43,29 @@ async def subscribe_push(body: SubscribeBody, tenant: Tenant = Depends(require_s
     from app.push_notifications import save_push_subscription
     await asyncio.to_thread(save_push_subscription, _push_chat_id(tenant), body.subscription)
     return {"ok": True}
+
+
+class UnsubscribeBody(BaseModel):
+    endpoint: str
+
+
+@router.post("/unsubscribe")
+async def unsubscribe_push(body: UnsubscribeBody, tenant: Tenant = Depends(require_session)):
+    """Remove this browser's subscription — only if it belongs to this tenant."""
+    from app.push_notifications import delete_push_subscription, get_push_subscriptions
+    subs = await asyncio.to_thread(get_push_subscriptions, _push_chat_id(tenant))
+    if any(s.get("endpoint") == body.endpoint for s in subs):
+        await asyncio.to_thread(delete_push_subscription, body.endpoint)
+    return {"ok": True}
+
+
+@router.post("/test")
+async def test_push(tenant: Tenant = Depends(require_session)):
+    """Send a test notification to every device this tenant subscribed."""
+    from app.push_notifications import get_push_subscriptions, send_web_push_sync
+    subs = await asyncio.to_thread(get_push_subscriptions, _push_chat_id(tenant))
+    await asyncio.gather(*[
+        asyncio.to_thread(send_web_push_sync, sub, "danidin 🔔", "Notifications are working.")
+        for sub in subs
+    ], return_exceptions=True)
+    return {"sent": len(subs)}
