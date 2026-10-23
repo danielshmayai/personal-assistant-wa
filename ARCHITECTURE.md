@@ -64,7 +64,7 @@ backend/app/
 │   ├── state.py            # PAState TypedDict
 │   └── tools_registry.py   # Cached per-chat tool list builder
 ├── memory/
-│   ├── manager.py          # 10 LangChain tools for vault operations
+│   ├── manager.py          # 7 LangChain tools for vault operations
 │   ├── obsidian.py         # Filesystem I/O, file locking, path traversal prevention
 │   ├── store.py            # PostgreSQL tables, embeddings, token storage
 │   ├── reflection.py       # Post-reply fact/rule extraction
@@ -79,7 +79,7 @@ backend/app/
 │   ├── calendar.py         # Calendar list/create helpers
 │   ├── gmail.py            # Gmail read/send helpers
 │   ├── drive.py            # Drive upload/download/list helpers
-│   ├── drive_tools.py      # save_photo, save_document, list_files, show_image
+│   ├── drive_tools.py      # save_document, list_files, show_image
 │   ├── maps_tool.py        # create_google_map, add_places_to_map (geocode + KML)
 │   └── tools.py            # google_connect, gmail_*, calendar_* + drive + maps
 ├── tuya/
@@ -112,10 +112,10 @@ backend/app/
 | Category | Tools | Source |
 |----------|-------|--------|
 | **Web** (5) | web_search, wikipedia_search, fetch_url, get_weather, build_whatsapp_link | `web/tools.py` |
-| **Google** (9) | google_connect, gmail_read, gmail_send, calendar_list, calendar_create, drive_save_photo, drive_save_document, drive_list_files, drive_show_image | `google/tools.py` + `drive_tools.py` |
+| **Google** (8) | google_connect, gmail_read, gmail_send, calendar_list, calendar_create, drive_save_document, drive_list_files, drive_show_image | `google/tools.py` + `drive_tools.py` |
 | **Maps** (2) | create_google_map, add_places_to_map | `google/maps_tool.py` |
 | **Tuya** (3) | list_tuya_devices, get_device_status, control_device | `tuya/tools.py` |
-| **Memory** (10) | save_fact, update_rule, retrieve_context, list_memory, hide_fact, hide_rule, search_vault, grep_note, read_note, append_to_note | `memory/manager.py` |
+| **Memory** (7) | save_fact, update_rule, search_memory, forget, list_memory, read_note, append_to_note | `memory/manager.py` |
 | **Schedule** (5) | schedule_tuya_command, schedule_reminder, schedule_recurring_reminder, list_scheduled, cancel_scheduled | `schedule_tool.py` |
 | **Nutrition** (3) | log_meal, log_water, nutrition_today | `nutrition_tool.py` |
 | **TTS** (1) | configure_tts | `tts_tool.py` |

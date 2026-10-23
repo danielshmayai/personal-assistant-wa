@@ -123,7 +123,6 @@ EXPECTED_GOOGLE_TOOL_NAMES = {
     "gmail_send",
     "calendar_list",
     "calendar_create",
-    "drive_save_photo",
     "drive_save_document",
     "drive_list_files",
     "drive_show_image",
@@ -132,8 +131,8 @@ EXPECTED_GOOGLE_TOOL_NAMES = {
 }
 
 
-def test_get_google_tools_returns_eight_tools():
-    """get_google_tools must return exactly 11 tool objects (5 existing + 4 Drive + 2 Maps)."""
+def test_get_google_tools_returns_ten_tools():
+    """get_google_tools must return exactly 10 tool objects (5 core + 3 Drive + 2 Maps)."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
@@ -145,11 +144,11 @@ def test_get_google_tools_returns_eight_tools():
         from app.google.tools import get_google_tools
         tools = get_google_tools("test-chat-id")
 
-    assert len(tools) == 11, f"Expected 11 tools, got {len(tools)}: {[t.name for t in tools]}"
+    assert len(tools) == 10, f"Expected 10 tools, got {len(tools)}: {[t.name for t in tools]}"
 
 
 def test_get_google_tools_has_correct_names():
-    """Each of the 11 tools must carry the exact expected name."""
+    """Each of the 10 tools must carry the exact expected name."""
     with (
         patch("app.google.auth.get_auth_url", return_value="https://auth.example.com"),
         patch("app.google.auth.get_credentials", return_value=None),
@@ -259,8 +258,8 @@ def test_fastapi_app_has_webhook_waha_route():
 # ---------------------------------------------------------------------------
 
 EXPECTED_MEMORY_TOOL_NAMES = {
-    "save_fact", "update_rule", "retrieve_context", "search_vault",
-    "list_memory", "hide_fact", "hide_rule", "append_to_note", "read_note", "grep_note",
+    "save_fact", "update_rule", "search_memory", "forget",
+    "list_memory", "append_to_note", "read_note",
 }
 
 
@@ -301,46 +300,48 @@ def test_update_rule_tool_delegates_to_obsidian(monkeypatch):
     assert "Always reply in Hebrew" in calls
 
 
-def test_retrieve_context_tool_delegates_to_obsidian(monkeypatch):
-    """retrieve_context must delegate to obsidian.retrieve_context."""
+def test_search_memory_falls_back_to_keyword_search(monkeypatch):
+    """search_memory: semantic hits first; keyword search when there are none."""
     captured = []
 
     from app.memory import manager as manager_mod
     monkeypatch.setattr(manager_mod.obsidian, "retrieve_context",
                         lambda query: captured.append(query) or "snippets")
-
-    from app.memory.manager import retrieve_context
-    result = retrieve_context.invoke({"query": "Milwaukee"})
+    with patch("app.memory.embeddings.semantic_search", return_value=[]):
+        from app.memory.manager import search_memory
+        result = search_memory.invoke({"query": "Milwaukee"})
 
     assert captured == ["Milwaukee"]
     assert result == "snippets"
 
 
-def test_hide_fact_tool_delegates_to_obsidian(monkeypatch):
-    """hide_fact must delegate to obsidian.hide_fact (soft delete)."""
+def test_search_memory_with_note_filters_lines(monkeypatch):
+    """search_memory(note=…) is the old grep_note: only matching lines of one file."""
     calls = []
+
+    from app.memory import manager as manager_mod
+    monkeypatch.setattr(manager_mod.obsidian, "grep_note",
+                        lambda filepath, keyword: calls.append((filepath, keyword)) or "Found 2")
+    from app.memory.manager import search_memory
+    assert search_memory.invoke({"query": "@", "note": "Misc/contacts.md"}) == "Found 2"
+    assert calls == [("Misc/contacts.md", "@")]
+
+
+def test_forget_fact_and_rule_delegate_to_obsidian(monkeypatch):
+    """forget hides a Category/Entity note, or (kind=rule) strikes a rule."""
+    facts, rules = [], []
 
     from app.memory import manager as manager_mod
     monkeypatch.setattr(manager_mod.obsidian, "hide_fact",
-                        lambda category, entity: calls.append((category, entity)) or "Hidden: …")
-
-    from app.memory.manager import hide_fact
-    result = hide_fact.invoke({"category": "Investments", "entity": "Milwaukee_Property"})
-    assert ("Investments", "Milwaukee_Property") in calls
-    assert "Hidden" in result
-
-
-def test_hide_rule_tool_delegates_to_obsidian(monkeypatch):
-    """hide_rule must delegate to obsidian.hide_rule (strikethrough)."""
-    calls = []
-
-    from app.memory import manager as manager_mod
+                        lambda category, entity: facts.append((category, entity)) or "Hidden: …")
     monkeypatch.setattr(manager_mod.obsidian, "hide_rule",
-                        lambda instruction: calls.append(instruction) or "Hidden rule: …")
-
-    from app.memory.manager import hide_rule
-    hide_rule.invoke({"instruction": "Always reply in Hebrew"})
-    assert "Always reply in Hebrew" in calls
+                        lambda instruction: rules.append(instruction) or "Hidden rule: …")
+    from app.memory.manager import forget
+    assert "Hidden" in forget.invoke({"target": "Investments/Milwaukee_Property"})
+    forget.invoke({"target": "Always reply in Hebrew", "kind": "rule"})
+    assert facts == [("Investments", "Milwaukee_Property")]
+    assert rules == ["Always reply in Hebrew"]
+    assert "Category/Entity" in forget.invoke({"target": "Milwaukee"})
 
 
 def test_list_memory_calls_list_visible(monkeypatch):
@@ -580,7 +581,7 @@ def test_wikipedia_search_returns_summary(monkeypatch):
 # 10. Google Drive tools
 # ---------------------------------------------------------------------------
 
-EXPECTED_DRIVE_TOOL_NAMES = {"drive_save_photo", "drive_save_document", "drive_list_files", "drive_show_image"}
+EXPECTED_DRIVE_TOOL_NAMES = {"drive_save_document", "drive_list_files", "drive_show_image"}
 
 
 def test_drive_tools_exist_with_correct_names():
@@ -594,15 +595,15 @@ def test_drive_tools_exist_with_correct_names():
     )
 
 
-def test_drive_save_photo_requires_google_connection():
-    """drive_save_photo must prompt to connect Google when credentials are missing."""
+def test_drive_save_document_requires_google_connection():
+    """drive_save_document must prompt to connect Google when credentials are missing."""
     import asyncio
     with patch("app.google.auth.get_credentials", return_value=None):
         from app.google.drive_tools import get_drive_tools
         tools = get_drive_tools("test-chat-id")
-    save_photo = next(t for t in tools if t.name == "drive_save_photo")
+    save_doc = next(t for t in tools if t.name == "drive_save_document")
     result = asyncio.get_event_loop().run_until_complete(
-        save_photo.ainvoke({"message_id": "msg123", "filename": "photo.jpg"})
+        save_doc.ainvoke({"message_id": "msg123", "filename": "doc.pdf"})
     )
     assert "google_connect" in result.lower() or "not connected" in result.lower()
 
@@ -747,7 +748,6 @@ def test_media_cache_returns_none_for_missing_key():
 EXPECTED_FITNESS_TOOL_NAMES = {
     "log_workout",
     "suggest_workout",
-    "fitness_today",
     "fitness_history",
     "log_body_metrics",
     "analyze_body_scan",
@@ -755,15 +755,15 @@ EXPECTED_FITNESS_TOOL_NAMES = {
 }
 
 
-def test_get_fitness_tools_returns_seven_tools():
-    """get_fitness_tools must return exactly 7 tool objects."""
+def test_get_fitness_tools_returns_six_tools():
+    """get_fitness_tools must return exactly 6 tool objects."""
     from app.fitness_tool import get_fitness_tools
     tools = get_fitness_tools("test-chat-id")
-    assert len(tools) == 7, f"Expected 7 fitness tools, got {len(tools)}: {[t.name for t in tools]}"
+    assert len(tools) == 6, f"Expected 6 fitness tools, got {len(tools)}: {[t.name for t in tools]}"
 
 
 def test_get_fitness_tools_has_correct_names():
-    """Each of the 7 fitness tools must carry the exact expected name."""
+    """Each of the 6 fitness tools must carry the exact expected name."""
     from app.fitness_tool import get_fitness_tools
     tools = get_fitness_tools("test-chat-id")
     actual = {t.name for t in tools}

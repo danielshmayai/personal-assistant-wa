@@ -158,37 +158,6 @@ def get_fitness_tools(chat_id: str) -> list:
         return "\n".join(lines)
 
     @tool
-    async def fitness_today() -> str:
-        """Report today's workout summary — sessions, volume, duration, and recovery status.
-
-        Use for: "כמה אימנתי היום?", "what did I train today?", "הצג אימוני היום",
-        "show today's fitness", "מה הנפח שלי היום?".
-        """
-        from app import fitness
-
-        data = fitness.list_today(chat_id)
-        if not data["workouts"]:
-            return "לא רשמת אימון היום עדיין. 💪"
-
-        lines = [f"*אימוני היום ({len(data['workouts'])}):*"]
-        for w in data["workouts"]:
-            lines.append(
-                f"• {w['title']} ({w['workout_type']}) — {w['duration_min']:.0f} דקות, "
-                f"RPE {w['avg_rpe']:.1f}, נפח {w['total_volume']:.0f} קג"
-            )
-            for ex in (w.get("exercises") or []):
-                ex_line = _format_exercise_line(ex)
-                if ex_line:
-                    lines.append(f"   – {ex_line}")
-            if w.get("ai_summary"):
-                lines.append(f"  💡 {w['ai_summary']}")
-        lines += [
-            "",
-            f"*סה\"כ:* {data['total_duration_min']:.0f} דקות | נפח {data['total_volume']:.0f} קג",
-        ]
-        return "\n".join(lines)
-
-    @tool
     async def fitness_history(days: int = 14) -> str:
         """Report past workout sessions (not just today) — for questions about a specific
         previous session, weekly summaries, or workouts auto-imported from a Garmin watch.
@@ -196,7 +165,7 @@ def get_fitness_tools(chat_id: str) -> list:
         Use for: "מה דעתך על האימון אופניים אחרון שעשיתי?", "how was my last workout?",
         "תסכם לי את האימונים מהשבוע שעבר", "מתי התאמנתי לאחרונה?",
         "when did I last train legs?", "show my workout history",
-        "מה היה קצב הלב שלי באימון האחרון?".
+        "מה היה קצב הלב שלי באימון האחרון?". For today only ("כמה אימנתי היום?") use days=1.
 
         days: how many days back to look (default 14, max 60).
         """
@@ -376,4 +345,4 @@ def get_fitness_tools(chat_id: str) -> list:
         except Exception as exc:
             return f"לא הצלחתי לייצר תדרוך בוקר: {exc}"
 
-    return [log_workout, suggest_workout, fitness_today, fitness_history, log_body_metrics, analyze_body_scan, fitness_morning_brief]
+    return [log_workout, suggest_workout, fitness_history, log_body_metrics, analyze_body_scan, fitness_morning_brief]

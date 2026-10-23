@@ -78,7 +78,7 @@ def get_nutrition_tools(chat_id: str) -> list:
 
     @tool
     async def nutrition_today() -> str:
-        """Report how much the user has consumed today so far — protein vs the 110g target,
+        """Report how much the user has consumed today so far — protein vs the daily target,
         carbs, calories, and every micronutrient logged (vitamins, minerals, fat, fiber, …).
 
         Use for "כמה חלבון אכלתי היום?", "how much iron did I have today?",

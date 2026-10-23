@@ -46,7 +46,7 @@ def clear_tools_cache_for_tenant(tenant_id: str) -> None:
         _tool_cache.pop(key, None)
 
 
-def _enabled_groups(modules: list[str] | None) -> set[str] | None:
+def enabled_groups(modules: list[str] | None) -> set[str] | None:
     if modules is None:
         return None  # legacy owner path — everything on
     groups: set[str] = set()
@@ -67,7 +67,7 @@ def _build(chat_id: str, modules: list[str] | None = None) -> list:
     from app.fitness_tool import get_fitness_tools
     from app.image_tools import get_image_tools
 
-    groups = _enabled_groups(modules)
+    groups = enabled_groups(modules)
 
     def on(group: str) -> bool:
         return groups is None or group in groups
@@ -84,7 +84,9 @@ def _build(chat_id: str, modules: list[str] | None = None) -> list:
     if on("tts"):
         tools += TTS_TOOLS
     if on("schedule"):
-        tools += get_schedule_tools(chat_id)
+        # A Tuya command can only be scheduled when smart-home is on.
+        tools += [t for t in get_schedule_tools(chat_id)
+                  if on("tuya") or t.name != "schedule_tuya_command"]
     if on("nutrition"):
         tools += get_nutrition_tools(chat_id)
     if on("fitness"):

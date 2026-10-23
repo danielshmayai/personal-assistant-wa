@@ -10,54 +10,40 @@ _sem = asyncio.Semaphore(TOOL_CONCURRENCY)
 
 # Map tool name prefixes → activity event_type shown in the Activity feed
 _TOOL_EVENT_TYPE: dict[str, str] = {
-    # Calendar
-    "calendar":         "calendar",
-    # Email / Gmail
-    "gmail":            "email",
+    "calendar_":        "calendar",
+    "gmail_":           "email",
     "google_connect":   "email",
-    "search_emails":    "email",
-    "get_email":        "email",
-    "draft_email":      "email",
-    "send_email":       "email",
-    "list_emails":      "email",
-    # Google Drive
-    "drive_":             "drive",
-    "drive_show":         "drive",
-    # Google Maps
-    "create_google_map":  "map",
-    "add_places_to_map":  "map",
-    # Memory / vault
+    "drive_":           "drive",
+    "save_photo":       "drive",
+    "create_google_map": "map",
+    "add_places_to_map": "map",
     "save_fact":        "memory",
     "update_rule":      "memory",
-    "retrieve_context": "memory",
-    "hide_fact":        "memory",
-    "hide_rule":        "memory",
-    "search_vault":     "memory",
+    "search_memory":    "memory",
+    "forget":           "memory",
     "list_memory":      "memory",
     "append_to_note":   "memory",
     "read_note":        "memory",
-    "grep_note":        "memory",
-    # Smart home / Tuya
     "schedule_tuya":    "device",
-    "send_tuya":        "device",
-    "get_tuya":         "device",
     "list_tuya":        "device",
     "get_device":       "device",
     "control_device":   "device",
-    # Scheduled jobs
-    "schedule_remind":  "job",
+    "schedule_":        "job",
     "list_scheduled":   "job",
     "cancel_scheduled": "job",
-    # Nutrition
     "log_meal":         "nutrition",
     "log_water":        "nutrition",
     "nutrition_today":  "nutrition",
-    # Web / search
+    "log_workout":      "fitness",
+    "suggest_workout":  "fitness",
+    "fitness_":         "fitness",
+    "log_body":         "fitness",
+    "analyze_body":     "fitness",
+    "analyze_image":    "image",
     "web_search":       "search",
     "wikipedia":        "search",
     "fetch_url":        "search",
     "get_weather":      "search",
-    "browse_web":       "search",
 }
 
 def _event_type_for(tool_name: str) -> str:

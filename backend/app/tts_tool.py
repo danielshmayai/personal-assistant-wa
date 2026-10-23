@@ -22,23 +22,12 @@ def configure_tts(
     rate: str = "",
     reset: bool = False,
 ) -> str:
-    """Configure the text-to-speech voice and speed. Persists across all conversations.
+    """Change the voice-reply voice or speed (persists). "use a female voice",
+    "speak faster", "reset voice".
 
-    Call this whenever the user asks to:
-    - Change the voice (e.g. "use a female voice", "switch to male voice")
-    - Adjust the speed (e.g. "speak faster", "slow down", "set speed to 50%")
-    - Reset TTS to defaults (e.g. "reset voice", "back to default")
-
-    Args:
-        voice_gender: "male" or "female" — applies to all languages simultaneously.
-                      Leave empty to keep the current voice.
-        rate: Speech rate as a signed percentage string (e.g. "+25%", "-10%", "+0%")
-              or a preset word: "slow", "normal", "fast", "faster", "fastest".
-              Leave empty to keep the current rate.
-        reset: If True, resets voice and rate to factory defaults and ignores other args.
-
-    Returns:
-        A short confirmation the user can read.
+    voice_gender: "male" or "female" (empty = keep).
+    rate: "+25%" / "-10%" or slow|normal|fast|faster|fastest (empty = keep).
+    reset: True restores the defaults and ignores the other args.
     """
     if reset:
         reset_tts_config()

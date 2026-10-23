@@ -227,7 +227,7 @@ def _extract_media_context(body: dict) -> str | None:
     If the message carries media, return a compact context tag for the agent:
       [MEDIA id=<msgId> type=<image|document|…> filename=<name> mime=<type>]
 
-    The agent uses 'id' to call drive_save_photo / drive_save_document.
+    The agent uses 'id' to call save_photo_tagged / drive_save_document / analyze_image.
     Returns None when no media is present.
     """
     payload = body.get("payload", {})

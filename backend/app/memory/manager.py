@@ -1,8 +1,8 @@
 """Memory manager — LangChain tools the agent calls to manage the Obsidian vault.
 
 All operations are backed by `app.memory.obsidian` (markdown files in a
-host-mounted Obsidian vault). Soft-delete semantics: `hide_*` flips a flag
-rather than removing data.
+host-mounted Obsidian vault). Soft-delete semantics: `forget` flips a flag
+rather than removing data (`forget`).
 """
 import logging
 from langchain_core.tools import tool
@@ -16,27 +16,12 @@ _CATEGORY_LIST = "People, Entities, Investments, Projects, Preferences, Misc"
 
 @tool
 def save_fact(category: str, entity: str, content: str) -> str:
-    """Persist a fact to the user's Obsidian vault.
+    """Save durable information the user explicitly asked you to remember.
 
-    Use whenever the user shares durable info: people, properties, projects,
-    preferences, important dates, recurring events.
-
-    Pick `category` from: People, Entities, Investments, Projects,
-    Preferences, Misc. (Off-list values fall into Misc.)
-
-    Embed Obsidian tags (`#real-estate`, `#family`) and wikilinks
-    (`[[Daniel]]`, `[[Milwaukee_Property]]`) directly inside `content` so
-    the graph view stays connected.
-
-    Multiple calls to the same (category, entity) APPEND timestamped
-    sections — write only what is NEW.
-
-    Example:
-      save_fact(
-        category="Investments",
-        entity="Milwaukee_Property",
-        content="Grosses $2,400/mo. #real-estate Linked: [[Daniel]]"
-      )
+    (Things merely mentioned are captured automatically — don't call this for them.)
+    category: People, Projects, Entities, Investments, Profile, Misc (others → Misc).
+    entity: the person/project/thing the note is about (Profile/Me = the user).
+    content: one self-contained sentence of what's NEW; [[wikilinks]] and #tags welcome.
     """
     result = obsidian.save_fact(category, entity, content)
     if result.startswith("Saved to "):
@@ -72,15 +57,27 @@ def update_rule(instruction: str) -> str:
 
 
 @tool
-def retrieve_context(query: str) -> str:
-    """Search the Obsidian vault for snippets relevant to a topic.
+def search_memory(query: str, note: str = "") -> str:
+    """Search what you've stored: people, projects, notes, saved photo links, lists.
 
-    Use when the user asks 'what do you know about X', 'remind me of Y',
-    or whenever answering a question that may have stored context.
+    Use when the user asks "what do you know about X", "remind me of Y", or a
+    question that may have stored context the memory block didn't show.
 
-    Returns up to 8 matching snippets across visible (non-hidden) vault
-    files. Hidden facts are excluded.
+    Without `note`: searches the whole vault by meaning, falling back to
+    keywords, and returns the best matching notes.
+    With `note` (a vault path, e.g. "Misc/contacts.md"): returns only the lines
+    of that file containing `query` — use it to count or filter a stored list
+    ("how many contacts have email?" → query="@").
     """
+    if note:
+        return obsidian.grep_note(note, query)
+    from app.config import MEMORY_MIN_SIMILARITY
+    from app.memory.embeddings import semantic_search
+    hits = semantic_search(query, limit=6, min_similarity=MEMORY_MIN_SIMILARITY)
+    if hits:
+        text = obsidian.read_facts_by_paths([p for p, _ in hits], byte_budget=4000)
+        if text:
+            return text
     return obsidian.retrieve_context(query)
 
 
@@ -95,123 +92,44 @@ def list_memory() -> str:
 
 
 @tool
-def hide_fact(category: str, entity: str) -> str:
-    """Soft-delete a fact: marks it hidden so it won't surface in
-    retrieve_context or list_memory. The file itself remains in the vault
-    (information is preserved for future reference).
+def forget(target: str, kind: str = "fact") -> str:
+    """Stop using something you remembered (soft delete — the vault keeps it).
 
-    Use when the user says 'forget X', 'hide my X', 'don't show that anymore'.
-
-    Example: hide_fact(category="Investments", entity="Milwaukee_Property")
+    kind="fact": target is the note, as "Category/Entity" (e.g. "People/Dana").
+    kind="rule": target is the rule's text or part of it.
+    Use for "forget X", "that's wrong, drop it", "remove the rule about Y".
     """
+    if kind == "rule":
+        return obsidian.hide_rule(target)
+    category, _, entity = target.removesuffix(".md").partition("/")
+    if not entity:
+        return "Give the fact as Category/Entity, e.g. People/Dana (see list_memory)."
     return obsidian.hide_fact(category, entity)
 
 
 @tool
-def hide_rule(instruction: str) -> str:
-    """Soft-delete a behavioral rule by matching its text. The line is
-    struck through (`~~...~~`) in System/Rules.md so it remains visible
-    when the user opens the vault, but is no longer applied.
-
-    Pass the rule text (or a substring of it). Use when the user says
-    'remove that rule', 'forget the rule about X', 'undo the rule'.
-    """
-    return obsidian.hide_rule(instruction)
-
-
-@tool
-def search_vault(query: str) -> str:
-    """Search the entire Obsidian vault for notes relevant to a topic.
-
-    Use before answering questions that may benefit from stored context:
-    tasks, expenses, project notes, contacts, daily logs, etc.
-
-    Searches across ALL vault folders (not just the structured memory
-    categories), so it finds hand-written notes, daily journals, imported
-    documents, etc.
-
-    Returns up to 8 ranked snippets with their file paths.
-
-    Example: search_vault(query="home renovation budget")
-    """
-    return obsidian.retrieve_context(query)
-
-
-@tool
-def grep_note(filepath: str, keyword: str) -> str:
-    """Search inside a vault file and return only lines that match a keyword.
-
-    Token-efficient alternative to read_note — the server filters the file
-    and returns only relevant lines, not the full content.
-
-    Use for analysis questions on stored lists or documents:
-    - "how many contacts have email?" → grep_note(filepath=..., keyword="@")
-    - "find everyone from Tel Aviv" → grep_note(filepath=..., keyword="תל אביב")
-    - "list all phone numbers" → grep_note(filepath=..., keyword="05")
-
-    Returns the count of matches and the matching lines.
-    Prefer this over read_note whenever you only need to count or filter.
-
-    Example:
-        grep_note(filepath="Misc/רשימת_אנשי_קשר.md", keyword="@")
-    """
-    return obsidian.grep_note(filepath, keyword)
-
-
-@tool
 def read_note(filepath: str) -> str:
-    """Read the full content of a vault note into context for analysis.
+    """Read a whole vault note, e.g. to summarize it.
 
-    Use when the user asks to analyze, count, search, filter, or summarize
-    the contents of a specific vault file — e.g. a contacts list, expense
-    log, or project file.
-
-    `filepath` is relative to vault root, e.g.:
-        "Misc/רשימת_אנשי_קשר.md"
-        "Projects/Home Renovation.md"
-
-    After calling this you can directly answer questions like:
-    "how many people have email?", "list everyone from Tel Aviv",
-    "find all entries with a phone number", etc.
-
-    Example:
-        read_note(filepath="Misc/רשימת_אנשי_קשר.md")
+    filepath is relative to the vault root ("Projects/Home Renovation.md");
+    call list_memory if unsure. To count or filter lines use search_memory(note=…).
     """
     return obsidian.read_note(filepath)
 
 
 @tool
 def append_to_note(filepath: str, content: str, header: str = "") -> str:
-    """Append content to any existing Markdown note in the Obsidian vault.
+    """Append text to a SPECIFIC existing vault file (daily note, expense log…).
 
-    Use when you need to add information to a SPECIFIC existing file
-    (e.g. a daily note, a project file, an expense log) rather than
-    creating a structured memory fact.
-
-    `filepath` — path relative to vault root, e.g.:
-        "Daily/2024-01-15.md"
-        "Projects/Home Renovation.md"
-        "Finance/Expenses 2024.md"
-
-    `header` (optional) — section heading to append under, e.g. "## Tasks".
-        If the header doesn't exist it will be created at the end of the file.
-        If omitted, content is appended at the very end of the file.
-
-    The file must already exist. To create new structured memory notes use
-    save_fact() instead.
-
-    Example:
-        append_to_note(
-            filepath="Daily/2024-01-15.md",
-            content="- Buy paint for living room",
-            header="## Tasks"
-        )
+    filepath: relative to the vault root, e.g. "Finance/Expenses 2026.md" (must exist).
+    header: optional section to append under, e.g. "## Tasks" (created if missing).
+    For new structured memory use save_fact instead.
     """
     return obsidian.append_to_note(filepath, content, header)
 
 
 # Convenience list for graph nodes to import — keep this name stable.
 MEMORY_TOOLS = [
-    save_fact, update_rule, retrieve_context, search_vault,
-    list_memory, hide_fact, hide_rule, append_to_note, read_note, grep_note,
+    save_fact, update_rule, search_memory, forget,
+    list_memory, append_to_note, read_note,
 ]

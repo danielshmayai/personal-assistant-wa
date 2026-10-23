@@ -7,7 +7,7 @@ reachable only via message_id tools. These two tools cover the generic cases:
                       (bike model, plant species, data screenshots…).
   save_photo_tagged — upload to Drive AND write an Obsidian memory note with the link,
                       an AI description, and #tags, so the link is retrievable later by
-                      simply asking (retrieve_context keyword search).
+                      simply asking (search_memory).
 """
 from __future__ import annotations
 

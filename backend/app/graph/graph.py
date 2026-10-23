@@ -309,4 +309,4 @@ async def run_graph(text: str, chat_id: str) -> str:
     if transcript:
         spawn(_log(chat_id, transcript), name="log-conversation")
         spawn(create_episode(chat_id, transcript), name="episode")
-    return reply + " ⚡"
+    return reply

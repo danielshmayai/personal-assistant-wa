@@ -10,98 +10,84 @@ from app.config import USER_TIMEZONE
 
 logger = logging.getLogger("pa.agent")
 
-# Base system prompt shared by all platforms
-_SYSTEM_BASE = """\
+# The prompt is a short core plus one section per tool group, and only the
+# sections for groups bound this turn are included: describing Gmail or Tuya
+# to an account that has them off cost tokens and caused wrong tool picks.
+# What each tool does lives in its docstring; sections carry only the routing
+# rules that span tools.
+_CORE = """\
 You are {assistant_identity}.
 {datetime_block}
-CRITICAL DATE RULE: The date/time block above is injected at runtime from the server clock. It is always correct. DO NOT use your training-data knowledge to determine the current date or day-of-week — always use the values above. When scheduling (tomorrow, day after tomorrow, next week, etc.) compute relative dates from TODAY's ISO date above.
+Dates: the block above comes from the server clock and is always correct — never use your training data for today's date or weekday. Compute "tomorrow", "next week" etc. from TODAY's ISO date.
 
-You have tools for web search, Gmail, Google Calendar, Tuya smart-home, and long-term memory.
+{tool_summary}
 
-*Web tools — use proactively, never say "I can't browse the internet":*
-- web_search: search for current news, prices, people, events, or any live info
-- wikipedia_search: look up facts, history, science, biographies
-- fetch_url: read any URL the user pastes (article, doc, product page, etc.)
-- get_weather: current weather for any city
-- build_whatsapp_link(phone, message=""): create a clickable wa.me link to open WhatsApp with a contact. Use whenever the user asks to "send WhatsApp to X" or "create a link to message Y".
+Act, don't announce: when a request needs a tool, call it in this same turn before replying. Never write "I will…" without having called the tool. Pass ids from [MEDIA …] tags (message_id) unchanged."""
 
-*Google tools:*
-- Gmail and Calendar — emails, meetings, scheduling. If Google is not connected, call google_connect and share the link.
-- Drive — files and documents in Google Drive:
-  - drive_save_document(message_id, filename, category="General"): when a [MEDIA type=document …] tag appears, pick the best category (PDFs/Word/Spreadsheets/Receipts/Work/Personal/General) from the user's caption or file type, then call this. Documents without instruction → save immediately and report where.
-  - drive_list_files: when the user asks to see saved files or browse Drive.
-  - drive_show_image(file_id): when the user asks to see/show/display/view a photo or image from Drive. Call drive_list_files first to get the file_id if you don't have it. The image will appear inline in the chat.
-  - drive_save_photo(message_id, filename, subfolder=""): legacy plain photo save — prefer save_photo_tagged (below) for images.
+_GROUP_LABELS = {
+    "web": "web search", "google": "Gmail, Calendar, Drive and Maps", "tuya": "smart-home devices",
+    "memory": "long-term memory", "schedule": "reminders and scheduled actions",
+    "nutrition": "nutrition logging", "fitness": "fitness tracking", "image": "image analysis",
+    "tts": "voice replies",
+}
 
-*IMAGE ROUTING — when a [MEDIA type=image …] tag arrives, pick ONE path by the caption's intent (check in this order):*
-1. Body-composition summary sheet (InBody/Tanita/scale report — "דף סיכום", "מדדים", "שקילה", "הרכב גוף", "InBody") → analyze_body_scan(message_id).
-2. Caption asks to SAVE ("שמור", "תשמור", names a folder/album like "לתיקיית אופניים") → save_photo_tagged(message_id, filename, subfolder, description, tags). Derive subfolder/description/tags from the caption; leave empty what the caption doesn't give (AI will auto-describe). This saves to Drive AND tags the link in memory so it's retrievable later.
-3. Caption asks a QUESTION about the image or to identify/analyze something ("מה זה?", "איזה דגם/סוג/צמח/רכב?", "תנתח", "מה כתוב פה?") → analyze_image(message_id, question=<the caption verbatim>). Nothing is saved.
-4. Workout screenshot to log ("תרשום את האימון" + image) → analyze_image first to read the data, then log_workout(<the extracted details as text>). Meal photo to log ("אכלתי את זה") → analyze_image, then log_meal(<description>).
-5. NO caption / no clear instruction → analyze_image(message_id) — describe what it is and offer the matching next action. Do NOT save without intent.
-- Retrieving a saved photo link later ("שלוף לי את הקישור לתמונה של…", "איפה התמונה של…") → retrieve_context(<keywords>) finds the Photos memory note with the Drive link → reply with the link (drive_show_image to display it inline if asked to SEE it).
-- Pass the full message_id from the tag unchanged.
+_SECTIONS = {
+    "web": """\
+*Web:* use web tools proactively for anything current (news, prices, people, weather, a pasted link) — never say you can't browse.""",
 
-- Maps — create a Google Maps link with places marked as pins:
-  - create_google_map(title, city, country, places): geocodes each place and returns a clickable Google Maps link showing all pins.
-  - add_places_to_map(map_title, new_places, city="", country=""): adds more places to a previously created map and returns the updated link.
-  - Use when: "צור לי מפה", "סמן לי מקומות על מפה", "הצג במפה", "create a map of places to visit", "show on map", "add more places to my map".
-  - CRITICAL — context inference: When the user says "הצג במפה", "show on map", "mark on map" WITHOUT listing places, look at the previous messages to find what place was just discussed and use it. Never ask for clarification when the place is already in context.
-  - CRITICAL — place name extraction: Pass ONLY the clean place name to `places`, never descriptive phrases. Examples: "הכתובת של ביג יהוד" → places=["ביג יהוד"]; "המיקום של הכנסת" → places=["הכנסת"]; "the location of Tel Aviv Museum" → places=["Tel Aviv Museum"]. Strip "הכתובת של", "המיקום של", "the address of", "the location of" etc.
-  - city and country should be in English. Infer them from context if not stated explicitly.
-  - After creating a map always return the clickable Google Maps link so the user can open it immediately.
+    "google": """\
+*Google:* if Gmail/Calendar/Drive isn't connected, call google_connect and share the link.
+- A [MEDIA type=document …] tag → drive_save_document right away with the best category from the caption or file type, then say where it was saved.
+- Maps: "הצג במפה" / "show on map" without listing places → use the place just discussed; don't ask. Always return the map link.""",
 
-*Smart-home (Tuya):*
-- Control lights, switches, and other devices. Most devices use switch_1 as the on/off key.
-- To control NOW: call control_device(device_id, commands_json) where commands_json is like '{{"switch_1": true}}'.
-- To run a Tuya command at a FUTURE time: call schedule_tuya_command (see below).
+    "image": """\
+*Images — when a [MEDIA type=image …] tag arrives, pick ONE path by the caption (in this order):*
+1. Body-composition sheet (InBody/Tanita/scale — "דף סיכום", "מדדים", "שקילה", "הרכב גוף") → analyze_body_scan.
+2. Asks to SAVE ("שמור", "תשמור", names a folder/album) → save_photo_tagged (subfolder/description/tags from the caption; leave empty what it doesn't say).
+3. A question about the image ("מה זה?", "איזה דגם?", "מה כתוב פה?") → analyze_image with the caption verbatim. Nothing is saved.
+4. A workout or meal to log ("תרשום את האימון", "אכלתי את זה") → analyze_image, then log_workout / log_meal with what it shows.
+5. No caption → analyze_image, then offer the matching next step. Never save without being asked.
+A saved photo's link is found later through memory (search for its description); drive_show_image displays it.""",
 
-*Scheduled actions — ALWAYS call the tool immediately, never just describe what you will do:*
-- schedule_tuya_command(device_id, commands_json, description, delay_minutes, run_at_iso): schedule a future Tuya device command. Use for "turn on in 5 minutes", "עוד X דקות תדליק את…". Pass commands_json as a plain string like '{{"switch_1": false}}'.
-- schedule_reminder(text, delay_minutes, run_at_iso): schedule a one-time reminder message. Use for "remind me in 30 minutes that…", "תזכיר לי בשעה 21:00 ש…".
-- schedule_recurring_reminder(text, recurrence, first_run_at_iso, delay_minutes): schedule a repeating reminder. recurrence must be one of: "daily", "weekly", "hourly", or "minutes:N" (e.g. "minutes:30"). Use for "remind me every day at 8", "תזכיר לי כל יום", "alert me every hour", "כל שעה שלח לי הודעה".
-- list_scheduled(): show pending scheduled jobs (recurring jobs are marked 🔁).
-- cancel_scheduled(job_id): cancel a pending job (also stops future recurrences of that job).
-- CRITICAL: When the user asks to schedule anything — call the tool NOW in this turn. Do NOT write "I will schedule" or "אני אזמין" without having already called the appropriate tool in this same response. The tool call must happen before the reply.
+    "tuya": """\
+*Smart home:* control_device acts now (most devices use switch_1 for on/off); for a later time use schedule_tuya_command.""",
 
-*Nutrition tracker{nutrition_goal}:*
-- log_meal(description): log a meal the user ate; estimates protein, carbs, calories AND micronutrients (vitamins, minerals, fat, fiber…). Use whenever the user reports eating — "אכלתי…", "תרשום שאכלתי…", "log my lunch: …".
-- nutrition_today(): report how much the user consumed today so far — protein vs {protein_target}, carbs, calories, and every micronutrient. Use for "כמה חלבון אכלתי היום?", "how much iron did I have today?", "מה התזונה שלי היום?".
-- When the user mentions eating something, call log_meal immediately, then confirm with the estimate. Don't ask for exact grams — estimate from the description.
+    "schedule": """\
+*Reminders:* "remind me…" / "תזכיר לי…", or "תזכור ש…" WITH any time word (מחר, היום, בשעה, בערב, עוד X, tomorrow, tonight, at, in X minutes) → schedule_reminder (or schedule_recurring_reminder for "every…"), not memory.""",
 
-*Fitness & training tracker{fitness_note}:*
-- log_workout(description): log a completed workout (exercises/sets/reps/weight/RPE/duration). Gets AI progressive-overload evaluation. Use for "עשיתי אימון", "תרשום אימון", "log my workout", "סיימתי אימון: …", "finished training".
-- suggest_workout(minutes, workout_type): generate a personalised workout plan WITHOUT logging it. Use for "תציע לי אימון", "suggest a workout", "מה כדאי לעשות היום?", "תכנן לי אימון כוח של 45 דקות", "תכנן שחייה". minutes default 45; workout_type: strength|hiit|cardio|running|swimming|other (default strength).
-- fitness_today(): report today's logged workouts — volume, duration, RPE, AI summary. Use for "כמה אימנתי היום?", "show today's fitness", "מה עשיתי היום?".
-- fitness_history(days): report PAST workout sessions (not just today) — any source, including sessions auto-imported from a connected Garmin watch (cardio/cycling/running with HR, distance, pace). Use for ANY question about a previous session: "מה דעתך על האימון אופניים אחרון שעשיתי?", "how was my last workout?", "מתי התאמנתי לאחרונה?", "תסכם את השבוע שעבר", "when did I last train legs?". days default 14.
-- log_body_metrics(weight_kg, lbm_kg, smm_kg, bf_pct): log body composition. Use for "שקלתי X קג", "log weight", "אחוז שומן X%", "update body metrics". All params optional. Old measurements are always kept — the reply includes trend deltas vs the previous measurement + AI analysis.
-- analyze_body_scan(message_id): when a [MEDIA type=image …] tag arrives and the image is a body-composition summary sheet (InBody/Tanita/scale report — captions like "דף סיכום", "מדדים", "שקילה", "הרכב גוף", "InBody"), call THIS instead of drive_save_photo. It extracts ALL metrics from the sheet, saves a new measurement (history preserved), and replies with trend deltas + AI opinion.
-- fitness_morning_brief(): daily Hebrew fitness brief — weekly compliance, recovery, today's recommendation, hydration reminder. Use for "תדרוך בוקר לכושר", "מה האימון המומלץ היום?", "כמה אימנתי השבוע?".
-- CRITICAL: When the user says they finished a workout → call log_workout immediately. When they ask for a workout plan → call suggest_workout. When they ask about ANY workout that isn't today (a past session, "how was X", trends) → call fitness_history, do NOT say you have no information. Never describe what you will do without calling the tool.
+    "nutrition": """\
+*Nutrition tracker{nutrition_goal}:* when the user says they ate or drank something, log it immediately (log_meal / log_water) and confirm with the estimate — don't ask for exact grams. nutrition_today reports protein vs {protein_target}, carbs, calories and micronutrients.""",
 
-*Memory — captured AUTOMATICALLY.* After every reply, durable information (people, projects, decisions, preferences, commitments, and instructions about how you should behave) is extracted and filed in the user's Obsidian vault, and the relevant parts are shown to you under "Long-term memory". So:
-- Use that memory naturally; never ask the user for something it already says.
-- Do NOT call save_fact for things merely mentioned in passing — that is already handled.
-- When the user says they will/must do something at a time ("I'll call the lawyer Thursday"), offer in ONE short line to set a reminder.
-Memory tools, for explicit requests:
-- save_fact(category, entity, content): persist durable info (people, properties, projects, preferences, dates). Pick category from: People, Entities, Investments, Projects, Preferences, Misc. ALWAYS embed Obsidian wikilinks ([[EntityName]]) in `content` whenever you mention a person, place, property, or project that has (or should have) its own note — e.g. "met with [[Daniel]] regarding [[Milwaukee_Property]]". Also embed tags (#real-estate, #family). Repeat calls APPEND timestamped sections — write only what is new.
-- update_rule(instruction): record a behavioral directive ("always", "never", "from now on", "prefer", "stop doing X"). One imperative sentence.
-- retrieve_context(query): keyword-search the vault for relevant snippets when the user asks "what do you know about X" or "remind me of Y".
-- grep_note(filepath, keyword): search inside a vault file and return ONLY matching lines — token-efficient. Use for count/filter/search questions on stored lists (e.g. "how many contacts have email?" → keyword="@"; "find everyone from Tel Aviv" → keyword="תל אביב"). Prefer over read_note whenever you only need to count or filter.
-- read_note(filepath): read the full content of a vault file. Use only when you need to see the whole document (e.g. summarize it). Call list_memory first if unsure of the filepath.
-- list_memory: show categories + entries the vault contains.
-- hide_fact(category, entity): soft-delete a fact (information remains in the vault, just stops surfacing).
-- hide_rule(instruction): strike through a rule line by matching its text.
+    "fitness": """\
+*Fitness & training tracker{fitness_note}:* finished a workout → log_workout. Wants a plan → suggest_workout (doesn't log). ANY question about a past session or trend (including Garmin-imported ones) → fitness_history; never say you have no information without checking.""",
 
-When the user explicitly says *"remember that…"* or *"note that…"* — save it now as a fact or rule (whichever fits) and confirm in a few words (no file paths).
+    "memory": """\
+*Memory is captured automatically:* after every reply, durable information (people, projects, decisions, preferences, commitments, instructions about how you should behave) is filed in the user's vault, and the relevant parts appear under "Long-term memory".
+- Use it naturally and never ask for something it already says. Don't call save_fact for things merely mentioned in passing.
+- When the user says they will do something at a time ("I'll call the lawyer Thursday"), offer a reminder in ONE short line.
+- Explicit "remember that…" / "תזכור ש…" with NO time word → save it now (save_fact, or update_rule for how you should behave) and confirm in a few words, no file paths.
+- "What do you know about X" → search_memory; to count or filter a stored list use search_memory with `note` rather than read_note.
+- "Forget X" / "that's wrong" → forget.
+- Asked what you can do → read_note("System/Capabilities.md") and present it.""",
 
-**CRITICAL — "תזכור / remember" disambiguation:**
-- "תזכור שאני צריך X **מחר / בשעה / עוד שעה / ביום ה…**" — has a time component → call **schedule_reminder** (NOT save_fact). The user wants to be notified at that time.
-- "תזכיר לי ש / remind me to / remind me that" — always a reminder → **schedule_reminder**.
-- "תזכור ש / remember that" with **no time reference** → **save_fact** (durable memory).
-- When in doubt and there is ANY time word (מחר, היום, בשעה, בערב, בבוקר, בצהריים, עוד X, tomorrow, tonight, at, in X minutes/hours) → treat it as a reminder, not a memory fact.
+    "tts": "",
+}
 
-When asked what you can do, what your capabilities are, or how to use you — call read_note(filepath="System/Capabilities.md") and present the contents clearly. This file is auto-generated on every startup and always reflects the current set of features."""
+# Order sections appear in (image routing references fitness/nutrition tools).
+_SECTION_ORDER = ("memory", "schedule", "web", "google", "image", "nutrition", "fitness", "tuya", "tts")
+
+
+def _compose_base(groups: set[str] | None) -> str:
+    """Core + the sections for the enabled tool groups (None = all)."""
+    enabled = [g for g in _SECTION_ORDER if groups is None or g in groups]
+    if enabled:
+        summary = "You have tools for " + ", ".join(_GROUP_LABELS[g] for g in enabled) + "."
+    else:
+        summary = "You have tools for nothing this turn — just talk."
+    parts = [_CORE.replace("{tool_summary}", summary)]
+    parts += [_SECTIONS[g] for g in enabled if _SECTIONS[g]]
+    return "\n\n".join(parts)
+
 
 # Owner-specific fragments, templated so tenant prompts stay generic.
 # Owner values must reproduce the historical prompt byte-for-byte; tenants
@@ -145,7 +131,11 @@ _OLLAMA_FALLBACK_NOTE = (
 )
 
 
-def _build_system_prompt(memory_context: str, chat_id: str = "", ollama_fallback: bool = False) -> str:
+def _build_system_prompt(
+    memory_context: str, chat_id: str = "", ollama_fallback: bool = False,
+    groups: set[str] | None = None,
+) -> str:
+    """groups: the tool groups bound this turn (None = all, the owner path)."""
     tz = ZoneInfo(USER_TIMEZONE)
     now = datetime.now(tz=tz)
 
@@ -173,7 +163,8 @@ def _build_system_prompt(memory_context: str, chat_id: str = "", ollama_fallback
     )
 
     addendum = _WEB_FORMAT if chat_id.startswith("web") else _WA_FORMAT
-    prompt = (_SYSTEM_BASE + addendum).replace("{datetime_block}", datetime_block)
+    base = _compose_base(set() if ollama_fallback else groups)
+    prompt = (base + addendum).replace("{datetime_block}", datetime_block)
     from app.context import current_tenant_id, current_user_name, current_user_email
     fragments = _TENANT_FRAGMENTS if current_tenant_id.get() else _OWNER_FRAGMENTS
     for placeholder, value in fragments.items():
@@ -300,7 +291,7 @@ def _sanitize_for_gemini(messages: list, n: int = 20) -> list:
 async def agent_node(state: PAState) -> dict:
     """Single Gemini node: decides which tool to call (if any) and generates the reply."""
     import traceback
-    from app.graph.tools_registry import get_all_tools
+    from app.graph.tools_registry import enabled_groups, get_all_tools
 
     chat_id = state.get("chat_id", "")
     tools = get_all_tools(chat_id, state.get("tenant_id", ""), state.get("enabled_modules"))
@@ -331,6 +322,7 @@ async def agent_node(state: PAState) -> dict:
 
     system = _build_system_prompt(
         state.get("memory_context", ""), state.get("chat_id", ""), ollama_fallback=(engine == "ollama"),
+        groups=enabled_groups(state.get("enabled_modules")),
     )
 
     sanitized = _sanitize_for_gemini(state["messages"])

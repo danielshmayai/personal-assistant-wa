@@ -92,27 +92,6 @@ async def _download_from_waha(message_id: str) -> tuple[bytes, str]:
 def get_drive_tools(chat_id: str) -> list:
 
     @tool
-    async def drive_save_photo(message_id: str, filename: str, subfolder: str = "") -> str:
-        """Save a photo or image received in WhatsApp to Google Drive.
-        Saved under PA/Photos/{subfolder}/ when the user specifies a folder name,
-        otherwise under PA/Photos/YYYY-MM/ (current month, auto-dated).
-        IMPORTANT: if the user's caption mentions any folder or album name (e.g. 'screenshots',
-        'work', 'vacation', 'family'), pass it as subfolder — do NOT ignore it.
-        message_id comes from the [MEDIA ...] context tag."""
-        creds = get_credentials(chat_id)
-        err = _check_drive_scope(creds)
-        if err:
-            return err
-        try:
-            data, mime_type = await _download_from_waha(message_id)
-            link = drive_api.upload_photo(creds, data, filename, mime_type, subfolder)
-            dest = f"PA/Photos/{subfolder}" if subfolder else "PA/Photos (by date)"
-            return f"Photo saved to Drive ({dest}). View: {link}"
-        except Exception as e:
-            logger.exception("drive_save_photo failed for message_id=%s", message_id)
-            return f"Failed to save photo: {e}"
-
-    @tool
     async def drive_save_document(
         message_id: str, filename: str, category: str = "General"
     ) -> str:
@@ -181,4 +160,4 @@ def get_drive_tools(chat_id: str) -> list:
             logger.exception("drive_show_image failed for file_id=%s", file_id)
             return f"Failed to load image: {e}"
 
-    return [drive_save_photo, drive_save_document, drive_list_files, drive_show_image]
+    return [drive_save_document, drive_list_files, drive_show_image]
