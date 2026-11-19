@@ -34,7 +34,7 @@ DEFAULT_CONFIG = Path("config/booking.toml")
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
-    _setup_logging(args.verbose)
+    _setup_logging(args.verbose, args.log_file)
 
     if not getattr(args, "func", None):
         parser.print_help()
@@ -54,6 +54,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"phantom-tap {__version__}")
     parser.add_argument("-v", "--verbose", action="count", default=0)
     parser.add_argument("-c", "--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        help="also append logs here (for a scheduled task, which has no console)",
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("doctor", help="check that this machine can race").set_defaults(func=cmd_doctor)
@@ -92,12 +97,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _setup_logging(verbosity: int) -> None:
+def _setup_logging(verbosity: int, log_file: Path | None = None) -> None:
     level = logging.DEBUG if verbosity >= 2 else logging.INFO if verbosity else logging.WARNING
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        # UTF-8 explicitly: the default on Windows is the ANSI code page, which
+        # cannot encode the Hebrew class names that go into every line.
+        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
     logging.basicConfig(
         level=level,
         format="%(asctime)s.%(msecs)03d %(levelname)-7s %(name)-22s %(message)s",
         datefmt="%H:%M:%S",
+        handlers=handlers,
+        force=True,
     )
     # At T0 the interesting lines are all from the race.
     logging.getLogger("phantom_tap").setLevel(min(level, logging.INFO))

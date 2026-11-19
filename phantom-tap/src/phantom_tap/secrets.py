@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -19,6 +20,22 @@ from cryptography.fernet import Fernet, InvalidToken
 
 class SecretsError(RuntimeError):
     pass
+
+
+# Without O_BINARY, a file opened via os.open on Windows is in CRT text mode and
+# every b"\n" written to it becomes b"\r\n". Zero elsewhere.
+_BINARY = getattr(os, "O_BINARY", 0)
+
+
+def _posix_permissions() -> bool:
+    """Whether file mode bits mean anything here.
+
+    On Windows access is governed by ACLs, and `st_mode` reports every file as
+    0o666 regardless. Checking it there would reject every key file, so on Windows
+    the protection is the user profile's ACL, which by default admits only that
+    user and administrators.
+    """
+    return sys.platform != "win32"
 
 
 class SecretStore:
@@ -35,14 +52,14 @@ class SecretStore:
         key = Fernet.generate_key()
         # Create with 0600 from the start: writing then chmod leaves a window
         # where the key is world-readable.
-        fd = os.open(self.key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        fd = os.open(self.key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY, 0o600)
         with os.fdopen(fd, "wb") as fh:
             fh.write(key)
         return key
 
     def _read_key(self) -> bytes:
         mode = stat.S_IMODE(self.key_path.stat().st_mode)
-        if mode & 0o077:
+        if _posix_permissions() and mode & 0o077:
             raise SecretsError(
                 f"{self.key_path} is mode {mode:o}; it must not be group- or "
                 f"world-readable. Fix with: chmod 600 {self.key_path}"
@@ -68,7 +85,7 @@ class SecretStore:
         blob = Fernet(self.ensure_key()).encrypt(json.dumps(values).encode())
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.store_path.with_suffix(".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY, 0o600)
         with os.fdopen(fd, "wb") as fh:
             fh.write(blob)
         tmp.replace(self.store_path)  # atomic: never a half-written secret store

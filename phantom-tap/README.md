@@ -72,6 +72,36 @@ pt daemon                               # every enabled watch, week after week
 
 Install `scripts/phantom-tap.service` to run the daemon under systemd.
 
+## Running it on a Windows PC
+
+The PC does the booking by itself: it talks to the Holmes Place server over the
+internet, so the phone can be anywhere, on any network, or off. The phone is needed
+only once, to record the app's traffic, and for the optional UI fallback.
+
+```powershell
+py -m venv .venv
+.venv\Scripts\pip install -e .
+copy config\booking.example.toml config\booking.toml   # then edit it
+.venv\Scripts\pt login
+.venv\Scripts\pt doctor
+powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
+```
+
+**Sleep is the one real risk.** phantom-tap keeps the PC awake while a race is in
+progress, but it cannot wake a PC that is already asleep when the lead-in starts.
+Either keep the PC from sleeping while plugged in
+(`powercfg /change standby-timeout-ac 0`) or run it on a machine that stays on.
+
+**Why not Phone Link.** Phone Link shows a live picture of the phone's screen. A
+picture cannot reliably say whether a seat is free (red) or taken (gray), or whether
+"הרשמה" is tappable yet, and it adds a stream delay on top of the app's own. The
+fallback uses adb instead, which reads the app's actual on-screen elements.
+
+**UI fallback** (`[device] ui_fallback = true`): if the direct path is broken, the PC
+books through the app on the phone. That needs the phone reachable over adb, by USB
+or on the same Wi-Fi with Wireless debugging. If the phone is away when it is needed,
+the attempt is recorded and the WhatsApp alert says the phone could not be reached.
+
 ## Commands
 
 | command | what it does |

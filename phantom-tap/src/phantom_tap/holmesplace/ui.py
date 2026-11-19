@@ -48,6 +48,7 @@ class UiResult:
     steps: list[str]
     screenshots: list[Path]
     reason: str = ""
+    waitlisted: bool = False
 
 
 class HolmesPlaceUi:
@@ -223,5 +224,7 @@ class HolmesPlaceUi:
         if action == "closed":
             return done(False, None, "the register button was not offered")
         if action == "waitlisted":
-            return done(False, None, "class full - joined the waitlist")
+            result = done(False, None, "class full - joined the waitlist")
+            result.waitlisted = True
+            return result
         return done(True, self.choose_seat(preferred))

@@ -60,6 +60,16 @@ class NotifyConfig:
 
 
 @dataclass(frozen=True)
+class DeviceConfig:
+    """The phone, for the UI fallback. Off unless you turn it on: it taps a real app."""
+
+    ui_fallback: bool = False
+    # adb serial. Empty means the only attached device; for wireless debugging it
+    # is the "ip:port" shown under Developer options > Wireless debugging.
+    serial: str = ""
+
+
+@dataclass(frozen=True)
 class Config:
     username: str
     club_id: str
@@ -73,6 +83,7 @@ class Config:
     # Five minutes is comfortably longer than any of those take and comfortably
     # shorter than a typical access-token lifetime.
     lead_in_seconds: float = 300.0
+    device: DeviceConfig = field(default_factory=DeviceConfig)
 
     @classmethod
     def load(cls, path: str | Path) -> Config:
@@ -109,6 +120,7 @@ class Config:
             key_path=Path(runtime.get("key", "config/phantom.key")),
             secrets_path=Path(runtime.get("secrets", "config/secrets.enc")),
             lead_in_seconds=float(runtime.get("lead_in_seconds", 300.0)),
+            device=DeviceConfig(**(data.get("device") or {})),
         )
 
     def enabled_watches(self) -> tuple[Watch, ...]:

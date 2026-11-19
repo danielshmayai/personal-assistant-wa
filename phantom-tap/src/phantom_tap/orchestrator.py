@@ -19,14 +19,24 @@ connection and hand the second one a loss it did not have to take.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import time
 from datetime import date, datetime, timedelta
 
 from phantom_tap import clock as clockmod
 from phantom_tap.clock import Clock, UnsyncedClock
 from phantom_tap.config import Config, Watch
-from phantom_tap.holmesplace.api import HolmesPlaceClient
-from phantom_tap.holmesplace.models import ISRAEL, ClassSlot, Credentials, Endpoints
+from phantom_tap.holmesplace.api import HolmesPlaceClient, Outcome
+from phantom_tap.holmesplace.models import (
+    EXPECTED_LEAD,
+    ISRAEL,
+    ClassSlot,
+    Credentials,
+    Endpoints,
+    ProtocolError,
+)
+from phantom_tap.keepawake import keep_awake
 from phantom_tap.notify import Notifier, format_result
 from phantom_tap.race import RacePlan, RaceResult, race
 from phantom_tap.secrets import SecretStore
@@ -36,6 +46,27 @@ logger = logging.getLogger("phantom_tap.orchestrator")
 
 # How long before T0 we stop polling and commit to the wait.
 RESYNC_BEFORE_T0 = 120.0
+# The UI fallback opens the app this long before T0: launching it, picking the day
+# and scrolling to the card takes seconds, and the card then waits for the flip.
+UI_ARRIVE_EARLY = 60.0
+
+
+class HttpPathBroken(ProtocolError):
+    """The direct path failed in a way the app itself might not. Carries T0."""
+
+    def __init__(self, message: str, *, opens_at: float) -> None:
+        super().__init__(message)
+        self.opens_at = opens_at
+
+
+def expected_open(watch: Watch, day: date) -> float:
+    """When registration should open, by the rule every observed class followed.
+
+    Only used when the server cannot be asked - the HTTP path is broken - which is
+    exactly when the UI fallback runs.
+    """
+    start = datetime.combine(day, watch.start_time, tzinfo=ISRAEL)
+    return (start - EXPECTED_LEAD).timestamp()
 # When the class is not on the schedule yet, look again this often.
 DISCOVERY_INTERVAL = 30 * 60.0
 
@@ -102,9 +133,95 @@ async def book(
     live: bool,
     day: date | None = None,
 ) -> RaceResult:
-    """Chase one class through one registration window."""
+    """Chase one class through one registration window.
+
+    Direct HTTP first. If that path is broken - the protocol changed, or the server
+    refuses it outright - and `[device] ui_fallback` is on, the same class is
+    booked by driving the app on the phone instead. Slower, so it loses contested
+    classes, but a broken protocol then costs a good seat rather than the class.
+    """
     day = day or watch.next_date()
+    try:
+        return await _book_http(
+            config, endpoints, watch, store=store, notifier=notifier, live=live, day=day
+        )
+    except ProtocolError as exc:
+        if not (live and config.device.ui_fallback):
+            raise
+        opens_at = getattr(exc, "opens_at", None) or expected_open(watch, day)
+        logger.error("direct path broken (%s) - falling back to the app on the phone", exc)
+        return await _book_via_app(
+            config, watch, day, opens_at=opens_at, store=store, notifier=notifier, why=str(exc)
+        )
+
+
+async def _book_via_app(
+    config: Config,
+    watch: Watch,
+    day: date,
+    *,
+    opens_at: float,
+    store: Store,
+    notifier: Notifier,
+    why: str,
+) -> RaceResult:
+    from phantom_tap.holmesplace import ui as uimod
+
+    arrive_in = opens_at - UI_ARRIVE_EARLY - time.time()
+    if arrive_in > 0:
+        logger.info("UI fallback: opening the app %s from now", _human(arrive_in))
+        await asyncio.sleep(arrive_in)
+
+    def run() -> uimod.UiResult:
+        app = uimod.HolmesPlaceUi(config.device.serial or None, shots=config.db_path.parent / "screenshots")
+        return app.book(
+            day,
+            watch.class_name,
+            watch.start_hhmm,
+            watch.preferred_spots,
+            join_waitlist=watch.join_waitlist,
+            opens_at=opens_at,
+        )
+
+    with keep_awake():
+        try:
+            ui = await asyncio.to_thread(run)  # uiautomator2 is blocking
+            # Not verified: the only independent check is the HTTP path, which is
+            # the thing that is broken. The screenshots are the evidence.
+            result = RaceResult(
+                registered=ui.registered,
+                waitlisted=ui.waitlisted,
+                seat=ui.seat,
+                verified=False,
+                reason=f"via the app on the phone, check the screenshots ({ui.reason or 'ok'})",
+            )
+        except uimod.UiUnavailable as exc:
+            result = RaceResult(reason=f"direct path broken ({why}) and the phone fallback could not start: {exc}")
+
+    plan = RacePlan(
+        # Per occurrence, so next week's run is not mistaken for this one.
+        class_id=f"ui:{day.isoformat()}:{watch.label()}",
+        t0=opens_at,
+        label=f"{watch.label()} {day:%d/%m}",
+    )
+    store.record(plan=plan, result=result, clock_offset=0.0, clock_disp=0.0)
+    logger.info("%s: %s", plan.label, result.summary())
+    await notifier.send(format_result(plan.label, result, overshoot_ms=0.0, offset_ms=0.0))
+    return result
+
+
+async def _book_http(
+    config: Config,
+    endpoints: Endpoints,
+    watch: Watch,
+    *,
+    store: Store,
+    notifier: Notifier,
+    live: bool,
+    day: date,
+) -> RaceResult:
     client = make_client(config, endpoints)
+    awake = contextlib.ExitStack()
     try:
         await client.login()
         slot = await resolve(client, watch, day)
@@ -131,6 +248,9 @@ async def book(
             slot = await resolve(client, watch, day)
             plan = plan_for(watch, slot)
 
+        # From here to the end of the race the machine must not sleep. Held only
+        # now, not during the long wait above, so the PC sleeps normally all week.
+        awake.enter_context(keep_awake())
         synced = _sync_clock()
         race_clock = Clock(synced)
         await client.prewarm()
@@ -151,6 +271,10 @@ async def book(
             clock_offset=race_clock.offset,
             clock_disp=synced.dispersion if synced else 0.0,
         )
+        refused = bool(result.attempts) and result.attempts[-1].outcome is Outcome.FATAL
+        if refused and not result.registered and config.device.ui_fallback:
+            # Recorded above for the post-mortem; the fallback reports the outcome.
+            raise HttpPathBroken(result.reason, opens_at=plan.t0)
         logger.info("%s: %s", plan.label, result.summary())
         await notifier.send(
             format_result(
@@ -162,6 +286,7 @@ async def book(
         )
         return result
     finally:
+        awake.close()
         await client.aclose()
 
 

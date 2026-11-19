@@ -23,6 +23,14 @@ waha_url     = "http://localhost:3000"
 waha_session = "default"
 chat_id      = "972501234567@c.us"   # your own WhatsApp id, as WAHA spells it
 
+[device]
+# Optional safety net: if the direct path breaks, book through the app on the
+# phone instead. Off by default - it taps a real phone. Needs the phone reachable
+# over adb: USB, or the same Wi-Fi with Developer options > Wireless debugging.
+# If the phone is away when it is needed, the WhatsApp alert says so.
+ui_fallback = false
+serial      = ""                 # e.g. "192.168.1.50:37123"; empty = the one attached
+
 # One [[watch]] per class you want booked, every week.
 [[watch]]
 class_name      = "BODY POWER"     # substring match, case-insensitive

@@ -101,8 +101,9 @@ class HolmesCapture:
         out_dir.mkdir(parents=True, exist_ok=True)
         self.path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
         # 0600: even redacted, this file maps your gym account's whole API surface.
-        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        self.fh = os.fdopen(fd, "a", encoding="utf-8")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0)
+        fd = os.open(self.path, flags, 0o600)
+        self.fh = os.fdopen(fd, "a", encoding="utf-8", newline="\n")
         print(f"[phantom-tap] capturing hosts matching /{HOST_PATTERN.pattern}/ -> {self.path}")
         return self.fh
 
