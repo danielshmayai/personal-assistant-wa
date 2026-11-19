@@ -41,6 +41,9 @@ _OPEN_KEY = re.compile(r"open|registration|signup|sign_?up|booking_?start|reg_",
 _CAP_KEY = re.compile(r"capacity|max|limit|total|places|slots|size", re.I)
 _REG_KEY = re.compile(r"regist|booked|taken|occupied|current|participants|count|attend", re.I)
 _SEAT_KEY = re.compile(r"seat|spot|place|position|mat|bike", re.I)
+# "הרשמה להמתנה" in the app. Its POST carries the class id just like register does,
+# so it has to be recognised before register detection can claim it.
+_WAITLIST_PATH = re.compile(r"wait|queue|standby|reserve_?list", re.I)
 _MINE_KEY = re.compile(r"^(is|has|my|am)_?(regist|book|sign|join)|registered$|booked$", re.I)
 _INSTRUCTOR_KEY = re.compile(r"instructor|trainer|teacher|coach", re.I)
 _STUDIO_KEY = re.compile(r"studio|room|hall|location|area", re.I)
@@ -149,8 +152,29 @@ def analyze(flows: list[Flow]) -> Detection:
         else:
             det.note("no seat-confirm request seen - book a seated class during capture")
 
+    waitlist = _find_waitlist(flows, class_ids, det)
+    if waitlist:
+        det.endpoints["waitlist"] = waitlist
+
     det.endpoints["signals"] = _find_signals(flows, det)
     return det
+
+
+def _find_waitlist(flows: list[Flow], class_ids: set[str], det: Detection) -> dict | None:
+    for flow in _ok_first(flows):
+        if flow.method not in ("POST", "PUT", "PATCH") or not _WAITLIST_PATH.search(flow.path):
+            continue
+        hit = _which_id(flow, class_ids)
+        if not hit:
+            continue
+        det.note(f"waitlist: {flow}; reuses schedule id {hit}")
+        return {
+            "method": flow.method,
+            "path": flow.path.replace(hit, "{class_id}"),
+            "json": _sub_id(flow.req_body, hit, "{class_id}"),
+            "success_status": [flow.status] if flow.ok else [200, 201],
+        }
+    return None
 
 
 def _base_url(flows: list[Flow], det: Detection) -> str:
@@ -422,6 +446,8 @@ def _find_register(flows: list[Flow], class_ids: set[str], det: Detection) -> di
             continue
         if re.search(r"seat|spot|place", flow.path, re.I):
             continue  # that is the seat confirm, a different step
+        if _WAITLIST_PATH.search(flow.path):
+            continue  # joining the waitlist, not registering
         if not flow.ok:
             det.note(
                 f"WARNING: register was only seen failing ({flow}). success_status is "

@@ -176,3 +176,63 @@ async def test_exhausted_burst_reports_why(make_backend, make_client, clock, bur
     assert not result.registered
     assert f"exhausted {len(burst)}" in result.reason
     assert len(result.attempts) == len(burst)
+
+
+# --------------------------------------------------------------- waitlist ----
+
+
+async def test_full_class_joins_the_waitlist_when_allowed(make_backend, make_client, clock):
+    """The app's "הרשמה להמתנה": losing the race for a place still gets you queued."""
+    backend = make_backend(opens_in=0.15, registered=45)
+    client = await make_client(backend)
+
+    result = await race(client, plan(backend, join_waitlist=True), clock)
+    await client.aclose()
+
+    assert not result.registered
+    assert result.waitlisted
+    assert backend.waitlisted
+    assert "waitlist" in result.summary()
+
+
+async def test_waitlist_is_opt_in(make_backend, make_client, clock):
+    backend = make_backend(opens_in=0.15, registered=45)
+    client = await make_client(backend)
+
+    result = await race(client, plan(backend, join_waitlist=False), clock)
+    await client.aclose()
+
+    assert not result.waitlisted
+    assert backend.waitlist_calls == 0
+
+
+async def test_no_waitlist_endpoint_means_a_clean_stop(make_backend, creds, clock):
+    """If the capture never covered a waitlist, a full class just ends the race."""
+    from dataclasses import replace
+
+    from phantom_tap.holmesplace.api import HolmesPlaceClient
+    from phantom_tap.holmesplace.models import Endpoints
+    from tests.fake_holmesplace import ENDPOINTS
+
+    backend = make_backend(opens_in=0.15, registered=45)
+    endpoints = replace(Endpoints.from_dict(ENDPOINTS), waitlist=None)
+    client = HolmesPlaceClient(endpoints, creds, transport=backend.transport())
+    await client.login()
+
+    result = await race(client, plan(backend, join_waitlist=True), clock)
+    await client.aclose()
+
+    assert not result.waitlisted
+    assert backend.waitlist_calls == 0
+    assert "full" in result.reason
+
+
+async def test_a_won_registration_never_touches_the_waitlist(make_backend, make_client, clock):
+    backend = make_backend(opens_in=0.15)
+    client = await make_client(backend)
+
+    result = await race(client, plan(backend, join_waitlist=True, preferred_spots=(2, 4)), clock)
+    await client.aclose()
+
+    assert result.won
+    assert backend.waitlist_calls == 0

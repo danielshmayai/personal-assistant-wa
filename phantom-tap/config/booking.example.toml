@@ -1,0 +1,46 @@
+# Copy to config/booking.toml and edit. booking.toml is gitignored - it names
+# your account.
+#
+# Note what is NOT configured here: when registration opens. The server publishes
+# it per class (the app shows "פתיחת הרשמה: 19/11 14:10", and at that exact minute
+# the "תזכורת" button turns into "הרשמה"). It is read at run time; a human typing
+# it is the most likely way to miss a booking.
+
+[account]
+username = "0501234567"        # whatever you type into the app's login screen
+club_id  = "modiin"            # the club selected at the top of the app
+
+[runtime]
+endpoints        = "config/endpoints.json"   # written by `pt analyze`
+db               = "data/phantom.sqlite3"
+key              = "config/phantom.key"
+secrets          = "config/secrets.enc"
+lead_in_seconds  = 300         # log in and warm the connection this long before T0
+
+[notify]
+backend      = "waha"          # waha | log | none
+waha_url     = "http://localhost:3000"
+waha_session = "default"
+chat_id      = "972501234567@c.us"   # your own WhatsApp id, as WAHA spells it
+
+# One [[watch]] per class you want booked, every week.
+[[watch]]
+class_name      = "BODY POWER"     # substring match, case-insensitive
+weekday         = "wednesday"      # English or Hebrew ("רביעי")
+start_time      = "19:10"          # the class start, not the registration time
+preferred_spots = [12, 13, 11]     # floor-map numbers, best first. In the seat
+                                   # dialog red = free, gray = taken; the first
+                                   # red one in this list wins.
+seat_fallback   = "nearest"        # nearest | any | none - what to do when every
+                                   # preferred seat is already gray
+join_waitlist   = true             # class already full at T0? press
+                                   # "הרשמה להמתנה" instead of giving up
+enabled         = true
+
+[[watch]]
+class_name      = "התעמלות בונה עצם"
+weekday         = "חמישי"
+start_time      = "08:30"
+preferred_spots = [2, 4]
+seat_fallback   = "any"
+enabled         = false

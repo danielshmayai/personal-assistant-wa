@@ -356,7 +356,12 @@ def cmd_history(args) -> int:  # type: ignore[no-untyped-def]
             print("nothing recorded yet")
             return 0
         for race in races:
-            status = "booked" if race["verified"] else ("UNCONFIRMED" if race["registered"] else "lost")
+            status = (
+                "booked" if race["verified"]
+                else "UNCONFIRMED" if race["registered"]
+                else "waitlisted" if race.get("waitlisted")
+                else "lost"
+            )
             seat = f" seat {race['seat']}" if race["seat"] is not None else ""
             print(
                 f"\n{race['created_at']}  {race['class_label'] or race['class_id']}\n"

@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS races (
     clock_disp     REAL    NOT NULL DEFAULT 0,
     registered     INTEGER NOT NULL DEFAULT 0,
     verified       INTEGER NOT NULL DEFAULT 0,
+    waitlisted     INTEGER NOT NULL DEFAULT 0,
     seat           INTEGER,
     reason         TEXT    NOT NULL DEFAULT '',
     max_overshoot_ms REAL  NOT NULL DEFAULT 0,
@@ -61,6 +62,13 @@ class Store:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Bring an older database forward. Additive only: never drops history."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(races)")}
+        if "waitlisted" not in cols:
+            self._conn.execute("ALTER TABLE races ADD COLUMN waitlisted INTEGER NOT NULL DEFAULT 0")
 
     def close(self) -> None:
         self._conn.close()
@@ -91,8 +99,9 @@ class Store:
         with self.transaction() as conn:
             cur = conn.execute(
                 """INSERT INTO races (class_id, class_label, t0, clock_offset, clock_disp,
-                                      registered, verified, seat, reason, max_overshoot_ms, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                      registered, verified, waitlisted, seat, reason,
+                                      max_overshoot_ms, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     plan.class_id,
                     plan.label,
@@ -101,6 +110,7 @@ class Store:
                     clock_disp,
                     int(result.registered),
                     int(result.verified),
+                    int(getattr(result, "waitlisted", False)),
                     result.seat,
                     result.reason,
                     result.max_overshoot_ms,

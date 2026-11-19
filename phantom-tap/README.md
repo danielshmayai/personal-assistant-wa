@@ -32,6 +32,16 @@ sub-millisecond.
 by trusting the POST's own 200. Being registered without your preferred seat counts
 as a win and is never retried — re-firing could cancel the registration you hold.
 
+## What the app shows, and what phantom-tap does with it
+
+| In the app | Meaning | phantom-tap |
+|---|---|---|
+| "פתיחת הרשמה: 19/11 14:10" + "תזכורת" | not open yet | reads that time from the server and schedules itself |
+| "תזכורת" turns into "הרשמה" at exactly that minute | open | fires at that exact moment |
+| "בחירת מקום": red seat | free | candidate, in your priority order |
+| "בחירת מקום": gray seat | taken | skipped, never tapped |
+| "הרשמה להמתנה" | class full | joins the waitlist if `join_waitlist = true` |
+
 ## The two-phase booking
 
 Registration and seat selection are separate steps (the app shows a floor map —

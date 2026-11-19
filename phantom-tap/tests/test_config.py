@@ -58,3 +58,13 @@ def test_disabled_watches_are_filtered():
         {"class_name": "B", "weekday": "monday", "start_time": "09:00", "enabled": False},
     ]))
     assert [w.class_name for w in cfg.enabled_watches()] == ["A"]
+
+
+def test_the_shipped_example_config_is_valid():
+    """The README tells you to copy it - it has to actually load."""
+    from pathlib import Path
+
+    example = Path(__file__).parent.parent / "config" / "booking.example.toml"
+    cfg = Config.load(example)
+    assert cfg.watches
+    assert all(w.preferred_spots for w in cfg.watches)

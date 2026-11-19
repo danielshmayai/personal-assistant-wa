@@ -75,6 +75,8 @@ def format_result(label: str, result, *, overshoot_ms: float, offset_ms: float) 
             head += f" · מקום {result.seat}"
     elif result.registered:
         head = f"⚠️ נרשמת ל{label} אבל האישור לא אומת"
+    elif getattr(result, "waitlisted", False):
+        head = f"⏳ השיעור {label} מלא — נכנסת לרשימת ההמתנה"
     else:
         head = f"❌ לא נרשמת ל{label}"
 

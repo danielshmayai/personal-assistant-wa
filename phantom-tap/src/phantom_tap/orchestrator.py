@@ -88,6 +88,7 @@ def plan_for(watch: Watch, slot: ClassSlot) -> RacePlan:
         slot,
         preferred_spots=watch.preferred_spots,
         seat_fallback=watch.seat_fallback,
+        join_waitlist=watch.join_waitlist,
     )
 
 

@@ -79,6 +79,8 @@ class RacePlan:
     #: How precisely T0 is known, in seconds. 1.0 when the server gave us seconds,
     #: 60.0 when it gave us only a minute. See `burst_for`.
     t0_precision: float = 1.0
+    #: On a full class, join the waitlist ("הרשמה להמתנה") instead of giving up.
+    join_waitlist: bool = False
 
     @classmethod
     def from_slot(cls, slot, **kw) -> RacePlan:
@@ -101,6 +103,7 @@ class RacePlan:
 @dataclass
 class RaceResult:
     registered: bool = False
+    waitlisted: bool = False
     seat: int | None = None
     verified: bool = False
     reason: str = ""
@@ -119,6 +122,8 @@ class RaceResult:
             return f"booked{seat}{when}"
         if self.registered and not self.verified:
             return f"registered but NOT confirmed by an independent read - {self.reason}"
+        if self.waitlisted:
+            return f"class full - joined the waitlist ({self.reason})"
         return f"not booked - {self.reason}"
 
 
@@ -186,6 +191,8 @@ async def race(client: HolmesPlaceClient, plan: RacePlan, clock: Clock) -> RaceR
             break
         if outcome is Outcome.FULL:
             result.reason = f"class full ({detail})"
+            if plan.join_waitlist and client.ep.waitlist is not None:
+                await _join_waitlist(client, plan, result)
             return result
         if outcome is Outcome.FATAL:
             result.reason = f"fatal: {detail}"
@@ -209,6 +216,37 @@ async def race(client: HolmesPlaceClient, plan: RacePlan, clock: Clock) -> RaceR
 
     result.reason = "" if result.verified else "server does not list the booking after registering"
     return result
+
+
+async def _join_waitlist(client: HolmesPlaceClient, plan: RacePlan, result: RaceResult) -> None:
+    """Lost the race for a place: take the next best thing, a place in the queue.
+
+    Fired immediately - the waitlist is ordered too, and the people who lost the
+    same race are joining it in the same second.
+    """
+    for offset in SEAT_BURST:
+        if offset:
+            await asyncio.sleep(offset)
+        started = time.monotonic()
+        outcome, response, detail = await client.send(
+            client.prepare_waitlist(plan.class_id), expect=client.ep.waitlist
+        )
+        result.attempts.append(
+            Attempt(
+                outcome=outcome,
+                status=response.status_code if response else None,
+                latency=time.monotonic() - started,
+                fired_at=client_now_offset(plan),
+                detail=f"waitlist: {detail}",
+            )
+        )
+        if outcome in (Outcome.OK, Outcome.ALREADY):
+            result.waitlisted = True
+            logger.info("class full - joined the waitlist")
+            return
+        if outcome in (Outcome.FATAL, Outcome.FULL):
+            logger.warning("could not join the waitlist: %s", detail)
+            return
 
 
 async def _claim_seat(

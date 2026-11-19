@@ -162,6 +162,9 @@ class Endpoints:
     seat_map: Endpoint | None = None
     confirm_seat: Endpoint | None = None
     my_bookings: Endpoint | None = None
+    # The app offers "הרשמה להמתנה" on a full class. Optional: only present when a
+    # capture included joining a waitlist.
+    waitlist: Endpoint | None = None
     signals: Signals = field(default_factory=Signals)
 
     @classmethod
@@ -191,6 +194,7 @@ class Endpoints:
             seat_map=opt("seat_map"),
             confirm_seat=opt("confirm_seat"),
             my_bookings=opt("my_bookings"),
+            waitlist=opt("waitlist"),
             signals=Signals(**{k: tuple(v) for k, v in data.get("signals", {}).items()}),
         )
 

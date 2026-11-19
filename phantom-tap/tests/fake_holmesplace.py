@@ -51,6 +51,8 @@ class FakeHolmesPlace:
         self.register_calls = 0
         self.seat_calls: list[int] = []
         self.booked = False
+        self.waitlisted = False
+        self.waitlist_calls = 0
         self.my_seat: int | None = None
         self.token = "tok-" + "a" * 40
 
@@ -118,6 +120,9 @@ class FakeHolmesPlace:
         if path == f"/api/v2/classes/{CLASS_ID}/register":
             return self._register()
 
+        if path == f"/api/v2/classes/{CLASS_ID}/waitlist":
+            return self._join_waitlist()
+
         return _json(404, {"message": f"no route for {path}"})
 
     def _register(self) -> httpx.Response:
@@ -133,6 +138,14 @@ class FakeHolmesPlace:
         self.booked = True
         self.registered_count += 1
         return _json(200, {"d": {"lessonId": CLASS_ID, "status": "registered"}})
+
+    def _join_waitlist(self) -> httpx.Response:
+        """The app's "הרשמה להמתנה": only meaningful once the class is full."""
+        self.waitlist_calls += 1
+        if not self._is_full():
+            return _json(400, {"message": "The class is not full, register instead"})
+        self.waitlisted = True
+        return _json(200, {"d": {"lessonId": CLASS_ID, "status": "waitlisted"}})
 
     def _claim_seat(self, seat: int) -> httpx.Response:
         self.seat_calls.append(seat)
@@ -198,6 +211,12 @@ ENDPOINTS = {
     "confirm_seat": {
         "method": "POST",
         "path": "/api/v2/classes/{class_id}/spots/{seat}",
+        "json": {},
+        "success_status": [200],
+    },
+    "waitlist": {
+        "method": "POST",
+        "path": "/api/v2/classes/{class_id}/waitlist",
         "json": {},
         "success_status": [200],
     },

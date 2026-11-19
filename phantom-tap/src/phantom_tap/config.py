@@ -36,6 +36,7 @@ class Watch:
     preferred_spots: tuple[int, ...] = ()
     seat_fallback: str = "nearest"
     enabled: bool = True
+    join_waitlist: bool = True
 
     @property
     def start_hhmm(self) -> str:
@@ -145,4 +146,5 @@ def _watch(raw: dict[str, Any], index: int) -> Watch:
         preferred_spots=spots,
         seat_fallback=fallback,
         enabled=bool(raw.get("enabled", True)),
+        join_waitlist=bool(raw.get("join_waitlist", True)),
     )

@@ -175,3 +175,27 @@ async def test_the_inferred_protocol_actually_books(tmp_path, make_backend, cloc
 
     assert result.won, result.reason
     assert result.seat == 12
+
+
+def test_finds_the_waitlist_and_keeps_it_apart_from_register(tmp_path, make_backend):
+    """Both POSTs carry the class id; only the path tells them apart."""
+    backend = make_backend()
+    lines = capture_lines(backend)
+    auth = lines[1]["req_headers"]
+    # Joining the waitlist on a full class, recorded *before* the real register so
+    # a naive first-match would take it as the register endpoint.
+    waitlist = dict(lines[3])
+    waitlist.update(
+        path=f"/api/v2/classes/{CLASS_ID}/waitlist",
+        req_headers=auth,
+        resp_body={"d": {"lessonId": CLASS_ID, "status": "waitlisted"}},
+        status=200,
+    )
+    lines.insert(2, waitlist)
+
+    path = tmp_path / "with_waitlist.jsonl"
+    path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in lines), encoding="utf-8")
+    det = analyze(load(path))
+
+    assert det.endpoints["waitlist"]["path"] == "/api/v2/classes/{class_id}/waitlist"
+    assert det.endpoints["register"]["path"] == "/api/v2/classes/{class_id}/register"

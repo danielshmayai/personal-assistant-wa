@@ -268,6 +268,19 @@ class HolmesPlaceClient:
             headers=self._auth_headers(),
         )
 
+    def prepare_waitlist(self, class_id: str) -> httpx.Request:
+        ep = self.ep.waitlist
+        if ep is None:
+            raise ProtocolError("no waitlist endpoint was discovered")
+        ctx = self._ctx(class_id=class_id)
+        return self._client.build_request(
+            ep.method,
+            render(ep.path, ctx),
+            params=render(ep.query, ctx) or None,
+            json=render(ep.json_body, ctx) if ep.json_body is not None else None,
+            headers=self._auth_headers(),
+        )
+
     def prepare_seat(self, class_id: str, seat: int) -> httpx.Request:
         ep = self.ep.confirm_seat
         if ep is None:

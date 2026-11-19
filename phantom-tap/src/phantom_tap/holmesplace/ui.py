@@ -31,6 +31,10 @@ BUTTON_REGISTER = "הרשמה"
 BUTTON_CONTINUE = "המשך"
 SEAT_DIALOG = "בחירת מקום"
 BUTTON_REMINDER = "תזכורת"  # shown instead of הרשמה before registration opens
+BUTTON_WAITLIST = "הרשמה להמתנה"  # shown instead of הרשמה when the class is full
+
+POLL_INTERVAL = 0.1  # how often to look at the card while waiting for it to open
+REFRESH_EVERY = 3.0  # how often to pull-to-refresh in case the card never updates itself
 
 
 class UiUnavailable(RuntimeError):
@@ -110,39 +114,98 @@ class HolmesPlaceUi:
         self._step("class-not-found")
         return False
 
-    def register(self) -> bool:
-        if self.d(text=BUTTON_REMINDER).exists:
-            self._step("still-closed")  # the app is offering a reminder, not a booking
-            return False
-        button = self.d(text=BUTTON_REGISTER)
-        if not button.click_exists(timeout=8):
-            self._step("no-register-button")
-            return False
-        self._step("register-tapped")
-        return True
+    def register(self, *, join_waitlist: bool = False, wait_until: float | None = None) -> str:
+        """Tap the card's action. Returns "registered", "waitlisted" or "closed".
+
+        Before the window opens the card offers "תזכורת"; at the published minute
+        the same button becomes "הרשמה". So "תזכורת" is not a refusal, it is a
+        countdown: with `wait_until` (a unix deadline, normally T0 plus a margin)
+        we keep watching the card and tap the moment it flips.
+        """
+        while True:
+            # Exact text match: "הרשמה" must not match "הרשמה להמתנה".
+            if self.d(text=BUTTON_REGISTER).click_exists(timeout=0.3):
+                self._step("register-tapped")
+                return "registered"
+            if join_waitlist and self.d(text=BUTTON_WAITLIST).click_exists(timeout=0.3):
+                self._step("waitlist-tapped")
+                return "waitlisted"
+            if wait_until is None or time.time() >= wait_until:
+                break
+            if self.d(text=BUTTON_REMINDER).exists:
+                self._refresh_if_stale()
+            time.sleep(POLL_INTERVAL)
+
+        self._step("still-closed" if self.d(text=BUTTON_REMINDER).exists else "no-register-button")
+        return "closed"
+
+    def _refresh_if_stale(self) -> None:
+        """Pull to refresh every few seconds while waiting.
+
+        Whether the app flips the button by itself at the minute or only on a
+        reload is not known yet, so do both: watch continuously, and reload
+        periodically so a card that never updates on its own still flips.
+        """
+        now = time.monotonic()
+        if now - getattr(self, "_last_refresh", 0.0) < REFRESH_EVERY:
+            return
+        self._last_refresh = now
+        self.d.swipe_ext("down", scale=0.5)
 
     def choose_seat(self, preferred: tuple[int, ...]) -> int | None:
-        """The seat dialog: a floor map, then a scrollable list of numbers."""
+        """The seat dialog: a floor map, then a scrollable list of numbers.
+
+        Taken seats stay in the list - grayed out - and free ones are outlined in
+        red. So a seat number being on screen says nothing about whether it can be
+        had. What the dialog does say reliably is "המשך": it stays disabled until a
+        free seat is selected. A seat counts as claimed only once the confirm
+        button has become tappable, whatever styling the app uses for taken seats.
+        """
         if not self.d(textContains=SEAT_DIALOG).wait(timeout=8):
             self._step("no-seat-dialog")  # this class has no seat selection
             return None
+
         for seat in preferred:
-            entry = self.d(text=str(seat))
-            if entry.exists:
-                entry.click()
-                if self.d(text=BUTTON_CONTINUE).click_exists(timeout=5):
-                    self._step(f"seat-{seat}")
-                    return seat
-            self.d(scrollable=True).scroll.to(text=str(seat))
-        # Nothing preferred was free: take the first number the list offers.
-        first = self.d(className="android.widget.Button", instance=0)
-        if first.exists:
-            first.click()
-            self.d(text=BUTTON_CONTINUE).click_exists(timeout=5)
-            self._step("seat-any")
+            if self._try_seat(seat):
+                return seat
+
+        # Nothing preferred was free: walk the list top to bottom and take the
+        # first seat the dialog actually accepts.
+        for number in range(1, 100):
+            if not self.d(text=str(number)).exists:
+                self.d(scrollable=True).scroll.to(text=str(number))
+                if not self.d(text=str(number)).exists:
+                    break  # past the last seat
+            if self._try_seat(number):
+                return number
+        self._step("no-free-seat")
         return None
 
-    def book(self, day: date, class_name: str, start_hhmm: str, preferred: tuple[int, ...]) -> UiResult:
+    def _try_seat(self, seat: int) -> bool:
+        entry = self.d(text=str(seat), enabled=True)
+        if not entry.exists:
+            self.d(scrollable=True).scroll.to(text=str(seat))
+            entry = self.d(text=str(seat), enabled=True)
+        if not entry.exists:
+            return False  # disabled: taken (gray)
+        entry.click()
+        confirm = self.d(text=BUTTON_CONTINUE, enabled=True)
+        if not confirm.wait(timeout=1.5):
+            return False  # tapping it changed nothing: taken after all
+        confirm.click()
+        self._step(f"seat-{seat}")
+        return True
+
+    def book(
+        self,
+        day: date,
+        class_name: str,
+        start_hhmm: str,
+        preferred: tuple[int, ...],
+        *,
+        join_waitlist: bool = False,
+        opens_at: float | None = None,
+    ) -> UiResult:
         def done(registered: bool, seat: int | None, reason: str = "") -> UiResult:
             return UiResult(registered, seat, self.steps, self.taken, reason)
 
@@ -152,6 +215,13 @@ class HolmesPlaceUi:
             return done(False, None, f"the day strip never showed {day.day}.{day.month}")
         if not self.find_class(class_name, start_hhmm):
             return done(False, None, f"{class_name} at {start_hhmm} was not on that day's list")
-        if not self.register():
+        # Wait past T0 by a margin: the fallback reaches the card early on purpose
+        # (navigating takes seconds) and must not give up while the button still
+        # reads "תזכורת".
+        deadline = opens_at + 90 if opens_at else None
+        action = self.register(join_waitlist=join_waitlist, wait_until=deadline)
+        if action == "closed":
             return done(False, None, "the register button was not offered")
+        if action == "waitlisted":
+            return done(False, None, "class full - joined the waitlist")
         return done(True, self.choose_seat(preferred))
