@@ -2,6 +2,16 @@
 
 Book a Holmes Place studio class the instant its registration opens.
 
+**Two ways to run it:**
+
+- **[`android/`](android/README.md) - on the phone (recommended to start).**
+  Operates the Holmes Place app itself. No recording, no computer, no root, no
+  password stored. Needs the phone unlocked at the window - it asks two minutes
+  before.
+- **This directory - on a PC.** Talks to the server directly, faster, phone can
+  be anywhere. Needs the app's protocol recorded once, which on a non-rooted
+  phone is the hard part.
+
 The app publishes, per class, the exact moment registration opens
 ("פתיחת הרשמה: 16/09 14:10"). The good classes fill in the first few hundred
 milliseconds after that. phantom-tap watches for that moment, then races.

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">phantom-tap</string>
+    <string name="a11y_description">נרשם בשמך לשיעורים באפליקציית הולמס פלייס ברגע שההרשמה נפתחת. השירות רואה ולוחץ רק בתוך אפליקציית הולמס פלייס, ורק בזמן הרשמה.</string>
+</resources>
