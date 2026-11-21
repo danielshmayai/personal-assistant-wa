@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Scoped to the Holmes Place app only: the service sees nothing from any other
-  app - not messages, not the bank, not the keyboard. It reads the screen and
-  taps only there, and only during a booking.
+  app - not messages, not the bank, not the keyboard. It taps only during a
+  booking session; otherwise it only reads the favourites tab while the user
+  looks at it.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled|typeViewSelected"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
     android:canPerformGestures="true"

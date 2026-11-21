@@ -1,5 +1,9 @@
 package com.phantomtap.core
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+
 /** How a run ended. */
 enum class Outcome {
     /** Registered; [DriveResult.seat] says which seat, if the class has seats. */
@@ -17,7 +21,7 @@ enum class Outcome {
     /** The card still offered "תזכורת" when the wait ran out. */
     NOT_OPENED,
 
-    /** The app, the timetable, the day or the class could not be found. */
+    /** The app, the favourites tab or the class could not be found. */
     NOT_FOUND,
 
     /** A rehearsal reached the class card and stopped, as intended. */
@@ -36,32 +40,47 @@ data class DriveResult(
 /** Everything the driver needs about one window, in plain values. */
 data class DrivePlan(
     val className: String,
-    val startLabel: String,
-    val dayLabel: String,
+    val date: LocalDate,
+    val start: LocalTime,
     val opensAtMs: Long,
     val giveUpAtMs: Long,
     val preferredSeats: List<Int>,
     val fallback: SeatFallback,
     val joinWaitlist: Boolean,
 ) {
+    val key: String get() = bookingKey(className, date, start)
+    val label: String get() = "$className %02d/%02d %02d:%02d".format(date.dayOfMonth, date.monthValue, start.hour, start.minute)
+
     companion object {
-        fun from(race: Race) = DrivePlan(
-            className = race.watch.className,
-            startLabel = race.watch.startLabel,
-            dayLabel = race.dayLabel,
-            opensAtMs = race.opensAt.toInstant().toEpochMilli(),
-            giveUpAtMs = race.giveUpAt.toInstant().toEpochMilli(),
-            preferredSeats = race.watch.preferredSeats,
-            fallback = race.watch.seatFallback,
-            joinWaitlist = race.watch.joinWaitlist,
+        fun from(booking: Booking, prefs: SeatPrefs) = DrivePlan(
+            className = booking.className,
+            date = booking.date,
+            start = booking.start,
+            opensAtMs = booking.opensAt.toInstant().toEpochMilli(),
+            giveUpAtMs = booking.giveUpAt.toInstant().toEpochMilli(),
+            preferredSeats = prefs.preferredSeats,
+            fallback = prefs.fallback,
+            joinWaitlist = prefs.joinWaitlist,
         )
     }
 }
 
+/** What a full read of the favourites tab found. */
+data class SyncResult(
+    val cards: List<FavoriteCard>,
+    /**
+     * True only when the whole list was read, top to bottom. Only a complete read
+     * may conclude that a class was un-hearted; a partial one proves nothing.
+     */
+    val complete: Boolean,
+    val detail: String,
+    val steps: List<String>,
+)
+
 /**
  * Books one class by operating the Holmes Place app, the way a person would.
  *
- *   open the app -> "שיעורי סטודיו" -> the day -> the class card
+ *   open the app -> "שיעורי סטודיו" -> "מועדפים" -> the class card
  *   -> wait while the card says "תזכורת"
  *   -> the moment it says "הרשמה", tap it
  *   -> "בחירת מקום": first red (free) seat in priority order -> "המשך"
@@ -86,13 +105,55 @@ class AppDriver(
         }
     }
 
+    /**
+     * Read every card in the favourites tab, top to bottom.
+     *
+     * Used by the sync button and after every booking run. Touches no button:
+     * it only scrolls and reads.
+     */
+    fun readFavorites(): SyncResult {
+        steps.clear()
+        return try {
+            sync()
+        } catch (e: Exception) {
+            step("sync failed: ${e.javaClass.simpleName}: ${e.message}")
+            SyncResult(emptyList(), complete = false, detail = "${e.javaClass.simpleName}: ${e.message}", steps = steps.toList())
+        }
+    }
+
+    private fun sync(): SyncResult {
+        fun stop(detail: String, cards: Collection<FavoriteCard> = emptyList(), complete: Boolean = false): SyncResult {
+            step("sync: $detail")
+            return SyncResult(cards.toList(), complete, detail, steps.toList())
+        }
+        if (!openApp()) return stop("the Holmes Place app did not come to the front")
+        if (!openFavorites()) return stop("no '${Labels.SUBTAB_FAVORITES}' tab")
+
+        val seen = linkedMapOf<String, FavoriteCard>()
+        screen.snapshot()?.let(::classList)?.let {
+            scrollToStart(it)
+            time.sleep(SETTLE_MS)
+        }
+        repeat(MAX_LIST_SCROLLS) {
+            val root = screen.snapshot() ?: return stop("the screen could not be read", seen.values)
+            FavoritesParser.cards(root, today()).forEach { (card, _) -> seen.putIfAbsent(card.key, card) }
+            val list = classList(root)
+            if (list == null || !screen.scroll(list, forward = true)) {
+                // An empty read is never trusted as "nothing is a favourite any
+                // more": a list that failed to load looks exactly the same.
+                return stop("read ${seen.size} favourite classes", seen.values, complete = seen.isNotEmpty())
+            }
+            time.sleep(SETTLE_MS)
+        }
+        return stop("stopped after $MAX_LIST_SCROLLS pages; read ${seen.size}", seen.values)
+    }
+
     private fun drive(plan: DrivePlan, rehearsal: Boolean): DriveResult {
         if (!openApp()) return result(Outcome.FAILED, detail = "the Holmes Place app did not come to the front")
-        if (!openTimetable()) return result(Outcome.NOT_FOUND, detail = "no '${Labels.TAB_STUDIO}' tab")
-        if (!pickDay(plan.dayLabel)) return result(Outcome.NOT_FOUND, detail = "day ${plan.dayLabel} is not in the day strip")
+        if (!openFavorites()) return result(Outcome.NOT_FOUND, detail = "no '${Labels.SUBTAB_FAVORITES}' tab")
 
         val card = findCard(plan, fromTop = true)
-            ?: return result(Outcome.NOT_FOUND, detail = "${plan.className} ${plan.startLabel} is not on ${plan.dayLabel}")
+            ?: return result(Outcome.NOT_FOUND, detail = "${plan.label} is not in the favourites")
         step("card found, it offers '${actionOf(card) ?: "nothing"}'")
 
         // A rehearsal proves the whole path up to the card and touches nothing.
@@ -103,7 +164,7 @@ class AppDriver(
             Tapped.WAITLIST -> result(Outcome.WAITLISTED, detail = "class full; joined the waitlist")
             Tapped.FULL -> result(Outcome.FULL, detail = "class full; joining the waitlist is off")
             Tapped.TIMEOUT -> result(Outcome.NOT_OPENED, detail = "still '${Labels.REMINDER}' when the wait ran out")
-            Tapped.LOST -> result(Outcome.NOT_FOUND, detail = "the card disappeared from the timetable")
+            Tapped.LOST -> result(Outcome.NOT_FOUND, detail = "the card disappeared from the favourites")
         }
     }
 
@@ -117,41 +178,31 @@ class AppDriver(
         return opened
     }
 
-    private fun openTimetable(): Boolean {
+    /**
+     * "שיעורי סטודיו" -> "מועדפים". The full timetable is never used: the
+     * favourites are the only source, and each favourites card carries its own
+     * date, so there is no day strip to work through.
+     */
+    private fun openFavorites(): Boolean {
         val tab = waitFor(NAV_MS) { root -> root.find { it.label == Labels.TAB_STUDIO } } ?: return false
         screen.click(tab)
         step("opened '${Labels.TAB_STUDIO}'")
-        // Make sure the timetable sub-tab is selected, not favourites or bookings.
-        waitFor(SUBTAB_MS) { root -> root.find { normalize(it.label) == normalize(Labels.SUBTAB_SCHEDULE) } }
-            ?.let(screen::click)
-        return waitFor(NAV_MS) { root -> root.find { isDayChip(it.label) } } != null
-    }
-
-    private fun pickDay(dayLabel: String): Boolean {
-        repeat(MAX_STRIP_SCROLLS) {
-            val root = screen.snapshot() ?: return@repeat time.sleep(POLL_MS)
-            val chip = root.find { node -> node.label?.split(WHITESPACE)?.contains(dayLabel) == true }
-            if (chip != null) {
-                screen.click(chip)
-                time.sleep(SETTLE_MS)
-                step("picked day $dayLabel")
-                return true
-            }
-            // The strip runs right to left; "forward" is towards later days either way.
-            val strip = root.find { n -> n.scrollable && n.descendants().any { isDayChip(it.label) } } ?: return false
-            if (!screen.scroll(strip, forward = true)) return false
-            time.sleep(SETTLE_MS)
-        }
-        return false
+        val favorites = waitFor(NAV_MS) { root ->
+            root.find { FavoritesParser.normalize(it.label) == Labels.SUBTAB_FAVORITES }
+        } ?: return false
+        screen.click(favorites)
+        time.sleep(SETTLE_MS)
+        step("opened '${Labels.SUBTAB_FAVORITES}'")
+        return true
     }
 
     /**
      * The card for this class, or null.
      *
-     * A card is the smallest region that holds the class name, a time range
-     * starting at the class start, and one of the three actions. Two classes at
-     * 08:30 are told apart by name; a class *ending* at 08:30 is not mistaken for
-     * one starting then, because the start is read off the range.
+     * Matched on name, date and start time together, read off each card. The same
+     * weekly class appears in the favourites once per date, so the date matters;
+     * two classes at 08:30 are told apart by name; and a class *ending* at 08:30 is
+     * not mistaken for one starting then, because the start is read off the range.
      */
     private fun findCard(plan: DrivePlan, fromTop: Boolean): Node? {
         var root = screen.snapshot() ?: return null
@@ -174,25 +225,10 @@ class AppDriver(
         return null
     }
 
-    private fun cardIn(root: Node, plan: DrivePlan): Node? {
-        val wanted = plan.className.trim()
-        val names = root.descendants().filter { it.label?.contains(wanted, ignoreCase = true) == true }
-        for (name in names) {
-            // The card is the *first* region up from the name that holds an action.
-            // Climbing further would reach the list, which holds every card's time
-            // and button - and would let a 07:40-08:30 class pass for one at 08:30.
-            val card = (sequenceOf(name) + name.ancestors()).take(MAX_CARD_DEPTH)
-                .firstOrNull { actionOf(it) != null } ?: continue
-            // More than one action means this is a container, not a card: the name
-            // was in something like a promo banner.
-            if (actionCount(card) == 1 && startsAt(card.subtreeText(), plan.startLabel)) return card
-        }
-        return null
-    }
+    private fun cardIn(root: Node, plan: DrivePlan): Node? =
+        FavoritesParser.cards(root, today()).firstOrNull { (card, _) -> card.key == plan.key }?.second
 
-    private fun actionCount(region: Node): Int = region.descendants().count {
-        it.label == Labels.REGISTER || it.label == Labels.REMINDER || it.label == Labels.WAITLIST
-    }
+    private fun today(): LocalDate = Instant.ofEpochMilli(time.now()).atZone(Schedule.ISRAEL).toLocalDate()
 
     private fun classList(root: Node): Node? =
         root.descendants().filter { it.scrollable }.maxByOrNull { it.bounds.height }
@@ -260,7 +296,7 @@ class AppDriver(
         scrollToStart(list)
         screen.pullToRefresh(list.bounds)
         time.sleep(SETTLE_MS)
-        step("refreshed the timetable")
+        step("refreshed the favourites")
     }
 
     // ------------------------------------------------------------------ seats --
@@ -398,42 +434,17 @@ class AppDriver(
         const val SETTLE_MS = 350L
         const val APP_START_MS = 15_000L
         const val NAV_MS = 8_000L
-        const val SUBTAB_MS = 3_000L
         const val LOST_AFTER_MS = 8_000L
         const val DIALOG_MS = 6_000L
         const val CONFIRM_MS = 1_500L
         /** Watch without refreshing this long past T0 - the button usually flips by itself. */
         const val WATCH_ONLY_MS = 2_000L
         const val REFRESH_EVERY_MS = 1_500L
-        const val MAX_STRIP_SCROLLS = 8
         const val MAX_LIST_SCROLLS = 15
-        const val MAX_CARD_DEPTH = 8
 
-        private val WHITESPACE = Regex("\\s+")
-        private val DAY_CHIP = Regex("^\\d{1,2}\\.\\d{1,2}$")
         private val SEAT = Regex("^\\d{1,3}$")
-        private val RANGE = Regex("(\\d{1,2}:\\d{2})\\s*[-–]\\s*(\\d{1,2}:\\d{2})")
-
-        /** Hebrew gershayim (U+05F4) and an ASCII quote are both used for "לו״ז". */
-        fun normalize(label: String?): String? = label?.replace('\u05F4', '"')
-
-        fun isDayChip(label: String?): Boolean = label?.split(WHITESPACE)?.any { DAY_CHIP.matches(it) } == true
 
         fun isSeat(label: String?): Boolean = label != null && SEAT.matches(label)
-
-        /**
-         * Does this region's text show a class starting at [start]? Reads the
-         * start off "08:30 - 09:20" whichever way round right-to-left text puts
-         * it, so a class ending at 08:30 does not count.
-         */
-        fun startsAt(text: String, start: String): Boolean {
-            val ranges = RANGE.findAll(text).toList()
-            if (ranges.isEmpty()) return text.contains(start)
-            return ranges.any { m ->
-                val (a, b) = m.destructured
-                minOf(a.padStart(5, '0'), b.padStart(5, '0')) == start
-            }
-        }
 
         private fun signedMs(ms: Long): String = if (ms >= 0) "+${ms}ms" else "${ms}ms"
     }

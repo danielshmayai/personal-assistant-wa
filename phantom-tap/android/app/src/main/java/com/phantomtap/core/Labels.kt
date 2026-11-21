@@ -13,8 +13,14 @@ object Labels {
     /** Bottom navigation tab with the class timetable. */
     const val TAB_STUDIO = "שיעורי סטודיו"
 
-    /** The timetable sub-tab inside it (as opposed to favourites / bookings). */
+    /** The full timetable sub-tab. Not used for booking - favourites only. */
     const val SUBTAB_SCHEDULE = "לו\"ז שיעורים"
+
+    /** The favourites sub-tab: the only source of classes to book. */
+    const val SUBTAB_FAVORITES = "מועדפים"
+
+    /** The sub-tab listing classes already booked. */
+    const val SUBTAB_BOOKED = "מוזמנים"
 
     /** Card action once registration is open. */
     const val REGISTER = "הרשמה"

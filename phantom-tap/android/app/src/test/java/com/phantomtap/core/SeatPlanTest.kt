@@ -3,8 +3,6 @@ package com.phantomtap.core
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
-import java.time.DayOfWeek
-import java.time.LocalTime
 
 class SeatPlanTest {
     @Test
@@ -33,12 +31,8 @@ class SeatPlanTest {
     }
 
     @Test
-    fun `a watch rejects duplicate or impossible seats`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            Watch("x", "HIIT", DayOfWeek.MONDAY, LocalTime.NOON, preferredSeats = listOf(12, 12))
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            Watch("x", "HIIT", DayOfWeek.MONDAY, LocalTime.NOON, preferredSeats = listOf(0))
-        }
+    fun `seat preferences reject duplicate or impossible seats`() {
+        assertThrows(IllegalArgumentException::class.java) { SeatPrefs(listOf(12, 12)) }
+        assertThrows(IllegalArgumentException::class.java) { SeatPrefs(listOf(0)) }
     }
 }

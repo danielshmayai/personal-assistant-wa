@@ -2,6 +2,18 @@ package com.phantomtap.core
 
 import kotlin.math.abs
 
+/** What to do when none of the preferred seats is free. */
+enum class SeatFallback {
+    /** The free seat closest (by number) to the preferred ones. */
+    NEAREST,
+
+    /** The first free seat in the list. */
+    ANY,
+
+    /** Preferred seats or nothing. The registration itself is still kept. */
+    NONE,
+}
+
 /**
  * Which seat to try next, once the preferred ones are gone.
  *

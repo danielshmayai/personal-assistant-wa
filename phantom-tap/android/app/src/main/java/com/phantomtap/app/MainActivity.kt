@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.InputType
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -23,23 +22,23 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import com.phantomtap.core.Booking
+import com.phantomtap.core.BookingStatus
 import com.phantomtap.core.Labels
 import com.phantomtap.core.Schedule
 import com.phantomtap.core.SeatFallback
-import com.phantomtap.core.Watch
-import java.time.DayOfWeek
+import com.phantomtap.core.SeatPrefs
 import java.time.Instant
-import java.time.LocalTime
-import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.UUID
 
 /**
- * Setup and status. Built in code rather than XML: one screen, a few lists, and
- * every label in Hebrew right here next to the logic that uses it.
+ * Setup and status. Classes are not entered here: they come from the ❤️
+ * favourites in the Holmes Place app. Built in code rather than XML - one screen,
+ * a few lists, and every label in Hebrew next to the logic that uses it.
  */
 class MainActivity : Activity() {
-    private val store by lazy { WatchStore(this) }
+    private val bookings by lazy { BookingStore(this) }
+    private val seatPrefs by lazy { SeatPrefsStore(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,16 +63,36 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(16), dp(16), dp(32))
         }
         root.addView(text("phantom-tap", 24f, bold = true))
-        root.addView(text("נרשם לשיעורים באפליקציית הולמס פלייס ברגע שההרשמה נפתחת, ובוחר מקום לפי הסדר שלך.", 14f))
+        root.addView(
+            text(
+                "סמן ❤️ בשיעור באפליקציה של הולמס פלייס, ו-phantom-tap יירשם אליו ברגע שההרשמה נפתחת " +
+                    "ויבחר מקום לפי הסדר שלך. רק שיעורים מהמועדפים.",
+                14f,
+            ),
+        )
 
         root.addView(heading("מוכנות"))
         checks().forEach { root.addView(it) }
 
-        root.addView(heading("שיעורים"))
-        val watches = store.all().sortedWith(compareBy({ dayIndex(it.dayOfWeek) }, { it.start }))
-        if (watches.isEmpty()) root.addView(text("עוד אין שיעורים. הוסף את הראשון.", 14f))
-        watches.forEach { root.addView(watchRow(it)) }
-        root.addView(button("הוסף שיעור") { editDialog(null) })
+        root.addView(heading("שיעורים מהמועדפים"))
+        root.addView(button("סנכרון מועדפים") { syncNow() })
+        root.addView(
+            text(
+                "הסנכרון פותח את הולמס פלייס וקורא את לשונית המועדפים. הוא קורה גם אחרי כל הרשמה, " +
+                    "וגם בכל פעם שאתה עצמך מסתכל על המועדפים.",
+                13f,
+            ),
+        )
+        val all = bookings.all()
+        val upcoming = all.filter { it.status == BookingStatus.PENDING }.sortedBy { it.opensAt }
+        val others = all.filter { it.status != BookingStatus.PENDING }.sortedByDescending { it.classStart }
+        if (all.isEmpty()) root.addView(text("עוד אין שיעורים. סמן ❤️ באפליקציה של הולמס פלייס ולחץ 'סנכרון מועדפים'.", 14f))
+        upcoming.forEach { root.addView(pendingRow(it)) }
+        others.forEach { root.addView(doneRow(it)) }
+
+        root.addView(heading("סדר מקומות - לכל השיעורים"))
+        root.addView(text(seatSummary(seatPrefs.get()), 15f))
+        root.addView(button("עריכת מקומות") { editSeats() })
 
         root.addView(heading("היסטוריה"))
         val history = History(this).recent(10)
@@ -114,16 +133,9 @@ class MainActivity : Activity() {
         return rows
     }
 
-    private fun watchRow(watch: Watch): View {
-        val race = Schedule.nextRace(watch, ZonedDateTime.now(Schedule.ISRAEL))
-        val seats = if (watch.preferredSeats.isEmpty()) "כל מקום" else watch.preferredSeats.joinToString(", ")
-        val summary = buildString {
-            append("${watch.className} · ${dayName(watch.dayOfWeek)} ${watch.startLabel}")
-            if (!watch.enabled) append(" · מושבת")
-            append("\nמקומות: $seats · אם תפוסים: ${fallbackName(watch.seatFallback)}")
-            append(" · המתנה: ${if (watch.joinWaitlist) "כן" else "לא"}")
-            if (watch.enabled) append("\nההרשמה הבאה נפתחת: ${WHEN.format(race.opensAt)}")
-        }
+    private fun pendingRow(booking: Booking): View {
+        val source = if (booking.opensAtFromCard) "" else " (משוער: 5 שעות לפני)"
+        val summary = "${booking.label}\nההרשמה נפתחת: ${WHEN.format(booking.opensAt)}$source"
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, dp(8))
@@ -131,12 +143,29 @@ class MainActivity : Activity() {
             addView(
                 LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    addView(button("בדיקה") { rehearse(watch) })
-                    addView(button("עריכה") { editDialog(watch) })
-                    addView(button(if (watch.enabled) "השבתה" else "הפעלה") { toggle(watch) })
-                    addView(button("מחיקה") { confirmDelete(watch) })
+                    addView(button("בדיקה") { rehearse(booking) })
+                    addView(button("לא להירשם") { skip(booking) })
                 },
             )
+        }
+    }
+
+    private fun doneRow(booking: Booking): View {
+        val status = when (booking.status) {
+            BookingStatus.BOOKED -> "✅ נרשמת"
+            BookingStatus.WAITLISTED -> "⏳ ברשימת המתנה"
+            BookingStatus.MISSED -> "❌ לא נרשמת"
+            BookingStatus.SKIPPED -> "⏭️ לא נרשם"
+            BookingStatus.PENDING -> ""
+        }
+        val detail = if (booking.detail.isNotEmpty()) " · ${booking.detail}" else ""
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+            addView(text("$status · ${booking.label}$detail", 14f))
+            if (booking.status == BookingStatus.SKIPPED && booking.classStart.isAfter(java.time.ZonedDateTime.now(Schedule.ISRAEL))) {
+                addView(button("כן להירשם") { restore(booking) })
+            }
         }
     }
 
@@ -159,76 +188,61 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- actions --
 
-    private fun rehearse(watch: Watch) {
+    private fun syncNow() {
         if (!HolmesA11yService.isEnabled(this)) {
             toast("קודם צריך להפעיל את שירות הנגישות")
             return
         }
-        toast("בדיקה: פותח את הולמס פלייס ומגיע לשיעור, בלי להירשם")
-        BookingService.start(this, watch.id, rehearsal = true)
+        toast("פותח את הולמס פלייס וקורא את המועדפים")
+        BookingService.sync(this)
     }
 
-    private fun toggle(watch: Watch) {
-        store.put(watch.copy(enabled = !watch.enabled))
+    private fun rehearse(booking: Booking) {
+        if (!HolmesA11yService.isEnabled(this)) {
+            toast("קודם צריך להפעיל את שירות הנגישות")
+            return
+        }
+        toast("בדיקה: פותח את הולמס פלייס ומגיע לשיעור במועדפים, בלי להירשם")
+        BookingService.race(this, booking.key, rehearsal = true)
+    }
+
+    /**
+     * Not just deleted: a class still hearted would come straight back on the next
+     * sync. Marked skipped, it stays known, so the sync leaves it alone.
+     */
+    private fun skip(booking: Booking) {
+        bookings.update(booking.copy(status = BookingStatus.SKIPPED, detail = "בוטל ידנית"))
+        BookingScheduler.cancel(this, booking.key)
+        render()
+    }
+
+    private fun restore(booking: Booking) {
+        bookings.update(booking.copy(status = BookingStatus.PENDING, detail = ""))
         BookingScheduler.rescheduleAll(this)
         render()
     }
 
-    private fun confirmDelete(watch: Watch) {
-        AlertDialog.Builder(this)
-            .setMessage("למחוק את ${watch.className} ${watch.startLabel}?")
-            .setPositiveButton("מחיקה") { _, _ ->
-                BookingScheduler.cancel(this, watch.id)
-                store.remove(watch.id)
-                render()
-            }
-            .setNegativeButton("ביטול", null)
-            .show()
-    }
-
-    private fun editDialog(existing: Watch?) {
-        val name = EditText(this).apply {
-            hint = "שם השיעור, כמו באפליקציה (למשל BODY POWER)"
-            setText(existing?.className.orEmpty())
-        }
-        val day = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, DAYS.map { it.second })
-            setSelection(existing?.let { dayIndex(it.dayOfWeek) } ?: 0)
-        }
-        val start = EditText(this).apply {
-            hint = "שעת תחילת השיעור, למשל 19:10"
-            inputType = InputType.TYPE_CLASS_DATETIME or InputType.TYPE_DATETIME_VARIATION_TIME
-            setText(existing?.startLabel.orEmpty())
-        }
+    private fun editSeats() {
+        val current = seatPrefs.get()
         val seats = EditText(this).apply {
             hint = "מקומות לפי סדר עדיפות, למשל 12, 13, 11"
-            setText(existing?.preferredSeats?.joinToString(", ").orEmpty())
+            setText(current.preferredSeats.joinToString(", "))
         }
         val fallback = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, FALLBACKS.map { it.second })
-            setSelection(FALLBACKS.indexOfFirst { it.first == (existing?.seatFallback ?: SeatFallback.NEAREST) })
+            setSelection(FALLBACKS.indexOfFirst { it.first == current.fallback })
         }
         val waitlist = CheckBox(this).apply {
             text = "אם השיעור מלא - להירשם לרשימת המתנה"
-            isChecked = existing?.joinWaitlist ?: true
-        }
-        val lead = EditText(this).apply {
-            hint = "כמה שעות לפני השיעור ההרשמה נפתחת"
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText((existing?.opensHoursBefore ?: 5).toString())
+            isChecked = current.joinWaitlist
         }
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), 0)
-            listOf(
-                label("שיעור"), name, label("יום"), day, label("שעה"), start,
-                label("מקומות מועדפים"), seats, label("אם כולם תפוסים"), fallback, waitlist,
-                label("ההרשמה נפתחת לפני השיעור (שעות; בכל השיעורים שראינו: 5)"), lead,
-            ).forEach(::addView)
+            listOf(label("מקומות מועדפים, לכל השיעורים"), seats, label("אם כולם תפוסים"), fallback, waitlist).forEach(::addView)
         }
-
         val dialog = AlertDialog.Builder(this)
-            .setTitle(if (existing == null) "שיעור חדש" else "עריכת שיעור")
+            .setTitle("סדר מקומות")
             .setView(ScrollView(this).apply { addView(form) })
             .setPositiveButton("שמירה", null)
             .setNegativeButton("ביטול", null)
@@ -237,20 +251,13 @@ class MainActivity : Activity() {
             // Validate before closing: a bad entry keeps the dialog open with its text.
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
-                    Watch(
-                        id = existing?.id ?: UUID.randomUUID().toString(),
-                        className = name.text.toString().trim(),
-                        dayOfWeek = DAYS[day.selectedItemPosition].first,
-                        start = LocalTime.parse(start.text.toString().trim(), TIME_INPUT),
+                    SeatPrefs(
                         preferredSeats = parseSeats(seats.text.toString()),
-                        seatFallback = FALLBACKS[fallback.selectedItemPosition].first,
+                        fallback = FALLBACKS[fallback.selectedItemPosition].first,
                         joinWaitlist = waitlist.isChecked,
-                        opensHoursBefore = lead.text.toString().trim().toInt(),
-                        enabled = existing?.enabled ?: true,
                     )
-                }.onSuccess { watch ->
-                    store.put(watch)
-                    BookingScheduler.rescheduleAll(this)
+                }.onSuccess {
+                    seatPrefs.set(it)
                     dialog.dismiss()
                     render()
                 }.onFailure { toast("לא תקין: ${it.message}") }
@@ -260,6 +267,12 @@ class MainActivity : Activity() {
     }
 
     // ---------------------------------------------------------------- helpers --
+
+    private fun seatSummary(prefs: SeatPrefs): String {
+        val seats = if (prefs.preferredSeats.isEmpty()) "כל מקום" else prefs.preferredSeats.joinToString(", ")
+        val fallback = FALLBACKS.first { it.first == prefs.fallback }.second
+        return "מקומות: $seats\nאם כולם תפוסים: $fallback\nאם מלא: ${if (prefs.joinWaitlist) "רשימת המתנה" else "לא להירשם"}"
+    }
 
     private fun notificationsAllowed(): Boolean = Build.VERSION.SDK_INT < 33 ||
         checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -297,27 +310,12 @@ class MainActivity : Activity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     companion object {
-        // The Israeli week starts on Sunday, and so does this list.
-        private val DAYS = listOf(
-            DayOfWeek.SUNDAY to "ראשון",
-            DayOfWeek.MONDAY to "שני",
-            DayOfWeek.TUESDAY to "שלישי",
-            DayOfWeek.WEDNESDAY to "רביעי",
-            DayOfWeek.THURSDAY to "חמישי",
-            DayOfWeek.FRIDAY to "שישי",
-            DayOfWeek.SATURDAY to "שבת",
-        )
         private val FALLBACKS = listOf(
             SeatFallback.NEAREST to "המקום הפנוי הקרוב ביותר",
             SeatFallback.ANY to "כל מקום פנוי",
             SeatFallback.NONE to "רק מהרשימה שלי",
         )
         private val WHEN: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
-        private val TIME_INPUT: DateTimeFormatter = DateTimeFormatter.ofPattern("H:mm")
-
-        private fun dayIndex(day: DayOfWeek) = DAYS.indexOfFirst { it.first == day }
-        private fun dayName(day: DayOfWeek) = DAYS.first { it.first == day }.second
-        private fun fallbackName(f: SeatFallback) = FALLBACKS.first { it.first == f }.second
 
         fun parseSeats(text: String): List<Int> =
             text.split(Regex("[,\\s]+")).filter { it.isNotBlank() }.map { it.trim().toInt() }

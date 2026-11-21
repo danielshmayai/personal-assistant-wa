@@ -9,6 +9,7 @@ import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
@@ -17,29 +18,58 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.phantomtap.core.Bounds
+import com.phantomtap.core.FavoritesParser
 import com.phantomtap.core.Labels
 import com.phantomtap.core.Node
+import com.phantomtap.core.Schedule
 import com.phantomtap.core.Screen
+import java.time.LocalDate
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
  * The part that sees the Holmes Place screen and taps it.
  *
- * Scoped in accessibility_service_config.xml to com.holmesplace only. It does
- * nothing on its own: it reacts to no events, and acts only when a booking run
- * drives it through [A11yScreen].
+ * Scoped in accessibility_service_config.xml to com.holmesplace only. It taps
+ * only when a booking session drives it through [A11yScreen]. On its own it does
+ * one thing: when the user is looking at the "מועדפים" tab, it reads the cards on
+ * screen and adds any new favourite - reading only, never tapping.
  */
 class HolmesA11yService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private var keepAwakeView: View? = null
+    private lateinit var reader: Handler
+    private val passiveRead = Runnable { readFavouritesOnScreen() }
 
     override fun onServiceConnected() {
         instance = this
+        reader = Handler(HandlerThread("phantom-tap-reader").apply { start() }.looper)
     }
 
-    // The driver polls the window when it needs it; individual events are not used.
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    /**
+     * Debounced: read once the screen has been still for a moment, not on every
+     * scroll event - converting the whole window on each one would slow the
+     * Holmes Place app down while the user is using it.
+     */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.packageName?.toString() != Labels.PACKAGE || BookingService.busy || !::reader.isInitialized) return
+        reader.removeCallbacks(passiveRead)
+        reader.postDelayed(passiveRead, PASSIVE_DELAY_MS)
+    }
+
+    /**
+     * Add and update only. What is off screen is unknown, not gone, so a passive
+     * read never removes a booking - only a full sync does.
+     */
+    private fun readFavouritesOnScreen() {
+        if (BookingService.busy) return
+        runCatching {
+            val root = A11yScreen(this).snapshot() ?: return
+            if (!FavoritesParser.favoritesShowing(root)) return
+            val cards = FavoritesParser.cards(root, LocalDate.now(Schedule.ISRAEL)).map { it.first }
+            if (cards.isNotEmpty()) FavoritesSync.apply(this, cards, complete = false)
+        }
+    }
 
     override fun onInterrupt() = Unit
 
@@ -50,6 +80,7 @@ class HolmesA11yService : AccessibilityService() {
 
     override fun onDestroy() {
         keepScreenOn(false)
+        if (::reader.isInitialized) reader.looper.quitSafely()
         instance = null
         super.onDestroy()
     }
@@ -116,6 +147,8 @@ class HolmesA11yService : AccessibilityService() {
     }
 
     companion object {
+        private const val PASSIVE_DELAY_MS = 800L
+
         @Volatile
         var instance: HolmesA11yService? = null
             private set
@@ -152,6 +185,7 @@ class A11yScreen(private val service: HolmesA11yService) : Screen {
             enabled = info.isEnabled,
             clickable = info.isClickable,
             scrollable = info.isScrollable,
+            selected = info.isSelected,
             bounds = Bounds(rect.left, rect.top, rect.right, rect.bottom),
             children = children,
             ref = info,

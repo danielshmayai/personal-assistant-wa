@@ -20,6 +20,8 @@ class Node(
     val enabled: Boolean = true,
     val clickable: Boolean = false,
     val scrollable: Boolean = false,
+    /** A selected tab. Only as reliable as the app's accessibility support. */
+    val selected: Boolean = false,
     val bounds: Bounds = Bounds(0, 0, 0, 0),
     val children: List<Node> = emptyList(),
     val ref: Any? = null,

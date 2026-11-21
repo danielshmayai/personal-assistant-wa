@@ -6,39 +6,47 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZonedDateTime
 
 /**
  * The driver against a fake of the Holmes Place app, in virtual time.
  *
  * Each test arrives two minutes before the window, as the real alarm does, so the
- * whole path - open the app, find the class, wait, tap, choose a seat - runs end
- * to end every time.
+ * whole path - open the app, "מועדפים", find the class, wait, tap, choose a seat -
+ * runs end to end every time.
  */
 class AppDriverTest {
-    private val t0 = 1_763_554_200_000L // the published opening minute
+    private val classDate: LocalDate = LocalDate.of(2026, 11, 19) // a Thursday
+    // An 08:30 class opens at 03:30: the published opening minute, T0.
+    private val t0 = ZonedDateTime.of(classDate, LocalTime.of(3, 30), Schedule.ISRAEL).toInstant().toEpochMilli()
     private val time = VirtualTime(t0 - Schedule.ARRIVE_EARLY_SECONDS * 1000)
     private val app = FakeHolmesApp(time)
 
     private fun cls(
         id: String = "bone",
         name: String = "התעמלות בונה עצם",
+        date: String = "19/11",
+        dayName: String = "חמישי",
         start: String = "08:30",
         end: String = "09:25",
         opensAt: Long = t0,
         full: Boolean = false,
-    ) = FakeClass(id, name, start, end, opensAt, full)
+        favorite: Boolean = true,
+    ) = FakeClass(id, name, date, dayName, start, end, opensAt, full, favorite)
 
     private fun plan(
         name: String = "התעמלות בונה עצם",
+        date: LocalDate = classDate,
         start: String = "08:30",
-        day: String = "19.11",
         seats: List<Int> = listOf(12, 13),
         fallback: SeatFallback = SeatFallback.NEAREST,
         waitlist: Boolean = true,
     ) = DrivePlan(
         className = name,
-        startLabel = start,
-        dayLabel = day,
+        date = date,
+        start = LocalTime.parse(start),
         opensAtMs = t0,
         giveUpAtMs = t0 + Schedule.GIVE_UP_AFTER_SECONDS * 1000,
         preferredSeats = seats,
@@ -54,7 +62,7 @@ class AppDriverTest {
     @Test
     fun `taps register the moment it appears and takes the first preferred seat`() {
         val c = cls()
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run()
 
@@ -68,7 +76,7 @@ class AppDriverTest {
 
     @Test
     fun `never taps the reminder button`() {
-        app.add("19.11", cls())
+        app.add(cls())
         run()
         assertFalse(app.taps.toString(), Labels.REMINDER in app.taps)
     }
@@ -76,23 +84,22 @@ class AppDriverTest {
     @Test
     fun `a window that is already open is taken at once`() {
         // Opened before the driver even arrived (it arrives at T0 - 120s).
-        app.add("19.11", cls(opensAt = t0 - 180_000))
+        app.add(cls(opensAt = t0 - 180_000))
         val arrived = time.now()
 
         val result = run()
 
         assertEquals(Outcome.BOOKED, result.outcome)
-        assertTrue(app.registerTappedAtMs!! < t0, "should not wait for T0 when already open")
+        assertTrue("should not wait for T0 when already open", app.registerTappedAtMs!! < t0)
         assertTrue(app.registerTappedAtMs!! - arrived < 10_000)
     }
 
     @Test
     fun `refreshes from the top of the list when the card does not flip by itself`() {
         app.flipsByItself = false
-        // Two earlier classes push ours below the fold, so a pull without first
+        // Two earlier favourites push ours below the fold, so a pull without first
         // scrolling to the top would not refresh anything.
         app.add(
-            "19.11",
             cls(id = "a", name = "פלדנקרייז", start = "07:15", end = "08:05"),
             cls(id = "b", name = "יוגה", start = "07:30", end = "08:25"),
             cls(),
@@ -107,7 +114,7 @@ class AppDriverTest {
 
     @Test
     fun `gives up when the window never opens and taps nothing`() {
-        app.add("19.11", cls(opensAt = t0 + 3_600_000))
+        app.add(cls(opensAt = t0 + 3_600_000))
 
         val result = run()
 
@@ -116,14 +123,47 @@ class AppDriverTest {
         assertTrue(time.now() >= t0 + Schedule.GIVE_UP_AFTER_SECONDS * 1000)
     }
 
-    // ------------------------------------------------------------- the card --
+    // ------------------------------------------------- favourites, not timetable --
+
+    @Test
+    fun `goes to the favourites and never opens the full timetable`() {
+        app.add(cls())
+
+        run()
+
+        assertEquals(listOf("favorites"), app.subtabsOpened)
+    }
+
+    @Test
+    fun `a class that is not a favourite is not booked, even though it is on the timetable`() {
+        val notFavourite = cls(favorite = false)
+        app.add(notFavourite)
+
+        val result = run()
+
+        assertEquals(Outcome.NOT_FOUND, result.outcome)
+        assertFalse(notFavourite.registered)
+    }
+
+    @Test
+    fun `the same weekly class on two dates - the right date is booked`() {
+        val thisWeek = cls(id = "w1")
+        val nextWeek = cls(id = "w2", date = "26/11")
+        app.add(thisWeek, nextWeek)
+
+        val result = run(plan(date = LocalDate.of(2026, 11, 26)))
+
+        assertEquals(result.steps.joinToString("\n"), Outcome.BOOKED, result.outcome)
+        assertTrue(nextWeek.registered)
+        assertFalse(thisWeek.registered)
+    }
 
     @Test
     fun `two classes at the same time are told apart by name`() {
-        // The 19/11 screenshot: פילאטיס מכשירים 08:30 (full) above התעמלות בונה עצם 08:30.
+        // The 19/11 screenshot: פילאטיס מכשירים 08:30 (full) next to התעמלות בונה עצם 08:30.
         val pilates = cls(id = "pilates", name = "פילאטיס מכשירים", end = "09:20", full = true)
         val bone = cls()
-        app.add("19.11", pilates, bone)
+        app.add(pilates, bone)
 
         val result = run()
 
@@ -136,7 +176,7 @@ class AppDriverTest {
     fun `a class ending at the start time is not mistaken for one starting then`() {
         val earlier = cls(id = "early", name = "HIIT", start = "07:40", end = "08:30")
         val target = cls(id = "target", name = "HIIT", start = "08:30", end = "09:20")
-        app.add("19.11", earlier, target)
+        app.add(earlier, target)
 
         run(plan(name = "HIIT"))
 
@@ -146,26 +186,9 @@ class AppDriverTest {
 
     @Test
     fun `a banner mentioning the class is not taken for its card`() {
-        app.add("19.11", cls(id = "p", name = "פילאטיס מכשירים", end = "09:20"))
+        app.add(cls(id = "p", name = "פילאטיס מכשירים", end = "09:20"))
         val result = run(plan(name = "פילאטיס מכשירים"))
         assertEquals(Outcome.BOOKED, result.outcome)
-    }
-
-    @Test
-    fun `scrolls the day strip to reach a later day`() {
-        app.add("25.11", cls()) // sixth chip; only five are visible
-
-        val result = run(plan(day = "25.11"))
-
-        assertEquals(result.steps.joinToString("\n"), Outcome.BOOKED, result.outcome)
-        assertEquals("25.11", app.selectedDay)
-    }
-
-    @Test
-    fun `selects the timetable sub-tab even when spelt with gershayim`() {
-        app.add("19.11", cls())
-        run()
-        assertTrue(app.subtabClicked)
     }
 
     // ----------------------------------------------------------- the seats --
@@ -174,7 +197,7 @@ class AppDriverTest {
     fun `gray seats are skipped without being tapped`() {
         val c = cls()
         c.seats[12] = SeatState.TAKEN
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run()
 
@@ -186,7 +209,7 @@ class AppDriverTest {
     fun `a taken seat that is still tappable is caught by the continue button`() {
         val c = cls()
         c.seats[12] = SeatState.TAKEN_BUT_TAPPABLE
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run()
 
@@ -201,7 +224,7 @@ class AppDriverTest {
         c.seats[2] = SeatState.FREE
         c.seats[4] = SeatState.FREE
         c.seats[30] = SeatState.FREE
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run(plan(seats = listOf(12, 13)))
 
@@ -211,23 +234,15 @@ class AppDriverTest {
 
     @Test
     fun `a preferred seat far down the list is scrolled to`() {
-        val c = cls()
-        app.add("19.11", c)
-
-        val result = run(plan(seats = listOf(40)))
-
-        assertEquals(40, result.seat)
+        app.add(cls())
+        assertEquals(40, run(plan(seats = listOf(40))).seat)
     }
 
     @Test
     fun `a seat lost at confirm moves on to the next preference`() {
         app.stolenOnConfirm += 12
-        val c = cls()
-        app.add("19.11", c)
-
-        val result = run()
-
-        assertEquals(13, result.seat)
+        app.add(cls())
+        assertEquals(13, run().seat)
     }
 
     @Test
@@ -235,7 +250,7 @@ class AppDriverTest {
         val c = cls()
         c.seats[12] = SeatState.TAKEN
         c.seats[13] = SeatState.TAKEN
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run(plan(fallback = SeatFallback.NONE))
 
@@ -249,7 +264,7 @@ class AppDriverTest {
     @Test
     fun `a full class joins the waitlist when allowed`() {
         val c = cls(full = true)
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run()
 
@@ -260,7 +275,7 @@ class AppDriverTest {
     @Test
     fun `a full class is left alone when the waitlist is off`() {
         val c = cls(full = true)
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run(plan(waitlist = false))
 
@@ -269,12 +284,64 @@ class AppDriverTest {
         assertFalse(Labels.WAITLIST in app.taps)
     }
 
+    // -------------------------------------------------------------- sync --
+
+    @Test
+    fun `sync reads every favourite, scrolling, and nothing else`() {
+        app.add(
+            cls(id = "a", name = "פלדנקרייז", start = "07:15", end = "08:05"),
+            cls(id = "b"),
+            cls(id = "c", name = "HIIT", date = "20/11", dayName = "שישי", start = "18:30", end = "19:25"),
+            cls(id = "d", name = "BODY POWER", date = "25/11", dayName = "רביעי", start = "19:10", end = "20:00"),
+            cls(id = "e", name = "ספינינג", start = "20:20", end = "21:05", favorite = false),
+        )
+
+        val sync = AppDriver(app, time).readFavorites()
+
+        assertTrue(sync.steps.joinToString("\n"), sync.complete)
+        assertEquals(setOf("פלדנקרייז", "התעמלות בונה עצם", "HIIT", "BODY POWER"), sync.cards.map { it.className }.toSet())
+        val bodyPower = sync.cards.first { it.className == "BODY POWER" }
+        assertEquals(LocalDate.of(2026, 11, 25), bodyPower.date)
+        assertEquals(LocalTime.of(19, 10), bodyPower.start)
+        assertEquals(Labels.REMINDER, bodyPower.action)
+        assertTrue("sync taps nothing but navigation", app.taps.none { it == Labels.REMINDER || it == Labels.REGISTER })
+    }
+
+    @Test
+    fun `sync reads the opening time off the card, whichever way round it is printed`() {
+        app.openingTimeFirst = true
+        app.add(cls())
+
+        val card = AppDriver(app, time).readFavorites().cards.single()
+
+        assertEquals(ZonedDateTime.of(classDate, LocalTime.of(3, 30), Schedule.ISRAEL), card.opensAt)
+    }
+
+    @Test
+    fun `sync sees an already registered class by its unknown button`() {
+        val c = cls()
+        c.registered = true
+        app.add(c)
+
+        val card = AppDriver(app, time).readFavorites().cards.single()
+
+        assertNull(card.action)
+        assertEquals("ביטול הרשמה", card.actionText)
+    }
+
+    @Test
+    fun `an empty favourites read is never trusted as complete`() {
+        val sync = AppDriver(app, time).readFavorites()
+        assertTrue(sync.cards.isEmpty())
+        assertFalse("a list that failed to load looks the same as an empty one", sync.complete)
+    }
+
     // ------------------------------------------------------------ the rest --
 
     @Test
     fun `a rehearsal reaches the card and touches nothing`() {
         val c = cls()
-        app.add("19.11", c)
+        app.add(c)
 
         val result = run(rehearsal = true)
 
@@ -291,18 +358,11 @@ class AppDriverTest {
     }
 
     @Test
-    fun `a class that is not on that day is reported`() {
-        app.add("19.11", cls(name = "ספינינג"))
-        assertEquals(Outcome.NOT_FOUND, run().outcome)
-    }
-
-    @Test
     fun `every run explains itself step by step`() {
-        app.add("19.11", cls())
+        app.add(cls())
         val steps = run().steps
+        assertTrue(steps.any { it == "opened '${Labels.SUBTAB_FAVORITES}'" })
         assertTrue(steps.any { it.startsWith("tapped '${Labels.REGISTER}' at T0+") })
         assertTrue(steps.any { it == "seat 12 confirmed" })
     }
-
-    private fun assertTrue(condition: Boolean, message: String) = assertTrue(message, condition)
 }

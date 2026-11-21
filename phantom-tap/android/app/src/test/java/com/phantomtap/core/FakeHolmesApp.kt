@@ -13,10 +13,14 @@ enum class SeatState { FREE, TAKEN, TAKEN_BUT_TAPPABLE }
 class FakeClass(
     val id: String,
     val name: String,
+    /** As the card prints it: dd/MM. */
+    val date: String,
+    val dayName: String,
     val start: String,
     val end: String,
     val opensAtMs: Long,
     var full: Boolean = false,
+    var favorite: Boolean = true,
     val seats: MutableMap<Int, SeatState> = (1..48).associateWith { SeatState.FREE }.toMutableMap(),
 ) {
     var registered = false
@@ -27,46 +31,55 @@ class FakeClass(
 /**
  * The Holmes Place app as the screenshots show it, for the driver to operate.
  *
- *  - bottom navigation with "שיעורי סטודיו"; a "לו״ז שיעורים" sub-tab (spelt with
- *    the Hebrew gershayim, to prove the driver copes with it)
- *  - a right-to-left strip of day chips, five visible at a time
- *  - a class list, two cards visible at a time, plus a banner that mentions a
- *    class name but is not a card
- *  - each card: "חמישי | 19/11 | 08:30 - 09:20", the name, the instructor, and an
- *    action: "תזכורת" before the window, "הרשמה" from it, "הרשמה להמתנה" if full
+ *  - bottom navigation with "שיעורי סטודיו"
+ *  - three sub-tabs: "לו״ז שיעורים" (spelt with the Hebrew gershayim), "מועדפים",
+ *    "מוזמנים", the selected one marked as selected
+ *  - "מועדפים": every favourite class across dates, two cards per screen. Each
+ *    card: "חמישי | 19/11 | 08:30 - 09:25", the name, "instructor / studio", the
+ *    capacity numbers, "פתיחת הרשמה: 19/11 03:30" while closed, and the action -
+ *    "תזכורת" before the window, "הרשמה" from it, "הרשמה להמתנה" when full,
+ *    "ביטול הרשמה" once registered (a label the driver does not know)
+ *  - "לו״ז שיעורים": every class, favourite or not - the driver must never use it
  *  - "בחירת מקום": seats 1-48 in a list showing eight rows; taken seats listed but
  *    disabled (gray) or, optionally, tappable but unselectable; "המשך" disabled
  *    until a free seat is selected
  */
 class FakeHolmesApp(private val time: VirtualTime) : Screen {
-    val days = listOf("19.11", "20.11", "21.11", "22.11", "23.11", "24.11", "25.11", "26.11")
-    private val dayNames = listOf("חמישי", "שישי", "שבת", "ראשון", "שני", "שלישי", "רביעי", "חמישי")
-    val classes = mutableMapOf<String, MutableList<FakeClass>>()
+    val classes = mutableListOf<FakeClass>()
 
     var foreground: String? = "com.sec.android.app.launcher"
     var launchWorks = true
-    /** If false, the card only flips after a pull-to-refresh past T0. */
+    /** If false, a card only flips after a pull-to-refresh past its opening. */
     var flipsByItself = true
+    /** Print the opening line time-first, as right-to-left rendering may. */
+    var openingTimeFirst = false
+    /** Model an app that does not expose which sub-tab is selected. */
+    var exposesSelection = true
 
     var tab = "home"
-    var subtabClicked = false
-    var stripOffset = 0
-    var selectedDay: String? = null
+    var subtab = "schedule"
+    val subtabsOpened = mutableListOf<String>()
     var listOffset = 0
     var seatDialog: FakeClass? = null
     var seatOffset = 0
     var selectedSeat: Int? = null
-    var refreshedAfterOpen = mutableSetOf<String>()
+    private val refreshedAfterOpen = mutableSetOf<String>()
     var refreshes = 0
     /** Seats someone else takes the moment we confirm them - a lost race for the seat. */
-    var stolenOnConfirm = mutableSetOf<Int>()
+    val stolenOnConfirm = mutableSetOf<Int>()
 
     val taps = mutableListOf<String>()
     var registerTappedAtMs: Long? = null
 
-    fun add(day: String, vararg cls: FakeClass) {
-        classes.getOrPut(day) { mutableListOf() }.addAll(cls)
+    fun add(vararg cls: FakeClass) {
+        classes.addAll(cls)
     }
+
+    private fun visibleList(): List<FakeClass> = when (subtab) {
+        "favorites" -> classes.filter { it.favorite }
+        "booked" -> classes.filter { it.registered }
+        else -> classes
+    }.sortedWith(compareBy({ it.date.split("/").reversed().joinToString() }, { it.start }))
 
     private fun action(c: FakeClass): String = when {
         c.registered -> "ביטול הרשמה"
@@ -75,6 +88,14 @@ class FakeHolmesApp(private val time: VirtualTime) : Screen {
         !flipsByItself && c.id !in refreshedAfterOpen -> Labels.REMINDER
         c.full -> Labels.WAITLIST
         else -> Labels.REGISTER
+    }
+
+    private fun openingLine(c: FakeClass): String? {
+        if (time.now() >= c.opensAtMs) return null
+        val at = java.time.Instant.ofEpochMilli(c.opensAtMs).atZone(Schedule.ISRAEL)
+        val d = "%02d/%02d".format(at.dayOfMonth, at.monthValue)
+        val t = "%02d:%02d".format(at.hour, at.minute)
+        return if (openingTimeFirst) "פתיחת הרשמה: $t $d" else "פתיחת הרשמה: $d $t"
     }
 
     // ---------------------------------------------------------------- Screen --
@@ -101,35 +122,34 @@ class FakeHolmesApp(private val time: VirtualTime) : Screen {
         )
         if (tab != "studio") return Node(null, children = listOf(Node("ברוכים הבאים"), nav))
 
-        val chips = days.indices.drop(stripOffset).take(5).map { i ->
-            Node("${dayNames[i]} ${days[i]}", clickable = true, ref = "chip:${days[i]}")
-        }
-        val strip = Node(null, scrollable = true, bounds = Bounds(0, 300, 1080, 450), children = chips, ref = "strip")
-
-        val todays = classes[selectedDay].orEmpty()
-        val banner = Node("BLACK NOVEMBER - פילאטיס מכשירים 5 אימונים", ref = "banner")
-        val cards = todays.drop(listOffset).take(2).map { c ->
+        fun sub(label: String, key: String) =
+            Node(label, clickable = true, selected = exposesSelection && subtab == key, ref = "subtab:$key")
+        val subtabs = Node(
+            null,
+            children = listOf(
+                sub("לו״ז שיעורים", "schedule"),
+                sub(Labels.SUBTAB_FAVORITES, "favorites"),
+                sub(Labels.SUBTAB_BOOKED, "booked"),
+            ),
+        )
+        val cards = visibleList().drop(listOffset).take(2).map { c ->
             Node(
                 null,
-                children = listOf(
-                    Node("חמישי | 19/11 | ${c.start} - ${c.end}"),
+                children = listOfNotNull(
+                    Node("${c.dayName} | ${c.date} | ${c.start} - ${c.end}"),
                     Node(c.name),
                     Node("סיון אריאלי / סטודיו 1"),
+                    Node("45"),
+                    Node("38"),
+                    openingLine(c)?.let { Node(it) },
                     Node(action(c), clickable = true, ref = "action:${c.id}"),
                 ),
             )
         }
+        val banner = Node("BLACK NOVEMBER - פילאטיס מכשירים 5 אימונים", ref = "banner")
         val listChildren = (if (listOffset == 0) listOf(banner) else emptyList()) + cards
         val list = Node(null, scrollable = true, bounds = Bounds(0, 500, 1080, 2000), children = listChildren, ref = "list")
-        val subtabs = Node(
-            null,
-            children = listOf(
-                Node("לו״ז שיעורים", clickable = true, ref = "subtab"),
-                Node("מועדפים", clickable = true),
-                Node("מוזמנים", clickable = true),
-            ),
-        )
-        return Node(null, children = listOf(Node("הולמס פלייס מודיעין"), subtabs, strip, list, nav))
+        return Node(null, children = listOf(Node("הולמס פלייס מודיעין"), subtabs, list, nav))
     }
 
     private fun seatDialogTree(c: FakeClass): Node {
@@ -152,13 +172,13 @@ class FakeHolmesApp(private val time: VirtualTime) : Screen {
         taps += node.label ?: ref
         when {
             ref == "tab:studio" -> tab = "studio"
-            ref == "subtab" -> subtabClicked = true
-            ref.startsWith("chip:") -> {
-                selectedDay = ref.removePrefix("chip:")
+            ref.startsWith("subtab:") -> {
+                subtab = ref.removePrefix("subtab:")
+                subtabsOpened += subtab
                 listOffset = 0
             }
             ref.startsWith("action:") -> {
-                val c = classes.values.flatten().first { it.id == ref.removePrefix("action:") }
+                val c = classes.first { it.id == ref.removePrefix("action:") }
                 when (node.label) {
                     Labels.REGISTER -> {
                         registerTappedAtMs = time.now()
@@ -194,8 +214,7 @@ class FakeHolmesApp(private val time: VirtualTime) : Screen {
     override fun scroll(node: Node, forward: Boolean): Boolean {
         val step = if (forward) 1 else -1
         return when (node.ref) {
-            "strip" -> moveTo(stripOffset, stripOffset + step, days.size - 5) { stripOffset = it }
-            "list" -> moveTo(listOffset, listOffset + step, classes[selectedDay].orEmpty().size - 2) { listOffset = it }
+            "list" -> moveTo(listOffset, listOffset + step, visibleList().size - 2) { listOffset = it }
             "seats" -> moveTo(seatOffset, seatOffset + 4 * step, 48 - 8) { seatOffset = it }
             else -> false
         }
@@ -215,7 +234,7 @@ class FakeHolmesApp(private val time: VirtualTime) : Screen {
             return false
         }
         refreshes++
-        classes[selectedDay].orEmpty().filter { time.now() >= it.opensAtMs }.forEach { refreshedAfterOpen += it.id }
+        classes.filter { time.now() >= it.opensAtMs }.forEach { refreshedAfterOpen += it.id }
         return true
     }
 }

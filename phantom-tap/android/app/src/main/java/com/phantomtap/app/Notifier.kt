@@ -7,8 +7,10 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import com.phantomtap.R
+import com.phantomtap.core.Booking
 import com.phantomtap.core.DriveResult
 import com.phantomtap.core.Outcome
+import java.time.format.DateTimeFormatter
 
 /** Every message the user sees outside the app. Hebrew, short, and actionable. */
 object Notifier {
@@ -18,6 +20,8 @@ object Notifier {
     const val ID_SERVICE = 1
     private const val ID_UNLOCK = 2
     private const val ID_PROBLEM = 3
+    private const val ID_ADDED = 4
+    private val WHEN: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
     private var resultId = 100
 
     fun ensureChannels(context: Context) {
@@ -89,11 +93,21 @@ object Notifier {
             Outcome.FULL -> "❌ $label מלא" to "רשימת ההמתנה כבויה בהגדרות השיעור"
             Outcome.SEAT_UNAVAILABLE -> "⚠️ $label: אין מקום מהרשימה שלך" to "כדאי לבדוק באפליקציה אם ההרשמה הושלמה"
             Outcome.NOT_OPENED -> "❌ ההרשמה ל$label לא נפתחה" to "הכפתור נשאר 'תזכורת' גם 90 שניות אחרי המועד"
-            Outcome.NOT_FOUND -> "❌ לא נמצא $label" to result.detail
+            Outcome.NOT_FOUND -> "❌ $label לא נמצא במועדפים" to result.detail
             Outcome.REHEARSED -> "🧪 בדיקה ל$label הצליחה" to result.detail
             Outcome.FAILED -> "❌ ההרשמה ל$label נכשלה" to result.detail
         }
         post(context, resultId++, title, text)
+    }
+
+    /** New favourites picked up - so the user knows each heart was seen. */
+    fun added(context: Context, bookings: List<Booking>) {
+        ensureChannels(context)
+        val title = if (bookings.size == 1) "נוסף שיעור מהמועדפים" else "נוספו ${bookings.size} שיעורים מהמועדפים"
+        val text = bookings.joinToString("\n") { b ->
+            "${b.label} · ההרשמה נפתחת ${WHEN.format(b.opensAt)}"
+        }
+        post(context, ID_ADDED, title, text)
     }
 
     fun problem(context: Context, title: String, text: String) {

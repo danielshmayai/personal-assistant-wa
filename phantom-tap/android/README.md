@@ -1,9 +1,14 @@
 # phantom-tap for Android
 
-Books a Holmes Place class **from the phone itself**, by operating the Holmes
-Place app the way you would: open it, find the class, wait while the button says
-"תזכורת", tap "הרשמה" the moment it appears, pick the first red (free) seat in
-your order, tap "המשך".
+Books your **❤️ favourite** Holmes Place classes **from the phone itself**, by
+operating the Holmes Place app the way you would: open "מועדפים", find the class,
+wait while the button says "תזכורת", tap "הרשמה" the moment it appears, pick the
+first red (free) seat in your order, tap "המשך".
+
+**The favourites are the only source.** Nothing is typed into phantom-tap: heart
+a class in the Holmes Place app and phantom-tap picks it up, reads its
+"פתיחת הרשמה" time off the card, and arms an alarm. Un-heart it and the booking
+is dropped. The full timetable ("לו״ז שיעורים") is never used.
 
 ## Why this, and not the PC version
 
@@ -33,11 +38,23 @@ locked, that booking is missed, and the result notification says so.
    The service is scoped to `com.holmesplace` only (see
    `app/src/main/res/xml/accessibility_service_config.xml`): it cannot see or
    touch any other app.
-5. Add a class: name exactly as the app shows it, weekday, start time, seats in
-   order of preference.
-6. Press **בדיקה** (rehearsal). It opens Holmes Place and drives all the way to
-   the class card **without registering**, then reports what it found. Do this
-   once per class before relying on it.
+5. Set your seat order once, for all classes ("עריכת מקומות").
+6. Heart classes in the Holmes Place app, then press **סנכרון מועדפים**. It opens
+   Holmes Place, reads the favourites tab and lists what it found.
+7. Press **בדיקה** (rehearsal) on a class. It drives all the way to its card
+   **without registering**, then reports what it found.
+
+## When the favourites are read
+
+| When | What it may do |
+|---|---|
+| "סנכרון מועדפים" button | add, update, and remove un-hearted classes |
+| right after every booking (phone already unlocked) | the same |
+| whenever you look at the favourites tab yourself | add and update only - never remove, since what is off screen is unknown, not gone |
+
+An empty read is never trusted to mean "nothing is a favourite any more": a
+list that failed to load looks exactly the same. "לא להירשם" on a class keeps it
+from being booked without it reappearing at the next sync.
 
 On Samsung, also: Settings → Battery → Background usage limits → **Never
 sleeping apps** → add phantom-tap.
@@ -52,15 +69,15 @@ sleeping apps** → add phantom-tap.
   it are spent watching only; if it has not flipped by then, the list is refreshed
   (from its top - pull-to-refresh only works there) every 1.5 s, for up to 90 s.
 - "תזכורת" is never tapped: it sets a reminder, it does not register.
-- The opening time is the class start minus 5 hours - true for every class seen.
-  It is adjustable per class, and early-morning classes are worth checking:
-  a 07:15 class would open at 02:15.
+- The opening time is read off the card ("פתיחת הרשמה: 25/11 14:10"). Only if a
+  card does not show it is the class start minus 5 hours used, and the app marks
+  that time as estimated.
 
 ## Build
 
 ```bash
 ./gradlew :app:assembleDebug        # -> app/build/outputs/apk/debug/app-debug.apk
-./gradlew :app:testDebugUnitTest    # 40 tests
+./gradlew :app:testDebugUnitTest    # 49 tests
 ```
 
 Needs JDK 17+ and the Android SDK (`sdk.dir` in `local.properties`, or
@@ -70,8 +87,9 @@ Needs JDK 17+ and the Android SDK (`sdk.dir` in `local.properties`, or
 
 ```
 core/   pure Kotlin, no Android - all the decisions, all unit-tested
-  AppDriver   the booking flow, over an abstract Screen
-  Schedule    which window is next, and when to wake
+  AppDriver   the booking flow and the favourites read, over an abstract Screen
+  Favorites   reading cards off the screen; reconciling them with the bookings
+  Schedule    timing constants
   SeatPlan    seat order when the preferred ones are gone
   TrueClock   SNTP offset, to know the true minute
 app/    the Android shell around it
@@ -82,11 +100,16 @@ app/    the Android shell around it
 ```
 
 The core is tested against `FakeHolmesApp`, a model of the screens in the
-user's screenshots (RTL day strip, cards, red/gray seats, a disabled "המשך").
+user's screenshots (sub-tabs, favourites cards across dates, red/gray seats, a
+disabled "המשך", and a registered card whose button the driver does not know).
 
 ## Known unknowns, to settle on the phone with **בדיקה**
 
 - Whether the app exposes its labels to accessibility as separate elements. If
-  a card is one merged element, the rehearsal will report the card not found.
+  a card is one merged element, the sync will find no classes.
+- Whether the app marks the selected sub-tab as selected. If not, the passive
+  read never triggers; the button and the after-booking sync still work.
+- What a registered favourite's button says. Anything other than the three known
+  actions is treated as "already handled" and not booked.
 - Whether a registration is kept if the seat is never confirmed. Until known,
   that case is reported as "check the app", never as a booking.

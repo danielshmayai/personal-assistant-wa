@@ -139,3 +139,39 @@ retry - re-firing phase 1 risks cancelling the registration we just won.
 - If the device is not rooted, installing a system-trusted CA is not possible on
   Android 7+. Then `pt capture` cannot see the traffic and Milestone 1 degrades
   to the UI path until a rooted/Magisk device or an emulator is available.
+
+---
+
+# Android app, revision 2: favorites are the only source
+
+## Request (2026-11-21)
+"It still adds classes by scrolling in לו"ז שיעורים. I want it to add classes
+that don't exist yet, only from the favourites."
+
+## What changes
+1. **Source of truth = the ❤️ favourites in the Holmes Place app.** Manual entry of
+   weekly classes (name/day/time) in phantom-tap is removed.
+2. **Navigation = the "מועדפים" tab.** No day strip, no scrolling the full
+   timetable. Each favourites card carries its own date, so the right occurrence is
+   found by name + date + start time.
+3. **T0 is read from the card**: "פתיחת הרשמה: dd/MM HH:mm". The 5h rule stays
+   only as a fallback when a card does not show it.
+4. **Sync** reads the whole favourites list and reconciles:
+   - favourite not known yet, not registered  -> add, arm an alarm
+   - known, opening time changed              -> update, re-arm
+   - known, no longer a favourite (un-hearted) -> drop, cancel the alarm
+   - already registered                       -> skip
+5. **When sync runs** (it opens Holmes Place, so the phone must be unlocked):
+   - a "סנכרון מועדפים" button in phantom-tap
+   - automatically at the end of every booking run (phone already unlocked)
+   - passively, whenever the user is looking at the favourites tab themselves -
+     add/update only from what is visible; never remove on a partial view
+6. **Seat preferences** per class name, with one default list for all classes.
+
+## Files
+core/  FavoriteCard parser (pure, tested), Booking model, AppDriver: favourites
+       navigation + sync mode, SeatPlan unchanged
+app/   Storage (bookings + class prefs), BookingScheduler (alarm per booking),
+       BookingService (sync after run), HolmesA11yService (passive read),
+       MainActivity (sync button, discovered classes, seat prefs)
+tests  FakeHolmesApp gains a favourites tab; parser + reconcile + driver tests
