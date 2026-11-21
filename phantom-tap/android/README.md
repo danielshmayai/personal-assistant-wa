@@ -59,6 +59,28 @@ from being booked without it reappearing at the next sync.
 On Samsung, also: Settings → Battery → Background usage limits → **Never
 sleeping apps** → add phantom-tap.
 
+## Stopping it
+
+| How | Reach | Effect |
+|---|---|---|
+| "עצור הכל" on any phantom-tap notification | the notification shade | stops the running session within one poll (80 ms) and switches the automation off |
+| Quick Settings tile "phantom-tap" | the shade, even while the screen is being driven | the same; tap again to switch back on |
+| the switch at the top of the app | the app | the same |
+| Settings → Accessibility → phantom-tap → off | system settings | nothing can tap at all |
+
+Off means off: the running session ends, every alarm is cancelled, nothing is
+read in the background, and nothing restarts until it is switched back on.
+A stopped class is never retried by itself - "נסה שוב" in the app does that.
+
+It also stops **itself**, and says why, when something looks like a bug:
+
+- more than 6 sessions in an hour - a healthy week is a handful;
+- a single session running longer than 6 minutes.
+
+Every booking attempt is marked as attempted *before* it starts. Without that, a
+run that failed before starting left its class pending, and the class was
+re-armed one second out, over and over, until its window closed.
+
 ## How the timing works
 
 - An `AlarmManager.setAlarmClock` alarm fires two minutes before each window.
@@ -77,7 +99,7 @@ sleeping apps** → add phantom-tap.
 
 ```bash
 ./gradlew :app:assembleDebug        # -> app/build/outputs/apk/debug/app-debug.apk
-./gradlew :app:testDebugUnitTest    # 49 tests
+./gradlew :app:testDebugUnitTest    # 57 tests
 ```
 
 Needs JDK 17+ and the Android SDK (`sdk.dir` in `local.properties`, or
@@ -90,6 +112,7 @@ core/   pure Kotlin, no Android - all the decisions, all unit-tested
   AppDriver   the booking flow and the favourites read, over an abstract Screen
   Favorites   reading cards off the screen; reconciling them with the bookings
   Schedule    timing constants
+  Safety      stopping a session mid-run; the runaway guard
   SeatPlan    seat order when the preferred ones are gone
   TrueClock   SNTP offset, to know the true minute
 app/    the Android shell around it

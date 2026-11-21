@@ -73,6 +73,26 @@
             android:name=".app.AlarmReceiver"
             android:exported="false" />
 
+        <!-- "עצור הכל" on the notifications. Not exported: only our own PendingIntent reaches it. -->
+        <receiver
+            android:name=".app.StopReceiver"
+            android:exported="false" />
+
+        <!-- Quick Settings on/off: in reach even while phantom-tap drives the screen. -->
+        <service
+            android:name=".app.KillSwitchTile"
+            android:exported="true"
+            android:icon="@drawable/ic_stat"
+            android:label="phantom-tap"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
         <receiver
             android:name=".app.BootReceiver"
             android:exported="true">

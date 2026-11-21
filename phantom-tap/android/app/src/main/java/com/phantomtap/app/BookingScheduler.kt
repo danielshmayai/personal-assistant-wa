@@ -25,6 +25,7 @@ object BookingScheduler {
     private const val ACTION_RACE = "com.phantomtap.RACE"
 
     fun rescheduleAll(context: Context) {
+        if (!Automation.isEnabled(context)) return cancelAll(context)
         val now = System.currentTimeMillis()
         for (booking in BookingStore(context).all()) {
             val stillDue = booking.giveUpAt.toInstant().toEpochMilli() > now
@@ -51,6 +52,10 @@ object BookingScheduler {
         context.getSystemService(AlarmManager::class.java)
             .setAlarmClock(AlarmManager.AlarmClockInfo(at, show), alarmIntent(context, booking.key))
         return true
+    }
+
+    fun cancelAll(context: Context) {
+        BookingStore(context).all().forEach { cancel(context, it.key) }
     }
 
     fun cancel(context: Context, key: String) {
@@ -90,6 +95,7 @@ object FavoritesSync {
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val key = intent.getStringExtra(BookingScheduler.EXTRA_KEY) ?: return
+        if (!Automation.isEnabled(context)) return // an alarm that slipped past a cancel
         BookingService.race(context, key, rehearsal = false)
     }
 }

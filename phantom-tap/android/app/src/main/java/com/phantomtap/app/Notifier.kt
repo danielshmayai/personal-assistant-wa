@@ -21,6 +21,7 @@ object Notifier {
     private const val ID_UNLOCK = 2
     private const val ID_PROBLEM = 3
     private const val ID_ADDED = 4
+    private const val ID_DISABLED = 5
     private val WHEN: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
     private var resultId = 100
 
@@ -45,13 +46,26 @@ object Notifier {
         PendingIntent.FLAG_IMMUTABLE,
     )
 
+    /** "עצור הכל": stops the running session and switches the automation off. */
+    private fun stopAction(context: Context): Notification.Action = Notification.Action.Builder(
+        null,
+        "עצור הכל",
+        PendingIntent.getBroadcast(
+            context,
+            0,
+            Intent(context, StopReceiver::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        ),
+    ).build()
+
     fun service(context: Context, label: String): Notification =
         Notification.Builder(context, CH_SERVICE)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("נרשם ל$label")
+            .setContentTitle(label)
             .setContentText("phantom-tap מפעיל את אפליקציית הולמס פלייס")
             .setOngoing(true)
             .setContentIntent(openApp(context))
+            .addAction(stopAction(context))
             .build()
 
     /**
@@ -76,6 +90,7 @@ object Notifier {
             .setCategory(Notification.CATEGORY_ALARM)
             .setFullScreenIntent(fullScreen, true)
             .setContentIntent(fullScreen)
+            .addAction(stopAction(context))
             .setAutoCancel(true)
             .build()
         context.getSystemService(NotificationManager::class.java).notify(ID_UNLOCK, notification)
@@ -95,6 +110,7 @@ object Notifier {
             Outcome.NOT_OPENED -> "❌ ההרשמה ל$label לא נפתחה" to "הכפתור נשאר 'תזכורת' גם 90 שניות אחרי המועד"
             Outcome.NOT_FOUND -> "❌ $label לא נמצא במועדפים" to result.detail
             Outcome.REHEARSED -> "🧪 בדיקה ל$label הצליחה" to result.detail
+            Outcome.STOPPED -> "⏹️ $label נעצר" to result.detail
             Outcome.FAILED -> "❌ ההרשמה ל$label נכשלה" to result.detail
         }
         post(context, resultId++, title, text)
@@ -108,6 +124,16 @@ object Notifier {
             "${b.label} · ההרשמה נפתחת ${WHEN.format(b.opensAt)}"
         }
         post(context, ID_ADDED, title, text)
+    }
+
+    /** Switched off - by the user or by the guard. Stays until switched back on. */
+    fun disabled(context: Context, reason: String) {
+        ensureChannels(context)
+        post(context, ID_DISABLED, "⏹️ phantom-tap מושבת", "$reason\nשום הרשמה לא תתבצע עד שתפעיל מחדש באפליקציה.")
+    }
+
+    fun cancelDisabled(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(ID_DISABLED)
     }
 
     fun problem(context: Context, title: String, text: String) {

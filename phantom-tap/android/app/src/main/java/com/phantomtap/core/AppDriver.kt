@@ -27,6 +27,9 @@ enum class Outcome {
     /** A rehearsal reached the class card and stopped, as intended. */
     REHEARSED,
 
+    /** Stopped from outside: the stop button, the kill switch, or the runaway guard. */
+    STOPPED,
+
     FAILED,
 }
 
@@ -99,7 +102,10 @@ class AppDriver(
     fun run(plan: DrivePlan, rehearsal: Boolean): DriveResult {
         steps.clear()
         return try {
+            (time as? StoppableTime)?.check()
             drive(plan, rehearsal)
+        } catch (e: Stopped) {
+            result(Outcome.STOPPED, detail = e.message ?: "stopped")
         } catch (e: Exception) {
             result(Outcome.FAILED, detail = "${e.javaClass.simpleName}: ${e.message}")
         }
@@ -114,7 +120,11 @@ class AppDriver(
     fun readFavorites(): SyncResult {
         steps.clear()
         return try {
+            (time as? StoppableTime)?.check()
             sync()
+        } catch (e: Stopped) {
+            step("sync stopped: ${e.message}")
+            SyncResult(emptyList(), complete = false, detail = "stopped: ${e.message}", steps = steps.toList())
         } catch (e: Exception) {
             step("sync failed: ${e.javaClass.simpleName}: ${e.message}")
             SyncResult(emptyList(), complete = false, detail = "${e.javaClass.simpleName}: ${e.message}", steps = steps.toList())

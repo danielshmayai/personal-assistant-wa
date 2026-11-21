@@ -14,6 +14,9 @@ import com.phantomtap.core.BookingStatus
 import com.phantomtap.core.DrivePlan
 import com.phantomtap.core.DriveResult
 import com.phantomtap.core.Outcome
+import com.phantomtap.core.RunawayGuard
+import com.phantomtap.core.StoppableTime
+import com.phantomtap.core.Stopped
 import com.phantomtap.core.TrueClock
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -29,6 +32,11 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Sessions are queued on one thread: there is one screen and one finger. Two
  * classes opening in the same minute are booked one after the other.
+ *
+ * Every session can be stopped from outside within one poll (see [stopAll]),
+ * runs at most [RunawayGuard.MAX_SESSION_MS], and must be admitted by
+ * [Automation.admitSession] - which refuses when switched off and switches
+ * everything off when sessions come too thick to be anything but a bug.
  */
 class BookingService : Service() {
     private val runs = Executors.newSingleThreadExecutor { Thread(it, "phantom-tap-run") }
@@ -55,6 +63,14 @@ class BookingService : Service() {
         val rehearsal = intent?.getBooleanExtra(EXTRA_REHEARSAL, false) == true
         pending.incrementAndGet()
         runs.execute {
+            // Asked here, on the session thread, so queued sessions are re-checked
+            // when their turn comes - a stop pressed meanwhile still holds.
+            if (!Automation.admitSession(this)) {
+                pending.decrementAndGet()
+                stopIfIdle()
+                return@execute
+            }
+            stopReason = null
             busy = true
             try {
                 if (syncOnly) sync() else race(booking!!.key, rehearsal)
@@ -85,6 +101,15 @@ class BookingService : Service() {
         val store = BookingStore(this)
         val booking = store.get(key) ?: return
         if (booking.status != BookingStatus.PENDING) return
+        if (!rehearsal) {
+            // Marked attempted before anything can go wrong. A booking still PENDING
+            // after a failed start was re-armed one second out, again and again,
+            // until its window closed - a runaway. Whatever happens now, it is
+            // attempted once; the user can retry it from the app.
+            store.edit { list ->
+                list.map { if (it.key == key) it.copy(status = BookingStatus.MISSED, detail = "הריצה לא הסתיימה") else it } to Unit
+            }
+        }
         withDriver(booking.label, deadlineMs = booking.opensAt.toInstant().toEpochMilli() + 60_000) { driver ->
             val result = driver.run(DrivePlan.from(booking, SeatPrefsStore(this).get()), rehearsal)
             if (!rehearsal) {
@@ -103,7 +128,8 @@ class BookingService : Service() {
 
             // The phone is unlocked and the app is open: the cheapest moment there
             // will be to pick up classes hearted since the last read.
-            if (!rehearsal) syncWith(driver, announce = false)
+            // Not after a stop: "stop" means stop, not "stop, then read the favourites".
+            if (!rehearsal && result.outcome != Outcome.STOPPED) syncWith(driver, announce = false)
         }
     }
 
@@ -144,9 +170,21 @@ class BookingService : Service() {
         val wake = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "phantomtap:run")
             .apply { acquire(WAKE_LIMIT_MS) }
+        val startedAt = System.currentTimeMillis()
+        var overran = false
         var a11y: HolmesA11yService? = null
         try {
-            val clock = TrueClock().also { if (!it.sync()) Log.w(TAG, "NTP unreachable; using the phone's clock") }
+            val trueClock = TrueClock().also { if (!it.sync()) Log.w(TAG, "NTP unreachable; using the phone's clock") }
+            // Every wait in the session goes through this: a stop, or a session that
+            // has run too long, ends it at the next poll wherever it is.
+            val clock = StoppableTime(trueClock) {
+                stopReason ?: if (System.currentTimeMillis() - startedAt > RunawayGuard.MAX_SESSION_MS) {
+                    overran = true
+                    "הריצה נמשכה יותר מ-${RunawayGuard.MAX_SESSION_MS / 60_000} דקות"
+                } else {
+                    null
+                }
+            }
             a11y = HolmesA11yService.instance ?: return fail(
                 label,
                 "שירות הנגישות של phantom-tap כבוי - הפעל אותו בהגדרות",
@@ -156,6 +194,9 @@ class BookingService : Service() {
             }
             a11y.keepScreenOn(true)
             body(AppDriver(A11yScreen(a11y), clock) { Log.i(TAG, it) })
+        } catch (e: Stopped) {
+            val result = DriveResult(Outcome.STOPPED, detail = e.message ?: "נעצר")
+            record(label, result)
         } catch (e: Exception) {
             Log.e(TAG, "session failed", e)
             fail(label, "${e.javaClass.simpleName}: ${e.message}")
@@ -165,20 +206,22 @@ class BookingService : Service() {
             if (wake.isHeld) wake.release()
             BookingScheduler.rescheduleAll(this)
         }
+        // A session that ran past its limit is a bug, not bad luck: stop everything.
+        if (overran) Automation.disable(this, "הושבת אוטומטית: ריצה נמשכה יותר מ-${RunawayGuard.MAX_SESSION_MS / 60_000} דקות")
     }
 
     /**
      * An accessibility service cannot act behind a secure lock screen, so wake the
      * screen and ask for an unlock, then wait for it - a late booking beats none.
      */
-    private fun ensureUnlocked(label: String, clock: TrueClock, deadlineMs: Long): Boolean {
+    private fun ensureUnlocked(label: String, clock: StoppableTime, deadlineMs: Long): Boolean {
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (!keyguard.isKeyguardLocked) return true
 
         Notifier.unlockPrompt(this, label)
         // Allowed from the background because the accessibility service is bound.
         runCatching { startActivity(Intent(this, UnlockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        while (keyguard.isKeyguardLocked && clock.now() < deadlineMs) Thread.sleep(250)
+        while (keyguard.isKeyguardLocked && clock.now() < deadlineMs) clock.sleep(250)
         Notifier.cancelUnlock(this)
         return !keyguard.isKeyguardLocked
     }
@@ -213,6 +256,15 @@ class BookingService : Service() {
         @Volatile
         var busy = false
             private set
+
+        /** Set to stop the running session; read at every poll through [StoppableTime]. */
+        @Volatile
+        private var stopReason: String? = null
+
+        /** Stop the running session now. New ones are kept out by [Automation]. */
+        fun stopAll(reason: String) {
+            stopReason = reason
+        }
 
         fun race(context: Context, key: String, rehearsal: Boolean) {
             context.startForegroundService(

@@ -62,7 +62,7 @@ class HolmesA11yService : AccessibilityService() {
      * read never removes a booking - only a full sync does.
      */
     private fun readFavouritesOnScreen() {
-        if (BookingService.busy) return
+        if (BookingService.busy || !Automation.isEnabled(this)) return
         runCatching {
             val root = A11yScreen(this).snapshot() ?: return
             if (!FavoritesParser.favoritesShowing(root)) return

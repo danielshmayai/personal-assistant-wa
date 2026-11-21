@@ -71,6 +71,8 @@ class MainActivity : Activity() {
             ),
         )
 
+        root.addView(killSwitch())
+
         root.addView(heading("מוכנות"))
         checks().forEach { root.addView(it) }
 
@@ -100,6 +102,38 @@ class MainActivity : Activity() {
         history.forEach { entry -> root.addView(historyRow(entry)) }
 
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    /**
+     * First thing on the screen, always: is anything allowed to run, and the one
+     * button that stops it all.
+     */
+    private fun killSwitch(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        setBackgroundColor(if (Automation.isEnabled(this@MainActivity)) 0x1A16A34A else 0x1ADC2626)
+        if (Automation.isEnabled(this@MainActivity)) {
+            addView(text("🟢 האוטומציה פעילה", 17f, bold = true))
+            addView(button("⏹️ עצור הכל") {
+                Automation.disable(this@MainActivity, "עצרת ידנית")
+                render()
+            })
+        } else {
+            addView(text("🔴 האוטומציה מושבתת - שום הרשמה לא תתבצע", 17f, bold = true))
+            Automation.disabledReason(this@MainActivity)?.let { addView(text(it, 14f)) }
+            addView(button("▶️ הפעל מחדש") {
+                Automation.enable(this@MainActivity)
+                render()
+            })
+        }
+        addView(
+            text(
+                "עצירה גם מכל התראה של phantom-tap (\"עצור הכל\"), ומאריח phantom-tap בהגדרות המהירות " +
+                    "(משיכה מלמעלה ← עריכה ← לגרור את phantom-tap). הוא עובד גם כשהמסך עסוק. " +
+                    "עצירה מוחלטת: הגדרות ← נגישות ← phantom-tap ← כבוי.",
+                12f,
+            ),
+        )
     }
 
     private fun checks(): List<View> {
@@ -163,8 +197,13 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6), 0, dp(6))
             addView(text("$status · ${booking.label}$detail", 14f))
-            if (booking.status == BookingStatus.SKIPPED && booking.classStart.isAfter(java.time.ZonedDateTime.now(Schedule.ISRAEL))) {
-                addView(button("כן להירשם") { restore(booking) })
+            val upcoming = booking.classStart.isAfter(java.time.ZonedDateTime.now(Schedule.ISRAEL))
+            when {
+                !upcoming -> Unit
+                booking.status == BookingStatus.SKIPPED -> addView(button("כן להירשם") { restore(booking) })
+                // A stopped or failed attempt is never retried on its own - that is
+                // how a loop starts. Retrying is the user's call.
+                booking.status == BookingStatus.MISSED -> addView(button("נסה שוב") { restore(booking) })
             }
         }
     }
@@ -189,6 +228,10 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- actions --
 
     private fun syncNow() {
+        if (!Automation.isEnabled(this)) {
+            toast("האוטומציה מושבתת - הפעל אותה קודם")
+            return
+        }
         if (!HolmesA11yService.isEnabled(this)) {
             toast("קודם צריך להפעיל את שירות הנגישות")
             return
@@ -198,6 +241,10 @@ class MainActivity : Activity() {
     }
 
     private fun rehearse(booking: Booking) {
+        if (!Automation.isEnabled(this)) {
+            toast("האוטומציה מושבתת - הפעל אותה קודם")
+            return
+        }
         if (!HolmesA11yService.isEnabled(this)) {
             toast("קודם צריך להפעיל את שירות הנגישות")
             return
